@@ -1,9 +1,8 @@
-# inbox-server 镜像：uv + playwright chromium（headed）+ xvfb
-FROM python:3.12-slim
+# 用 playwright 官方镜像（已预装 chromium + 全套系统依赖），避免 install 网络/超时卡住
+FROM mcr.microsoft.com/playwright/python:1.60
 
-# 系统依赖：xvfb（headed 浏览器需 X display）+ curl
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl xvfb \
+# xvfb（headed 必需）+ curl
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb curl \
     && rm -rf /var/lib/apt/lists/*
 
 # uv（astral 官方镜像二进制）
@@ -15,9 +14,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY src ./src
 RUN uv sync --frozen --no-dev
-
-# playwright chromium（headed；容器内 --no-sandbox 由应用层 args 处理）
-RUN uv run playwright install --with-deps chromium
+# 注：chromium 由基镜像预装（PLAYWRIGHT_BROWSERS_PATH 已设），无需 playwright install
 
 COPY . .
 ENV INBOX_CHANNELS=/app/channels.yaml
