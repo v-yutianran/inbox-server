@@ -6,6 +6,7 @@ import os
 # 必须在 import inboxserver 之前设，否则 settings 模块级实例化时读到默认 PG。
 os.environ.setdefault("INBOX_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("INBOX_MASTER_KEY", "test-master-key-not-for-prod")
+os.environ.setdefault("INBOX_SCHEDULER_ENABLED", "false")  # 测试不启 scheduler（避免 loop 冲突）
 
 import fakeredis
 import pytest

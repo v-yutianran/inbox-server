@@ -21,7 +21,15 @@ async def lifespan(app: FastAPI):
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    scheduler = None
+    if settings.scheduler_enabled:
+        from inboxserver.infrastructure.scheduler import setup_scheduler
+
+        scheduler = setup_scheduler()
+        scheduler.start()
     yield
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
 
 
 def create_app() -> FastAPI:

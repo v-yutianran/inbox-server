@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.5",
+    "apscheduler>=3.11.2",
     "asyncpg>=0.31.0",
     "cryptography>=49.0.0",
     "fastapi>=0.138.1",
@@ -47,7 +48,12 @@ addopts = "-m 'not e2e'"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+exclude = ["alembic/versions"]  # alembic 自动生成的迁移代码不 lint
 
 [tool.ruff.lint]
 # E=pycodestyle errors, F=pyflakes, I=isort, UP=pyupgrade, B=bugbear
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试中 mock URL/response 行长放宽（respx/httpx mock 常超 100）
+"tests/*" = ["E501"]

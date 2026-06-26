@@ -75,3 +75,16 @@
 - **修复**:vault 语义(显式空串不 fallback settings,算缺失→raise);conftest 测试环境切 sqlite+测试 master_key;DRY 删冗余 queue_key_helper
 - **验证**:单测 91 + integration 8(api 3 + worker_consume 4 + sync_pipeline 1) = **99 passed**;ruff All checks passed
 - **待办**:**scheduler**(APScheduler 60min collect,MVP 可用 docker cron/手动 curl /sync 替代) + **alembic 迁移**(取代 create_all) + **skill 切换为 curl POST /sync**(server 部署后) + **真实 docker-compose up 端到端验证**
+
+### 待办(2026-06-27):完整复刻 + skill 切换门槛
+
+**硬性决策:inbox_dispatcher skill 不切换到 curl POST /sync,直到 inbox-server 完整复刻 inbox_dispatcher 全功能并端到端验证对等。**(MVP 只通 telegram/dida + 知乎,切 skill 会静默丢内容)
+
+**完整复刻清单(inbox-server 还差)**:
+- **浏览器源**:inoreader / YouTube / Bilibili 3 个代登录源(架构同知乎 LoginStrategy + Scraper,各自 cookie/扫码策略)
+- **Telegram 文件处理**:photo/document/video/audio 下载 → 入队 file → 坚果云(当前 TelegramSource 仅链接/文本)
+- **Cubox 增强**:github URL 来源标签 + fishyer.com AI 摘要(当前 CuboxDestination 仅普通转存)
+- **worker 智能标签集成**:process_link 现场调 `generate_smart_tags`(GLM)生成 3 标签(当前 worker.dispatch 未集成)
+- **邮件通知**:汇总报告通道(agently-cli → QQ 邮箱,对等 inbox_sync.send_email_report)
+- **scheduler/alembic**:✅ 已完成(APScheduler + 初始迁移)
+- **docker-compose up 端到端**:进行中(验证 MVP server 可跑)

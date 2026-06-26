@@ -25,5 +25,13 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
 
+    # 调度
+    scheduler_enabled: bool = True  # APScheduler 定时 collect（测试环境关闭）
+
+    # 邮件通知（agently-cli，复刻 inbox_dispatcher 汇总邮件）
+    email_enabled: bool = False  # 容器需装 node + agently-cli 后开启；否则用 LogNotifier 兜底
+    agently_cli_path: str = "/opt/homebrew/bin/agently-cli"
+    email_to: str = "630709658@qq.com"
+
 
 settings = Settings()

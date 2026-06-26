@@ -23,6 +23,8 @@ services:
       redis: {condition: service_started}
     ports: ["8000:8000"]
     volumes: ["./channels.yaml:/app/channels.yaml:ro"]
+    # 启动前 alembic 建表/迁移，再起 uvicorn（生产 schema 由 alembic 管，lifespan create_all 兜底）
+    command: ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn inboxserver.main:app --host 0.0.0.0 --port 8000"]
 
   worker:
     build: .
