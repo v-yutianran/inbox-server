@@ -73,8 +73,18 @@ class YouTubeSource:
             if "accounts.google.com" in page.url:
                 await self._session.mark_expired("youtube")
                 return CollectResult(meta={"platform": "youtube", "error": "未登录"})
-            # TODO: 滚动加载（mousewheel/End + 等加载），MVP 仅首屏
-            items = await page.evaluate(_VIDEO_SELECT)
+            # 无限滚动加载：循环 evaluate + 滚动到底 + wait，累积去重直到无新内容
+            items = []
+            seen = set()
+            for _ in range(20):
+                batch = await page.evaluate(_VIDEO_SELECT)
+                fresh = [i for i in batch if i["id"] not in seen]
+                if not fresh:
+                    break
+                items.extend(fresh)
+                seen.update(i["id"] for i in fresh)
+                await page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+                await page.wait_for_timeout(2000)
         except Exception as e:
             return CollectResult(meta={"platform": "youtube", "error": repr(e)})
         finally:

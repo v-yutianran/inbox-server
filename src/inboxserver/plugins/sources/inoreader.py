@@ -72,8 +72,22 @@ class InoreaderSource:
             if "/login" in page.url or "/signin" in page.url:
                 await self._session.mark_expired("inoreader")
                 return CollectResult(meta={"platform": "inoreader", "error": "未登录"})
-            # TODO: 无限滚动加载（scrollIntoView + 等加载），MVP 仅首屏
-            items = await page.evaluate(_ARTICLE_SELECT)
+            # 无限滚动加载：循环 evaluate + 滚动到底 + wait，累积去重直到无新内容
+            items = []
+            seen = set()
+            for _ in range(20):
+                batch = await page.evaluate(_ARTICLE_SELECT)
+                fresh = [i for i in batch if i.get("key") and i["key"] not in seen]
+                if not fresh:
+                    break
+                items.extend(fresh)
+                seen.update(i["key"] for i in fresh)
+                await page.evaluate(
+                    "() => { const c = document.querySelector("
+                    "'#article_list,#river,main,.inno_river');"
+                    " if (c) c.scrollTop = c.scrollHeight; }"
+                )
+                await page.wait_for_timeout(2000)
         except Exception as e:
             return CollectResult(meta={"platform": "inoreader", "error": repr(e)})
         finally:
