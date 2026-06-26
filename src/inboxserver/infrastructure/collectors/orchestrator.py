@@ -73,11 +73,9 @@ async def _collect_browser_sources(
             BilibiliCookieLoginStrategy,
         )
         from inboxserver.plugins.login_strategies.inoreader import (
-            INOREADER_BASE,
             InoreaderSessionLoginStrategy,
         )
         from inboxserver.plugins.login_strategies.youtube import (
-            YT_BASE,
             YouTubeSessionLoginStrategy,
         )
         from inboxserver.plugins.login_strategies.zhihu import (
