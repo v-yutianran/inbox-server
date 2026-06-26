@@ -1,4 +1,4 @@
-"""YouTube 代登录：Google 账号 storage_state（全 session），validate 检查不重定向 accounts.google.com。
+"""YouTube 代登录：Google 全 session storage_state，validate 检查不重定向 accounts.google.com。
 
 YouTube 用 Google 全 session（无单 cookie）。客户提供 storage_state。
 """
