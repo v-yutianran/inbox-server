@@ -1,0 +1,35 @@
+# 渠道配置（客户私有化部署时拷贝改名 channels.yaml，填真实凭据到 .env）
+# ${ENV} 从环境变量插值，凭据不落 yaml 明文
+
+sources:
+  telegram:
+    enabled: true
+    config: {bot_token: "${TELEGRAM_BOT_TOKEN}"}
+  dida:
+    enabled: true
+    config: {access_token: "${DIDA365_ACCESS_TOKEN}"}
+  # zhihu:  # 浏览器源：需先 POST /login/zhihu/cookie 配 z_c0（阶段3 命门已验证）
+  #   enabled: false
+  #   kind: BROWSER
+  #   config: {collection_id: "你的收藏夹ID", credential_name: "zhihu_creds"}
+
+destinations:
+  cubox:
+    enabled: true
+    item_kind: link
+    config: {api_url: "${CUBOX_API_KEY}"}
+  flomo:
+    enabled: true
+    item_kind: text
+    config: {webhook: "${FLOMO_WEBHOOK}"}
+  jianguoyun:
+    enabled: true
+    item_kind: file
+    config: {webdav_user: "${JIANGUOYUN_USER}", webdav_pass: "${JIANGUOYUN_PASS}"}
+
+credentials: {}
+#   zhihu_creds: {platform: zhihu, kind: cookie, vault_id: "zhihu_main"}
+
+llm:
+  glm_api_key: "${Z_AI_API_KEY}"
+  model: "glm-4-flash"

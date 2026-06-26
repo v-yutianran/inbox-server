@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: inbox
+      POSTGRES_PASSWORD: inbox
+      POSTGRES_DB: inbox
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inbox"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    volumes: [redisdata:/data]
+
+  server:
+    build: .
+    env_file: .env
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
+    ports: ["8000:8000"]
+    volumes: ["./channels.yaml:/app/channels.yaml:ro"]
+
+  worker:
+    build: .
+    env_file: .env
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
+    volumes: ["./channels.yaml:/app/channels.yaml:ro"]
+    # worker 跑 headed chromium，必须 xvfb-run 提供虚拟 X display
+    command: ["xvfb-run", "--auto-servernum", "uv", "run", "python", "-m", "inboxserver.workers.runner"]
+
+volumes:
+  pgdata:
+  redisdata:

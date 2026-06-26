@@ -1,0 +1,53 @@
+[project]
+name = "inboxserver"
+version = "0.1.0"
+description = "商业化私有化部署的收件箱分发服务：统一收集(滴答/Telegram/知乎/inoreader/YouTube/B站) → 入队 → 限速分发(Cubox/flomo/坚果云)"
+readme = "README.md"
+authors = [
+    { name = "ytr", email = "v-yutianran@ztgame.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.18.5",
+    "asyncpg>=0.31.0",
+    "cryptography>=49.0.0",
+    "fastapi>=0.138.1",
+    "httpx>=0.28.1",
+    "playwright>=1.60.0",
+    "pydantic-settings>=2.5",
+    "redis>=8.0.1",
+    "sqlalchemy[asyncio]>=2.0.51",
+    "structlog>=24.4",
+    "uvicorn[standard]>=0.49.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "fakeredis>=2.25",
+    "ruff>=0.7",
+    "respx>=0.23.1",
+    "aiosqlite>=0.22.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
+
+# pytest 配置：asyncio 自动模式 + 默认跳过 e2e(真实外部依赖, 手动 -m e2e 运行)
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "e2e: 真实外部依赖的端到端测试(默认跳过, 手动加 -m e2e 运行)",
+]
+addopts = "-m 'not e2e'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E=pycodestyle errors, F=pyflakes, I=isort, UP=pyupgrade, B=bugbear
+select = ["E", "F", "I", "UP", "B"]

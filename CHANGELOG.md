@@ -1,0 +1,77 @@
+# CHANGELOG
+
+## 2026-06-26
+
+### 阶段1:工程骨架 + domain policy 纯函数 + TDD
+
+- **工程初始化**:`uv init --lib --package` 创建 `~/project/inbox-server`(Python 3.12, uv_build, src 布局)
+- **DDD 分层目录**:`domain/policy`(纯函数) + `infrastructure/{collectors,destinations,queue,browser,persistence,http_client,llm,scheduler}` + `api/routes` + `workers` + `plugins/{sources,destinations,login_strategies}` + `notifications` + `tests/{unit,integration,e2e}`
+- **domain/policy 纯函数**(迁移自 inbox_dispatcher 核心算法,算法与 IO 分离):
+  - `ratelimit`:固定窗口令牌桶(`token_bucket_key`/`bucket_ttl=window+100`/`is_within_rate`)
+  - `daily_limit`:按日分桶(`daily_key` 含 `%Y%m%d`/`daily_ttl=90000` 跨天清零)
+  - `dedup`:指纹(`link=url`/`text=md5`/`file=remote_name`)+ `done_key` + `DONE_TTL=604800`
+  - `retry`:三路决策(`decide_on_success`/`decide_on_quota`/`decide_on_failure`,**配额超不计 retry 不进 DLQ**,失败满 3 次进 DLQ)
+  - `tags`:`clean_tag`(去空格/#/标点)/`fmt_cubox_tags`(数组,is_github 前置 github)/`fmt_flomo_tags`(#tag 空格分隔)
+  - `smart_tags`:`build_glm_prompt`(3个2-6汉字标签强约束)/`parse_glm_response`(切分+清洗+前3个len>=2)
+  - `netscape`:`parse_netscape_bookmarks`(正则+html.unescape → [Bookmark])
+- **domain/models**:`ItemKind(StrEnum: link/text/file)` / `Bookmark(url,title)` / `QueueItem(kind,payload,retry)`
+- **config**:`settings.py`(pydantic-settings, INBOX_ 前缀) + `logging.py`(structlog JSON)
+- **验证**:`uv run pytest tests/unit/domain -v` → **36 passed in 0.02s**;`uv run ruff check src/inboxserver` → All checks passed
+
+### 阶段2:destinations + queue Repository + notifications
+
+- **infra/queue**(IO 层,调 domain.policy 纯函数算 key/ttl):`RedisQueueRepository`(LPUSH/RPOP FIFO + requeue/dlq/peek/clear,键按内容类型) + `DedupStore`(SET ex=7天,scan 统计) + `RateGuard`(token_acquire INCR+EXPIRE window+100 / daily_incr 25h TTL)
+- **plugins**:`contracts.py`(Destination Protocol + DispatchOutcome:OK/QUOTA/FAIL) + destinations/`cubox`(200→OK/-3030→QUOTA/非JSON兜底HTTP status)/`flomo`(code0→OK)/`jianguoyun`(WebDAV,webdav_client 可注入 mock) + `registry.py`(entry_points 主 + 内置兜底)
+- **infra**:`http_client.py`(httpx 工厂) + `llm.py`(GLM 智能标签 IO,prompt/解析走 domain/policy/smart_tags) + **notifications**:`Notifier` Protocol + `LogNotifier`(structlog 兜底)
+- **依赖**:+redis/httpx(主) +respx(测试);conftest 提供 `fake_redis`(fakeredis FakeAsyncRedis)
+- **验证**:`uv run pytest tests/unit` → **58 passed in 0.21s**;`uv run ruff check src tests` → All checks passed
+- **命门测试**:`test_cubox_quota_minus_3030`(目的地识别配额) + `test_quota_stops_without_counting_retry`(重试不计 retry) 锁死配额处理链路;`test_requeue_defers_after_existing` 澄清 LPUSH/RPOP 语义(失败项排到现有项之后重试)
+
+### 阶段3:代登录子系统 + 知乎浏览器源（单测完成，e2e 待真实 z_c0）
+
+- **persistence**:`Base`/`db`(async engine)/`models`(7 张 ORM 表:telegram_offsets/dida_sync_states/login_sessions/credentials/incremental_baselines/sync_jobs/subscriptions,通用类型 PG/sqlite 皆可)/`crypto/vault`(Fernet + Scrypt 派生 key)/repositories(credential+login_session+baseline)
+- **browser 命门**:`playwright_runtime`(单例 chromium headless --no-sandbox)/`pool`(context_for 缓存 + new_context 一次性 + invalidate)/`session_manager`(acquire 三态判定:active+未过期+validate 通过→复用,否则 refresh 重登)/`scraper`(页面内 evaluate fetch,401→LoginExpired)/`login_strategies/zhihu`(z_c0 cookie 注入→storage_state,validate 探测收藏 API)
+- **plugins**:`contracts` 增 Source/SourceKind/CollectResult + LoginStrategy Protocol;`sources/zhihu`(`parse_zhihu_collections` 纯函数 + ZhihuSource:代登录抓收藏→解析→增量去重→智能标签→入队 link,401 自动重登)
+- **conftest**:增 `db_session` fixture(sqlite 内存,建全部表,零外部依赖)
+- **依赖**:+sqlalchemy[asyncio]/asyncpg/alembic/cryptography/playwright +aiosqlite(dev)
+- **验证**:`uv run pytest tests/unit` → **91 passed**(domain 36 + infra 36 + plugins 19);`ruff check` All checks passed(2 个 respx httpx client ResourceWarning 为测试框架噪音,生产无影响)
+- **命门测试覆盖**:session_manager 三态(有效复用/过期重登/validate 失败重登) + zhihu validate(200/401/异常) + scraper 401→LoginExpired + credential vault 错密钥 InvalidToken(客户隔离) + zhihu source 增量去重 + 401 重试
+
+### 阶段3 命门 e2e 验证 ✅ 通过
+
+- **命门判决**:`/api/v4/me` 返回 200 + 真实登录用户(fishyer) → **Python playwright + storage_state(注入 z_c0)能拿到知乎登录态,商业化代登录路线成立**
+- **诊断修正**(e2e 调试中定位):
+  - validate 端点从 `/api/v4/collections`(GET 405)改 `/api/v4/me`(稳定登录验证)
+  - goto 从 `networkidle`(知乎持续请求易超时)改 `domcontentloaded`(me 端点只需 cookie)
+  - z_c0 cookie 加 `expires`(持久化,session cookie 经 storage_state 往返不稳)
+  - 收藏 API 真实路径 `/api/v4/collections/<id>/items`(参考 export_zhihu.mjs)
+  - **关键发现**:z_c0 必须原始值(state.json 187 字符),`playwright-cli cookie-get` 会 URL 编码 `|`(267 字符)致失效;production 客户手动复制浏览器 cookie 是原始值,无此问题
+- **验证**:单测 91 passed + e2e 命门 1 passed + ruff All checks passed
+- **headed 强制(硬性要求)**:`playwright_runtime` 硬编码 `headless=False`,移除 `browser_headless` 配置项——全工程零 headless 路径,任何场景都用 headed(知乎等平台检测 headless 反爬)。容器部署需 xvfb-run。e2e headed 验证通过(me 200)
+- **待办**:login route(随阶段4 fastapi 一起)
+
+### 阶段4:API源(Telegram/滴答) + FastAPI路由
+
+- **persistence repos**:`telegram_offset`(update_id 游标,sha256 hash token)+ `dida_sync_state`(saved_titles 去重),取代文件状态
+- **API 源**:`sources/telegram`(getUpdates long-polling offset+1 → 链接/md链接→link,纯文本→text,offset 持久化)+ `sources/dida`(inbox 全量→提取 url 入队→DELETE 任务+saved_titles 去重)
+- **domain/policy/urls**:`extract_url_title_pairs`(md [title](url)+裸url)/`extract_first_url` 纯函数
+- **FastAPI app**:`api/app.create_app` + lifespan(配 structlog)+ `main.py`(uvicorn 入口)
+- **路由**:`/healthz`(存活)/`/readyz`(就绪)/`POST /sync`(加载 channels → orchestrator 跑启用 source → 返回入队摘要)
+- **编排**:`collectors/orchestrator.run_collect`(按 channels 动态创建 telegram/dida source 实例 → collect;知乎浏览器源 TODO)
+- **配置/鉴权/依赖**:`config/channels.load_channels`(yaml + ${ENV} 插值)+ `api/auth.require_api_key`(X-API-Key,未配置开放)+ `api/deps`(get_session/get_http/get_redis)
+- **依赖**:+fastapi/uvicorn[standard];Depends 用 `Annotated[T, Depends()]`(规避 B008,FastAPI 最佳实践)
+- **验证**:单测 91 + integration 3(healthz/readyz/sync 路由) = **94 passed**;ruff All checks passed
+- **待办**:**sync 端到端(channels.yaml + respx mock telegram/dida 真实 collect 验证)** + **skill 切换为 curl POST /sync**(随阶段5 server 部署后切换)
+
+### 阶段5:worker 消费 + docker-compose 部署 + e2e 补全
+
+- **worker consumer**(`workers/consumer.py`):移植 worker.py 的 async 消费循环——每日限额→dequeue→去重→窗口限速→process→OK(mark_done+daily_incr)/QUOTA(requeue 停)/FAIL(retry≥3→DLQ)。基于 domain.policy 纯函数 + queue repos
+- **destination dispatcher**(`infra/destinations/dispatcher.py`):按 channels 动态创建 destination 实例,按 item_kind 索引
+- **worker runner**(`workers/runner.py`):三队列并发消费(asyncio.gather)+ 限速常量(link 120/6h+480日、text 25/6h+96日、file 1400/30min)
+- **worker consume 测试**(4):OK→mark_done+daily_incr / FAIL 3次→DLQ / QUOTA→不进 DLQ / 去重跳过(均 fakeredis+mock process_fn,wait_for 超时取消无限循环)
+- **sync pipeline e2e**(1):真实 telegram source(respx mock getUpdates)→入队→真实 consume→真实 cubox(respx mock)→mark_done。端到端闭环验证
+- **部署**:`Dockerfile`(uv+playwright chromium+xvfb,headed 必备)+ `docker-compose.yml`(server/worker/postgres/redis 四服务,worker 用 `xvfb-run` 跑 headed)+ `channels.yaml.example` + `.env.example`
+- **app lifespan**:加 `create_all`(MVP 建表,生产用 alembic)
+- **修复**:vault 语义(显式空串不 fallback settings,算缺失→raise);conftest 测试环境切 sqlite+测试 master_key;DRY 删冗余 queue_key_helper
+- **验证**:单测 91 + integration 8(api 3 + worker_consume 4 + sync_pipeline 1) = **99 passed**;ruff All checks passed
+- **待办**:**scheduler**(APScheduler 60min collect,MVP 可用 docker cron/手动 curl /sync 替代) + **alembic 迁移**(取代 create_all) + **skill 切换为 curl POST /sync**(server 部署后) + **真实 docker-compose up 端到端验证**
