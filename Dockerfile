@@ -12,8 +12,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 WORKDIR /app
 
 # 依赖先装（利用 docker layer 缓存）
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+# uv sync 用清华 pypi 镜像（国内快，不依赖 proxy；buildkit RUN 不自动走 config.json proxies）
+ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 RUN uv sync --frozen --no-dev
 # 注：chromium 由基镜像预装（PLAYWRIGHT_BROWSERS_PATH 已设），无需 playwright install
 
