@@ -9,7 +9,7 @@ from __future__ import annotations
 import httpx
 
 from inboxserver.domain.models import ItemKind
-from inboxserver.domain.policy.urls import extract_first_url
+from inboxserver.domain.policy.urls import extract_url_and_title
 from inboxserver.infrastructure.persistence.repositories.dida_sync_state import DidaSyncStateRepo
 from inboxserver.infrastructure.queue.repository import RedisQueueRepository
 from inboxserver.plugins.contracts import CollectResult, SourceKind
@@ -48,7 +48,8 @@ class DidaSource:
         for task in tasks:
             title = task.get("title", "")
             content = task.get("content", "")
-            url = extract_first_url(content) or extract_first_url(title)
+            # 复刻老 dispatcher.extract_url_and_title：从标题/内容提取 url + 干净标题（剥离 md 链接）
+            url, clean_title = extract_url_and_title(title, content)
             task_id = task.get("id")
             project_id = task.get("projectId")
             # DELETE 收集箱任务（清理，无论是否含 url —— 与现有 sync_dida365 一致）
@@ -61,7 +62,8 @@ class DidaSource:
                     pass
             if url and title not in saved:
                 await self._queue.enqueue(
-                    ItemKind.LINK, {"url": url, "title": title, "tags": []}
+                    # clean_title 为空（裸 url 场景）时回退 url，保证标题非空
+                    ItemKind.LINK, {"url": url, "title": clean_title or url, "tags": []}
                 )
                 link_count += 1
             new_saved.add(title)

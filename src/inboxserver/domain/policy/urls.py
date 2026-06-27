@@ -35,3 +35,37 @@ def extract_first_url(text: str) -> str | None:
         return None
     m = _URL_RE.search(text)
     return m.group(1).strip().rstrip(".,);]") if m else None
+
+
+def extract_url_and_title(title: str, content: str = "") -> tuple[str | None, str]:
+    """从（任务）标题/内容提取 (url, 干净标题)，复刻 inbox_dispatcher.extract_url_and_title。
+
+    4 分支（优先级递减），保证 cubox 书签标题不再残留原始 md 链接格式：
+    1. title 是 md 链接 [text](url) → (url, text)  ← 剥离 md，标题干净
+    2. title 是裸 url              → (url, "")      ← url 无好标题，回退用 url
+    3. content 以 http 开头         → (content首token, title)
+    4. content 含 url              → (url, title)
+    其余 → (None, None)（该任务不入 link 队列）
+    """
+    title = title or ""
+    content = content or ""
+
+    # 1. title 是 md 链接 [text](url)：剥离 md，取干净标题
+    m = _MD_LINK_RE.search(title)
+    if m:
+        return m.group(2).strip(), m.group(1).strip()
+
+    # 2. title 是裸 url：无好标题
+    if title.startswith("http"):
+        return title, ""
+
+    # 3. content 以 http 开头：content 首个 token 当 url
+    if content.startswith("http"):
+        return content.split()[0].rstrip(".,);]"), title
+
+    # 4. content 含 url：用 title 作标题
+    m = _URL_RE.search(content)
+    if m:
+        return m.group(1).strip().rstrip(".,);]"), title
+
+    return None, None
