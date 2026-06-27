@@ -15,14 +15,15 @@ from inboxserver.domain.models import Bookmark
 _BOOKMARK_RE = re.compile(r'<A\s+[^>]*HREF="([^"]+)"[^>]*>([^<]*)</A>', re.IGNORECASE)
 
 
-def parse_netscape_bookmarks(html_text: str) -> list[Bookmark]:
-    """解析 Netscape 书签 HTML → [Bookmark]。HTML 实体自动反转义。"""
+def parse_netscape_bookmarks(html_text: str):
+    """解析 Netscape 书签 HTML → 迭代器 yield Bookmark。HTML 实体自动反转义。
+
+    Generator（Item 30）：大书签（inoreader 1081 条）增量处理，不一次性加载内存。
+    """
     if not html_text:
-        return []
-    items: list[Bookmark] = []
+        return
     for m in _BOOKMARK_RE.finditer(html_text):
         url = _html.unescape(m.group(1).strip())
         title = _html.unescape(m.group(2).strip())
         if url:
-            items.append(Bookmark(url=url, title=title))
-    return items
+            yield Bookmark(url=url, title=title)
