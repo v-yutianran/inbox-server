@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 import httpx
 import redis.asyncio as aioredis
+import structlog
 
 from inboxserver.config.channels import load_channels
 from inboxserver.config.logging import configure_logging
@@ -24,6 +25,8 @@ from inboxserver.infrastructure.queue.dedup_store import DedupStore
 from inboxserver.infrastructure.queue.rate_guard import RateGuard
 from inboxserver.infrastructure.queue.repository import RedisQueueRepository
 from inboxserver.workers.consumer import consume
+
+log = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -73,8 +76,9 @@ async def run_worker() -> None:
     rate = RateGuard(queue_redis)
     dests = build_destinations(channels, http)
     if not dests:
-        print("[worker] 无启用的 destination，退出")
+        log.warning("worker_no_destinations_exit")
         return
+    log.info("worker_started", destinations=list(dests.keys()))
     llm_key = channels.llm.get("glm_api_key", "")
 
     # graceful shutdown 信号

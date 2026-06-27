@@ -1,5 +1,56 @@
 # CHANGELOG
 
+## 2026-06-28
+
+### 修复 worker 僵尸容器故障（分发瘫痪 9+ 小时，三层叠加 bug）
+
+测试服务时发现 worker 容器"假健康"（Up 但 python 进程死了 9 小时），scheduler 持续入队但 worker 0 消费，积压无限增长。根因是三个独立 bug 叠加：
+
+**根因链**：
+1. **webdav3 依赖缺失**：`jianguoyun.py` `from webdav3.client import Client`，但 pyproject 未声明 `webdavclient3` → `build_destinations` 构建坚果云 destination 时 ModuleNotFoundError → runner 启动即崩（单测用 mock webdav_client，漏过真实依赖路径）
+2. **.venv 符号链接断链（镜像构建污染）**：无 .dockerignore，Dockerfile `COPY . .` 在 `uv sync` 之后，把宿主 macOS .venv（`.venv/bin/python → cpython-3.12-macos-aarch64`）覆盖镜像里刚建的 Linux .venv → 运行时容器断链
+3. **xvfb-run 作 PID1 不产生持久子进程**：xvfb-run 的 sh 作为容器 PID1 时，其 python 子进程不持久（手动 docker exec 同命令能跑，PID1 却不行——进程组/信号差异）；uv run 在 xvfb-run 下同样不持久
+
+**修复**：
+- `pyproject.toml` + `uv.lock`：`uv add webdavclient3`（补漏依赖）
+- `.dockerignore`（新建）：排除 .venv / __pycache__ / .pytest_cache / .env / *.db / .git / tmp，防止宿主产物污染镜像
+- `docker-compose.yml` worker command：`xvfb-run uv run python` → `sh -c "Xvfb :99 ... & export DISPLAY=:99 && exec /app/.venv/bin/python -m ...runner"`，让 runner 直接成为 PID1（信号直达，graceful shutdown 正常）
+
+**如何验证**：
+- worker 进程：PID 1 = `/app/.venv/bin/python -m inboxserver.workers.runner`（exec 替换 sh），Xvfb 后台子进程，30s+ 持续稳定不崩、无重启
+- `.venv/bin/python` 链接：`/usr/bin/python3.12`（Linux，不再 macOS 断链）
+- 积压：link done 7 / text done 2 全部消费完成，pending 0；新入队被持续消费
+- webdav3 依赖加载（logs 见 webdav3/urn.py import warning，证明已装）
+
+**防御加固**（防僵尸容器复发）：
+- `docker-compose.yml`：server/worker 加 `restart: unless-stopped`；worker 加进程级 healthcheck（`pgrep -f workers.runner`，runner 作 PID1 崩即容器停 + 自动重启）
+- `runner.py`：加 structlog `worker_started` 启动日志（JSON 输出 stdout，可观测性，替代原 print）
+- 验证：worker Health=healthy、worker_started 日志可见 `{"destinations":["link","text","file"],"event":"worker_started",...}`、积压持续消化
+
+## 2026-06-27
+
+### 实现 skill 文档列出的全部规划 API 端点（4 类 5 个，从规划变事实）
+
+skill 文档列了 9 端点但实际只 3 个（healthz/readyz/sync），其余 /queue、/queue/dlq、/channels、/login/{platform}/* 全 404。本次把 5 个规划端点真实实现。
+
+**改了什么**：
+- 新增 `api/routes/queue.py`：GET /queue（三类队列 pending/dlq/done 计数）、GET /queue/dlq（死信内容）
+- 新增 `api/routes/channels.py`：GET /channels（脱敏渠道列表，绝不暴露 token/credentials/llm）
+- 新增 `api/routes/login.py`：POST /login/{platform}/cookie（Fernet 加密落库，name={platform}_creds）、GET /login/{platform}/status（读 login_sessions 表）
+- `infrastructure/queue/repository.py`：加 `peek_dlq(kind)`（对称 peek_all）
+- `api/app.py`：include_router 挂载 3 个新路由；5 个端点全部挂 require_api_key（health 不变）
+- 新增 `tests/integration/test_management_endpoints.py`（6 个端点集成测试）
+
+**关键设计**：
+- name 约定 `{platform}_creds`：与 channels.yaml credential_name + scripts/import_credentials.py 对齐，session_manager.acquire 据此取用
+- POST /login 不触发浏览器验证：server 容器无 chromium（只在 worker），登录态由 worker collect 时自然建立
+- /channels 严格脱敏：只返 enabled/kind/item_kind/credential_name，config 里 token/webhook 不透出
+
+**如何验证**：
+- `uv run pytest tests/unit tests/integration -q` → **120 passed**（新增 6 端点集成测试：队列计数/死信/脱敏/写凭据加密/校验/鉴权）
+- `uv run ruff check src tests` → All checks passed
+- docker 重建后 curl 5 端点全 200；`openapi.json` 路由从 3 → 8；无 key/错 key → 401
+
 ## 2026-06-26
 
 ### 阶段1:工程骨架 + domain policy 纯函数 + TDD

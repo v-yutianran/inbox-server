@@ -1,0 +1,27 @@
+# 宿主 Python 产物 —— 平台绑定，绝不能进 Linux 镜像
+# （.venv/bin/python 是符号链接，macOS 上建的拷进 Linux 必然断链）
+.venv
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 本地数据库 / 敏感文件 —— 绝不进镜像（凭据走 .env，DB 走 volume）
+.env
+inbox.db
+*.db
+*.db-journal
+
+# Git / CI
+.git/
+.github/
+
+# 本地临时文件
+tmp/
+
+# 构建产物
+*.egg-info/
+build/
+dist/
