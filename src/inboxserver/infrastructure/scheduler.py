@@ -30,7 +30,7 @@ async def collect_job() -> None:
     try:
         async with async_session_factory() as session:
             results = await run_collect(channels, http, queue_redis, session)
-        await _notify_results(results, channels, http)
+        await notify_results(results, channels, http)
     except Exception as e:
         structlog.get_logger().error("scheduler collect failed", error=repr(e))
     finally:
@@ -49,7 +49,7 @@ def _summarize(results: dict) -> str:
     return "\n".join(lines)
 
 
-async def _notify_results(results: dict, channels, http) -> None:
+async def notify_results(results: dict, channels, http) -> None:
     """有新内容才 notify（对齐 inbox_sync total_action>0 才发）。
 
     双通道：Email（settings.smtp_*，凭据齐全才发，否则 LogNotifier 兜底）
@@ -67,9 +67,8 @@ async def _notify_results(results: dict, channels, http) -> None:
     else:
         await LogNotifier().notify(summary)
 
-    # Telegram 通道：复用 telegram source 的 bot_token + notification.telegram_chat_id
-    tg_cfg = channels.sources.get("telegram")
-    tg_token = tg_cfg.config.get("bot_token", "") if tg_cfg else ""
+    # Telegram 通道：专用通知 bot（复用老 dispatcher TELEGRAM_NOTIFY_TOKEN）+ telegram_chat_id
+    tg_token = channels.notification.get("notify_token", "")
     tg_chat = channels.notification.get("telegram_chat_id", "")
     if tg_token and tg_chat:
         await TelegramNotifier(tg_token, tg_chat, http).notify(summary)
