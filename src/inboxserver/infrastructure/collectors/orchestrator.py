@@ -102,7 +102,7 @@ async def _create_browser_deps(channels: ChannelsConfig, session) -> _BrowserDep
 async def _collect_browser_sources(
     channels: ChannelsConfig, http, queue_repo: RedisQueueRepository, session
 ) -> dict[str, dict]:
-    """浏览器源编排：创建依赖 → zhihu/bilibili(Scraper fetch) + inoreader/youtube(pool DOM) collect。"""
+    """浏览器源编排：创建依赖 → fetch 源(zhihu/bili) + DOM 源(inoreader/yt) collect。"""
     enabled = channels.enabled_sources()
     if not any(name in enabled for name in _BROWSER_NAMES):
         return {}
@@ -127,7 +127,10 @@ async def _collect_browser_sources(
         cfg = enabled.get(name)
         if cfg and cfg.config.get("credential_name"):
             scraper = Scraper(deps.pool, base)
-            src = cls(cfg.config, deps.sm, scraper, queue_repo, http, deps.llm_key, deps.baseline_repo)
+            src = cls(
+                cfg.config, deps.sm, scraper, queue_repo, http,
+                deps.llm_key, deps.baseline_repo,
+            )
             results[name] = _result_dict(await src.collect())
 
     # dom sources（inoreader/youtube：pool DOM 抓取）
@@ -137,7 +140,10 @@ async def _collect_browser_sources(
     for name, cls in [("inoreader", InoreaderSource), ("youtube", YouTubeSource)]:
         cfg = enabled.get(name)
         if cfg and cfg.config.get("credential_name"):
-            src = cls(cfg.config, deps.sm, deps.pool, queue_repo, http, deps.llm_key, deps.baseline_repo)
+            src = cls(
+                cfg.config, deps.sm, deps.pool, queue_repo, http,
+                deps.llm_key, deps.baseline_repo,
+            )
             results[name] = _result_dict(await src.collect())
 
     return results
