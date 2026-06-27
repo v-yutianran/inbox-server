@@ -22,17 +22,17 @@ def test_parse_multiple_with_attrs():
 
 def test_parse_unescapes_html_entities():
     html = '<A HREF="https://x.com?a=1&amp;b=2">标题&amp;内容</A>'
-    items = parse_netscape_bookmarks(html)
+    items = list(parse_netscape_bookmarks(html))
     assert items[0].url == "https://x.com?a=1&b=2"
     assert items[0].title == "标题&内容"
 
 
 def test_parse_case_insensitive():
     html = '<a href="https://c.com">C</a>'
-    items = parse_netscape_bookmarks(html)
+    items = list(parse_netscape_bookmarks(html))
     assert items[0].url == "https://c.com"
 
 
 def test_parse_empty_or_no_bookmarks():
-    assert parse_netscape_bookmarks("") == []
-    assert parse_netscape_bookmarks("<html>no bookmarks here</html>") == []
+    assert list(parse_netscape_bookmarks("")) == []
+    assert list(parse_netscape_bookmarks("<html>no bookmarks here</html>")) == []
