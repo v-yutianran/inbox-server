@@ -8,7 +8,7 @@
 
 1. **text→flomo 智能标签缺失**：`workers/runner.py` 新增 `_make_process_text`，消费 text 时调 `generate_smart_tags` + `fmt_flomo_tags` 拼 `#标签` 前缀，对齐老 dispatcher `process_text`
 2. **Telegram 同步报告通道缺失**：新增 `notifications/telegram_notifier.py`（复用 telegram bot_token + `channels.yaml` notification 段的 chat_id）；`scheduler.py` `_notify_results` 改双通道
-3. **QQ 邮箱报告失效**：`email_notifier.py` 从 agently-cli（容器无 node）改 stdlib `smtplib` 直连 QQ SMTP（`asyncio.to_thread` 异步，不阻塞 loop）
+3. **QQ 邮箱报告失效**：`email_notifier.py` 从 agently-cli（容器无 node + 凭据在 macOS keychain，容器不可用）改 stdlib `smtplib` 直连 SMTP（实测网易 163 发件 → QQ 收件；`asyncio.to_thread` 异步，不阻塞 loop）
 4. **dida 书签标题残留 md**：`domain/policy/urls.py` 新增 `extract_url_and_title`（复刻老 dispatcher 4 分支），`plugins/sources/dida.py` 改用，剥离 `[标题](url)` 得干净标题
 5. **browser 源架构断裂**：`docs/parity-checklist.md` 记录根因（collect 在 server 无 display + `playwright_runtime` 硬编码 `headless=False`）与方案（collect 挪 worker），启用拆后续 change
 6. **GLM 静默失败补可见性**：`infrastructure/llm.py` 的 `except: return []` 加 `log.warning`（修"无标签且无日志"隐患）
