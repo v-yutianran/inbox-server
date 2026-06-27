@@ -2,6 +2,29 @@
 
 ## 2026-06-28
 
+### fix-parity-gaps：修复 inbox-server 与老 dispatcher 的 5 类功能差距
+
+经对照老 dispatcher（`~/.claude/skills/inbox_dispatcher/`）发现 inbox-server 复刻不完整，修复 5 类已确认问题：
+
+1. **text→flomo 智能标签缺失**：`workers/runner.py` 新增 `_make_process_text`，消费 text 时调 `generate_smart_tags` + `fmt_flomo_tags` 拼 `#标签` 前缀，对齐老 dispatcher `process_text`
+2. **Telegram 同步报告通道缺失**：新增 `notifications/telegram_notifier.py`（复用 telegram bot_token + `channels.yaml` notification 段的 chat_id）；`scheduler.py` `_notify_results` 改双通道
+3. **QQ 邮箱报告失效**：`email_notifier.py` 从 agently-cli（容器无 node）改 stdlib `smtplib` 直连 QQ SMTP（`asyncio.to_thread` 异步，不阻塞 loop）
+4. **dida 书签标题残留 md**：`domain/policy/urls.py` 新增 `extract_url_and_title`（复刻老 dispatcher 4 分支），`plugins/sources/dida.py` 改用，剥离 `[标题](url)` 得干净标题
+5. **browser 源架构断裂**：`docs/parity-checklist.md` 记录根因（collect 在 server 无 display + `playwright_runtime` 硬编码 `headless=False`）与方案（collect 挪 worker），启用拆后续 change
+6. **GLM 静默失败补可见性**：`infrastructure/llm.py` 的 `except: return []` 加 `log.warning`（修"无标签且无日志"隐患）
+
+**配置改动**：`config/settings.py` 加 `smtp_*`（移除 agently_cli_path）、`channels.yaml` 加 `notification` 段、`config/channels.py` 解析 `notification` 字段。
+
+**如何验证**：
+- `uv run pytest tests/` → **138 passed, 1 deselected**（新增 `test_urls` / `test_runner_text` / `test_telegram_notifier` / `test_email_notifier`）
+- dida 标题：`[文本](url)` → cubox 标题「文本」（`test_euat_md_link`）
+- text 标签：无 tags → flomo 收到「#标签 内容」（`test_process_text_generates_and_prepends_tags`）
+- `openspec validate fix-parity-gaps` 通过；完整对照见 `docs/parity-checklist.md`
+
+**残余**（拆后续 change）：4 个 browser 源（知乎/B站/inoreader/油管）架构重构 + 启用；QQ SMTP 授权码（`INBOX_SMTP_PASS`）、Telegram 通知 chat_id（`TELEGRAM_CHAT_ID`）待用户配置。
+
+---
+
 ### 修复 worker 僵尸容器故障（分发瘫痪 9+ 小时，三层叠加 bug）
 
 测试服务时发现 worker 容器"假健康"（Up 但 python 进程死了 9 小时），scheduler 持续入队但 worker 0 消费，积压无限增长。根因是三个独立 bug 叠加：
