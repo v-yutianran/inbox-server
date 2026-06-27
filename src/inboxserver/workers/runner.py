@@ -17,7 +17,7 @@ from inboxserver.config.channels import load_channels
 from inboxserver.config.logging import configure_logging
 from inboxserver.config.settings import settings
 from inboxserver.domain.models import ItemKind
-from inboxserver.domain.policy.tags import fmt_cubox_tags
+from inboxserver.domain.policy.tags import fmt_cubox_tags, fmt_flomo_tags
 from inboxserver.infrastructure.destinations.dispatcher import build_destinations
 from inboxserver.infrastructure.http_client import make_http_client
 from inboxserver.infrastructure.llm import generate_smart_tags
@@ -63,6 +63,25 @@ def _make_process_link(http, cubox, llm_key):
     return process
 
 
+def _make_process_text(http, flomo, llm_key):
+    """text 消费处理：无标签时调 GLM 生成智能标签 + fmt_flomo_tags 拼 #前缀，再 dispatch。
+
+    对齐老 dispatcher process_text（总是生成标签）；GLM 失败兜底为不加前缀（不阻塞）。
+    标签在消费时（限速后）生成，避免入队洪峰打爆 GLM（对齐 inbox_dispatcher.worker）。
+    """
+
+    async def process(item):
+        content = item.get("content", "")
+        if not item.get("tags"):
+            tags = await generate_smart_tags(http, content, llm_key)
+            if tags:
+                # flomo 标签前缀：'#标签1 #标签2 内容'
+                item["content"] = f"{fmt_flomo_tags(tags)} {content}"
+        return await flomo.dispatch(item)
+
+    return process
+
+
 async def run_worker() -> None:
     """启动三队列并发消费。link 走智能标签增强，text/file 直接 dispatch。
 
@@ -92,6 +111,8 @@ async def run_worker() -> None:
         lim = LIMITS[kind]
         if kind is ItemKind.LINK:
             process_fn = _make_process_link(http, dests[kind], llm_key)
+        elif kind is ItemKind.TEXT:
+            process_fn = _make_process_text(http, dests[kind], llm_key)
         else:
             process_fn = dests[kind].dispatch
         tasks.append(

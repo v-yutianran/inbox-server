@@ -7,10 +7,13 @@ prompt 构建与响应解析在 domain/policy/smart_tags（纯函数）——本
 from __future__ import annotations
 
 import httpx
+import structlog
 
 from inboxserver.domain.policy.smart_tags import build_glm_prompt, parse_glm_response
 
 GLM_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+
+_log = structlog.get_logger(__name__)
 
 
 async def generate_smart_tags(
@@ -32,5 +35,7 @@ async def generate_smart_tags(
         data = resp.json()
         text = data["choices"][0]["message"]["content"]
         return parse_glm_response(text)
-    except Exception:
+    except Exception as e:
+        # GLM 失败兜底为空标签（不阻塞分发），但不静默——留 log 便于排查"无标签"问题
+        _log.warning("smart_tags_failed", error=repr(e))
         return []
