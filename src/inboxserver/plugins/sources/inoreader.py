@@ -72,6 +72,13 @@ class InoreaderSource:
             if "/login" in page.url or "/signin" in page.url:
                 await self._session.mark_expired("inoreader")
                 return CollectResult(meta={"platform": "inoreader", "error": "未登录"})
+            # 等文章容器出现（JS 渲染完成）再提取，避免 domcontentloaded 太早
+            try:
+                await page.wait_for_selector(
+                    "div.ar,div.article,[role='article'],article", timeout=10000
+                )
+            except Exception:
+                pass  # timeout 不阻塞（可能无文章或改版）
             # 无限滚动加载：循环 evaluate + 滚动到底 + wait，累积去重直到无新内容
             items = []
             seen = set()
