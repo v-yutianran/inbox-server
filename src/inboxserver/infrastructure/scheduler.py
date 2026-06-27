@@ -17,6 +17,7 @@ from inboxserver.infrastructure.http_client import make_http_client
 from inboxserver.infrastructure.persistence.db import async_session_factory
 from inboxserver.notifications.email_notifier import EmailNotifier
 from inboxserver.notifications.log_notifier import LogNotifier
+from inboxserver.notifications.telegram_notifier import TelegramNotifier
 
 
 async def collect_job() -> None:
@@ -29,7 +30,7 @@ async def collect_job() -> None:
     try:
         async with async_session_factory() as session:
             results = await run_collect(channels, http, queue_redis, session)
-        await _notify_results(results)
+        await _notify_results(results, channels, http)
     except Exception as e:
         structlog.get_logger().error("scheduler collect failed", error=repr(e))
     finally:
@@ -48,14 +49,30 @@ def _summarize(results: dict) -> str:
     return "\n".join(lines)
 
 
-async def _notify_results(results: dict) -> None:
-    """有新内容才 notify（对齐 inbox_sync total_action>0 才发）。"""
+async def _notify_results(results: dict, channels, http) -> None:
+    """有新内容才 notify（对齐 inbox_sync total_action>0 才发）。
+
+    双通道：Email（settings.smtp_*，凭据齐全才发，否则 LogNotifier 兜底）
+    + Telegram（复用 telegram source bot_token + channels.notification.telegram_chat_id）。
+    任一通道未配置或失败均不阻塞主流程。
+    """
     total = sum(sum(r.get("enqueued", {}).values()) for r in results.values())
     if total == 0:
         return
     summary = _summarize(results)
-    notifier = EmailNotifier() if settings.email_enabled else LogNotifier()
-    await notifier.notify(summary)
+
+    # Email 通道：email_enabled 且 smtp 凭据齐全才真发，否则 LogNotifier 兜底
+    if settings.email_enabled and settings.smtp_user and settings.smtp_pass:
+        await EmailNotifier().notify(summary)
+    else:
+        await LogNotifier().notify(summary)
+
+    # Telegram 通道：复用 telegram source 的 bot_token + notification.telegram_chat_id
+    tg_cfg = channels.sources.get("telegram")
+    tg_token = tg_cfg.config.get("bot_token", "") if tg_cfg else ""
+    tg_chat = channels.notification.get("telegram_chat_id", "")
+    if tg_token and tg_chat:
+        await TelegramNotifier(tg_token, tg_chat, http).notify(summary)
 
 
 def setup_scheduler() -> AsyncIOScheduler:
