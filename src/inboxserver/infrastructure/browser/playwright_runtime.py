@@ -9,8 +9,8 @@ Item 66（@asynccontextmanager）：browser_session() 统一 lifecycle，确保�
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from playwright.async_api import Browser, Playwright, async_playwright
 
