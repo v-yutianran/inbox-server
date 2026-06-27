@@ -83,3 +83,27 @@ async def test_consume_skips_dedup(deps):
         )
 
     process_fn.assert_not_called()  # 去重跳过，未调 process
+
+
+async def test_consume_stop_event_graceful_shutdown(deps):
+    """stop_event.set() → consume graceful 退出（不靠 wait_for 超时暴力取消）。
+
+    P0-1 graceful shutdown 验证：consume 处理完 item 后，stop_event.set() →
+    _interruptible_sleep 立即返回 → while 退出 → task 正常完成。
+    """
+    queue_repo, dedup, rate = deps
+    await queue_repo.enqueue(ItemKind.LINK, {"url": "https://a.com"})
+    process_fn = AsyncMock(return_value=(True, DispatchOutcome.OK))
+    stop_event = asyncio.Event()
+
+    task = asyncio.create_task(
+        consume(
+            ItemKind.LINK, queue_repo, dedup, rate, process_fn, "link",
+            **_LIMITS, stop_event=stop_event,
+        )
+    )
+    await asyncio.sleep(0.5)  # 让 consume 处理 item
+    stop_event.set()
+    await asyncio.wait_for(task, timeout=2.0)  # 应在 2s 内优雅退出
+    assert task.done()
+    process_fn.assert_called()  # 确实处理了 item

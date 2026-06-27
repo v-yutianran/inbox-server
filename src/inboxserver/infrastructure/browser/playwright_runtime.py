@@ -3,9 +3,14 @@
 FastAPI lifespan 启动时 get_browser()，应用退出时 shutdown()。
 强制 headed（headless=False 硬编码）：知乎等平台检测 headless 反爬，绝不用 headless。
 容器部署需 xvfb-run 提供 X display（headed 要显示环境）。
+
+Item 66（@asynccontextmanager）：browser_session() 统一 lifecycle，确保配对调用。
 """
 
 from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 
 from playwright.async_api import Browser, Playwright, async_playwright
 
@@ -28,6 +33,20 @@ async def get_browser() -> Browser:
             args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
     return _browser
+
+
+@asynccontextmanager
+async def browser_session() -> AsyncIterator[Browser]:
+    """@asynccontextmanager 封装 browser lifecycle（Item 66）。
+
+    用法：async with browser_session() as browser: ...
+    确保 get_browser / shutdown 配对（退出时自动清理）。
+    """
+    browser = await get_browser()
+    try:
+        yield browser
+    finally:
+        await shutdown()
 
 
 async def shutdown() -> None:
