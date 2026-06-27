@@ -5,7 +5,7 @@ from inboxserver.domain.policy.netscape import parse_netscape_bookmarks
 
 def test_parse_single():
     html = '<DT><A HREF="https://example.com">示例</A>'
-    items = parse_netscape_bookmarks(html)
+    items = list(parse_netscape_bookmarks(html))
     assert len(items) == 1
     assert items[0].url == "https://example.com"
     assert items[0].title == "示例"
@@ -16,7 +16,7 @@ def test_parse_multiple_with_attrs():
         '<DT><A HREF="https://a.com">A</A>\n'
         '<DT><A HREF="https://b.com" ADD_DATE="123">B</A>'
     )
-    items = parse_netscape_bookmarks(html)
+    items = list(parse_netscape_bookmarks(html))
     assert [i.url for i in items] == ["https://a.com", "https://b.com"]
 
 

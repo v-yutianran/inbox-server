@@ -30,6 +30,7 @@ dev = [
     "ruff>=0.7",
     "respx>=0.23.1",
     "aiosqlite>=0.22.1",
+    "mypy>=2.1.0",
 ]
 
 [build-system]
