@@ -22,17 +22,17 @@ from inboxserver.plugins.login_strategies.youtube import YT_BASE
 _VIDEO_SELECT = r"""() => {
     const seen = new Set();
     const out = [];
-    const sels = ['ytd-playlist-video-renderer', 'ytd-playlist-panel-video-renderer',
-                  'ytd-compact-video-renderer', 'ytd-rich-item'];
-    sels.forEach(s => document.querySelectorAll(s).forEach(c => {
-        const a = c.querySelector('a[href*="watch?v="]');
-        if (!a) return;
+    // 兼容「稍后观看」(WL, ytd-*-renderer) + 「点赞」(LL, #contents 内 DIV 容器)：
+    // LL 的 video 不在 ytd-renderer 而在 #contents DIV，故直接抓 #contents 内所有 video link
+    const root = document.querySelector('#contents') || document;
+    root.querySelectorAll('a[href*="watch?v="]').forEach(a => {
         const m = a.href.match(/watch\?v=([\w-]{6,})/);
         if (!m || seen.has(m[1])) return;
         seen.add(m[1]);
-        const title = (a.getAttribute('title') || a.textContent || '').trim();
-        out.push({id: m[1], title: title || m[1]});
-    }));
+        const title = (a.getAttribute('title') || a.getAttribute('aria-label')
+                       || a.textContent || '').trim().replace(/\s+/g, ' ');
+        out.push({id: m[1], title: title.slice(0, 100) || m[1]});
+    });
     return out;
 }"""
 
@@ -81,7 +81,7 @@ class YouTubeSource:
                 # 不等会抓空——曾因此 collect enqueued {}）
                 try:
                     await page.wait_for_selector(
-                        "ytd-playlist-video-renderer,ytd-playlist-panel-video-renderer,ytd-rich-item",
+                        "#contents a[href*=\"watch?v=\"],ytd-playlist-video-renderer,ytd-rich-item",
                         timeout=10000,
                     )
                 except Exception:

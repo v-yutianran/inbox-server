@@ -2,6 +2,14 @@
 
 ## 2026-06-28
 
+### fix(youtube)：LL 点赞 video 选择器（#contents a，兼容 DIV 容器）
+
+`_VIDEO_SELECT` 原遍历 `ytd-*-renderer`，但 LL（点赞）playlist 的 video 在 `#contents` 的 **DIV 容器**（非 ytd-renderer），抓不到。改为抓 `#contents` 内所有 `a[href*="watch?v="]`（兼容 WL 的 ytd-renderer + LL 的 DIV）。`wait_for_selector` 同步加 `#contents a`。
+
+**如何验证**：persistent LL DOM（355 video 在 #contents DIV）→ 新选择器抓到；3 单测 passed；全量 151 无回归
+
+---
+
 ### fix(youtube)：collect 加 wait_for_selector（冷启动）+ 抓「点赞」(LL)
 
 YouTubeSource collect 两个问题修复：
