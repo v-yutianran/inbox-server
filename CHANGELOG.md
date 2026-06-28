@@ -2,6 +2,24 @@
 
 ## 2026-06-28
 
+### feat(bilibili)：baseline 初始化脚本（B站全量 → 填 baseline，不 cubox）
+
+新增 `scripts/init_bilibili_baseline.py`：从老 dispatcher（或首次启用）切换到 inbox-server 时，
+调 B站 API 全量抓（「我的收藏」fav 翻页 + 「稍后再看」toview）→ 填 `incremental_baselines`
+（bilibili + bilibili_toview 的 known_keys，url）→ **不 cubox**。
+
+之后 worker collect 只推**增量**（新增才 cubox），不重复老 dispatcher 已导入 cubox 的。
+
+**跑法**（worker 容器，有 chromium + Xvfb）：
+```
+docker compose exec -e DISPLAY=:99 worker uv run python scripts/init_bilibili_baseline.py
+```
+
+**如何验证**：脚本输出 `✓ bilibili baseline: <N> 条` + `✓ bilibili_toview baseline: <N> 条`；
+之后 worker collect `enqueued bilibili {}`（无新增，baseline 已全量）。
+
+---
+
 ### feat(bilibili)：新增「稍后再看」source（bilibili_toview）
 
 新增 `BilibiliToviewSource`（独立于「我的收藏」BilibiliSource）：
