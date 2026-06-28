@@ -2,6 +2,23 @@
 
 ## 2026-06-28
 
+### docs：新增 roadmap.md 与 CLAUDE.md，建立 GitHub PR 工作流硬规则
+
+为项目建立可执行的协作规范与推进路线图，并固化 git 工作流：
+
+1. **roadmap.md（新建）**：整合 `docs/optimization-plan.md` + `docs/parity-checklist.md`，逐项 grep 实锤代码状态。**修正 optimization-plan 状态滞后**——P0 全部、P1 大部分（P1-3/4/5）已于 2026-06-28 代码实现但未回写文档；roadmap 每项 `[x]` 附 `文件:行号` 证据，取代 optimization-plan 作为单点真相
+2. **CLAUDE.md（新建）**：项目协作指南。🔴 Git 工作流硬规则（禁止直接改 main，feature 分支 + PR target=main）+ 自验四件套（ruff/pytest/mypy）+ DDD/asyncio 代码规范 + spec-driven 引用
+3. **optimization-plan.md**：顶部加「已过时」声明，指向 roadmap 为准（避免后续误导）
+4. **CHANGELOG.md**：记录本次变更（落地新立的「CHANGELOG 必记」规范）
+
+**如何验证**：
+- `git branch --show-current` = `docs/roadmap-and-claude-md`（基于 `origin/main`，未污染 main）
+- roadmap 复选框：7 项已完成（每项附代码证据）/ 13 项待办
+- CLAUDE.md 硬规则自检：`grep` 命中 `禁止直接在` / `target 永远是` / `origin/main`
+- optimization-plan.md 顶部含「已严重滞后」声明 + 指向 `../roadmap.md`
+
+---
+
 ### fix-parity-gaps：修复 inbox-server 与老 dispatcher 的 5 类功能差距
 
 经对照老 dispatcher（`~/.claude/skills/inbox_dispatcher/`）发现 inbox-server 复刻不完整，修复 5 类已确认问题：
