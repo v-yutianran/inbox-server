@@ -29,7 +29,8 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True  # APScheduler 定时 collect（测试环境关闭）
 
     # 邮件通知（smtplib 直连 QQ SMTP；去 agently-cli/node 依赖，容器化友好）
-    # email_enabled=True 且 smtp 凭据齐全才真发；否则 LogNotifier 兜底（通知是附加通道，不阻塞主流程）
+    # email_enabled=True 且 smtp 凭据齐全才真发；
+    # 否则 LogNotifier 兜底（通知是附加通道，不阻塞主流程）
     email_enabled: bool = False
     smtp_host: str = "smtp.163.com"  # SMTP 主机（默认网易 163；可由 .env 覆盖）
     smtp_port: int = 465  # QQ SMTP over SSL 端口
