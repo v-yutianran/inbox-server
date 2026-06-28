@@ -2,6 +2,23 @@
 
 ## 2026-06-28
 
+### refactor(workers)：consume 收 QueueLimits + 测试 stop_event + structlog 上下文绑定
+
+P2-7/P2-8/P2-9 三项 workers 层打磨（来自 `docs/optimization-plan.md`）：
+
+1. **P2-7 consume 参数收敛**：`QueueLimits` dataclass 从 `workers/runner.py` 上提到 `domain/models.py`；`consume` 的 `window_count/window_sec/daily_limit/interval` 4 散参收敛为单个 `limits: QueueLimits`；runner 调用方直接传 `lim`
+2. **P2-8 测试改 stop_event**：6 处 `asyncio.wait_for(consume(...), timeout)` 超时暴力取消 → `stop_event.set()` 优雅停止（避免 in-flight item 半处理）；抽 `_run_until_stopped` helper 消除 5 处样板
+3. **P2-9 structlog 上下文绑定**：`browser_collector` 每个 source 循环 `bound_contextvars(source=name)`、`runner._browser_collect_loop` 绑 `component="browser_collect"`，source 插件内部日志自动带上下文（`merge_contextvars` 已配）
+
+**如何验证**：
+- `uv run ruff check`（改的 6 文件）→ All checks passed
+- `uv run pytest tests/unit tests/integration` → **140 passed**（无回归）
+- consume graceful shutdown 行为不变（stop_event 模式测试覆盖 OK/QUOTA/FAIL→DLQ/去重/graceful）
+
+> 注：全量 ruff 仍有 6 个 errors（settings/dida/zhihu×3 等），均 main 既有、非本 PR 引入，见 PR 说明。
+
+---
+
 ### docs：新增 roadmap.md 与 CLAUDE.md，建立 GitHub PR 工作流硬规则
 
 为项目建立可执行的协作规范与推进路线图，并固化 git 工作流：

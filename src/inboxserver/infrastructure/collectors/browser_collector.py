@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import structlog
+
 from inboxserver.config.channels import ChannelsConfig
 from inboxserver.infrastructure.queue.repository import RedisQueueRepository
 from inboxserver.plugins.contracts import CollectResult
@@ -107,7 +109,9 @@ async def collect_browser_sources(
                 cfg.config, deps.sm, scraper, queue_repo, http,
                 deps.llm_key, deps.baseline_repo,
             )
-            results[name] = _result_dict(await src.collect())
+            # P2-9：绑定 source 上下文，src.collect 内部日志自动带 source（merge_contextvars）
+            with structlog.contextvars.bound_contextvars(source=name):
+                results[name] = _result_dict(await src.collect())
 
     # dom sources（inoreader/youtube：pool DOM 抓取）
     from inboxserver.plugins.sources.inoreader import InoreaderSource
@@ -120,6 +124,8 @@ async def collect_browser_sources(
                 cfg.config, deps.sm, deps.pool, queue_repo, http,
                 deps.llm_key, deps.baseline_repo,
             )
-            results[name] = _result_dict(await src.collect())
+            # P2-9：绑定 source 上下文，src.collect 内部日志自动带 source
+            with structlog.contextvars.bound_contextvars(source=name):
+                results[name] = _result_dict(await src.collect())
 
     return results

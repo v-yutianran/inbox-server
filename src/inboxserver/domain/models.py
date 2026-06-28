@@ -38,3 +38,17 @@ class QueueItem:
     retry: int = 0
     # 允许 extra 字段透传（如 worker 回写 retry），保持与现有 payload JSON 兼容
     extra: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class QueueLimits:
+    """队列限速配置：窗口令牌 + 日限额 + 消费间隔（来自 inbox_queue 各服务配额模型）。
+
+    consume 按此限速消费，避免打爆下游（Cubox/flomo/坚果云）。frozen=True：配置不可变，
+    避免运行中被误改导致限速失真。
+    """
+
+    window_count: int
+    window_sec: int
+    daily_limit: int | None
+    interval: float

@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import signal
 from contextlib import suppress
-from dataclasses import dataclass
 
 import httpx
 import redis.asyncio as aioredis
@@ -17,7 +16,7 @@ import structlog
 from inboxserver.config.channels import load_channels
 from inboxserver.config.logging import configure_logging
 from inboxserver.config.settings import settings
-from inboxserver.domain.models import ItemKind
+from inboxserver.domain.models import ItemKind, QueueLimits
 from inboxserver.domain.policy.tags import fmt_cubox_tags, fmt_flomo_tags
 from inboxserver.infrastructure.destinations.dispatcher import build_destinations
 from inboxserver.infrastructure.http_client import make_http_client
@@ -28,16 +27,6 @@ from inboxserver.infrastructure.queue.repository import RedisQueueRepository
 from inboxserver.workers.consumer import consume
 
 log = structlog.get_logger(__name__)
-
-
-@dataclass(frozen=True)
-class QueueLimits:
-    """队列限速配置（来自 inbox_queue：各服务配额模型不同）。"""
-
-    window_count: int
-    window_sec: int
-    daily_limit: int | None
-    interval: float
 
 
 # 限速常量（来自 inbox_queue：link 120/6h+480日、text 25/6h+96日、file 1400/30min）
@@ -94,13 +83,16 @@ async def _browser_collect_loop(channels, http, queue_repo, stop_event):
 
     while not stop_event.is_set():
         try:
-            async with async_session_factory() as session:
-                results = await collect_browser_sources(channels, http, queue_repo, session)
-            if results:
-                log.info(
-                    "browser_collected",
-                    enqueued={k: v.get("enqueued") for k, v in results.items()},
-                )
+            # P2-9：绑定 component（collect 内部 + 结果日志自动带，merge_contextvars）。
+            # bound_contextvars 退出自动清理，防上下文跨循环泄漏。
+            with structlog.contextvars.bound_contextvars(component="browser_collect"):
+                async with async_session_factory() as session:
+                    results = await collect_browser_sources(channels, http, queue_repo, session)
+                if results:
+                    log.info(
+                        "browser_collected",
+                        enqueued={k: v.get("enqueued") for k, v in results.items()},
+                    )
         except Exception as e:
             # browser collect 失败不阻塞消费（附加能力，仅告警）
             log.warning("browser_collect_failed", error=repr(e))
@@ -145,14 +137,12 @@ async def run_worker() -> None:
         tasks.append(
             consume(
                 kind, queue_repo, dedup, rate, process_fn, kind.value,
-                window_count=lim.window_count,
-                window_sec=lim.window_sec,
-                daily_limit=lim.daily_limit,
-                interval=lim.interval,
+                limits=lim,
                 stop_event=stop_event,
             )
         )
-    # browser collect 定时（worker 有 Xvfb+chromium；无 browser 源时 collect_browser_sources 内部跳过）
+    # browser collect 定时（worker 有 Xvfb+chromium；
+    # 无 browser 源时 collect_browser_sources 内部跳过）
     tasks.append(_browser_collect_loop(channels, http, queue_repo, stop_event))
     await asyncio.gather(*tasks)
 

@@ -9,10 +9,9 @@ from __future__ import annotations
 import asyncio
 
 import httpx
-import pytest
 import respx
 
-from inboxserver.domain.models import ItemKind
+from inboxserver.domain.models import ItemKind, QueueLimits
 from inboxserver.infrastructure.persistence.repositories.telegram_offset import TelegramOffsetRepo
 from inboxserver.infrastructure.queue.dedup_store import DedupStore
 from inboxserver.infrastructure.queue.rate_guard import RateGuard
@@ -21,7 +20,7 @@ from inboxserver.plugins.destinations.cubox import CuboxDestination
 from inboxserver.plugins.sources.telegram import TelegramSource
 from inboxserver.workers.consumer import consume
 
-_LIMITS = dict(window_count=120, window_sec=21600, daily_limit=480, interval=0.01)
+_LIMITS = QueueLimits(window_count=120, window_sec=21600, daily_limit=480, interval=0.01)
 TG_URL = "https://api.telegram.org/botT/getUpdates"
 CUBOX_URL = "https://cubox.test/api"
 
@@ -52,11 +51,17 @@ async def test_pipeline_telegram_to_cubox(fake_redis, db_session):
     # 2. worker consume → cubox（mock code=200 → OK）
     cubox_route = respx.post(CUBOX_URL).mock(return_value=httpx.Response(200, json={"code": 200}))
     cubox = CuboxDestination({"api_url": CUBOX_URL}, http)
-    with pytest.raises(asyncio.TimeoutError):
-        await asyncio.wait_for(
-            consume(ItemKind.LINK, queue_repo, dedup, rate, cubox.dispatch, "link", **_LIMITS),
-            timeout=1.0,
+    # stop_event 模式跑 consume（P2-8）：替代 wait_for 暴力取消，让 consume 优雅退出
+    stop_event = asyncio.Event()
+    task = asyncio.create_task(
+        consume(
+            ItemKind.LINK, queue_repo, dedup, rate, cubox.dispatch, "link",
+            limits=_LIMITS, stop_event=stop_event,
         )
+    )
+    await asyncio.sleep(0.5)  # 让 consume 处理 telegram 入队的链接
+    stop_event.set()
+    await asyncio.wait_for(task, timeout=2.0)
 
     # 3. 断言：cubox 收到、queue 空、mark_done
     assert cubox_route.called

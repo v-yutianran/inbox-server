@@ -10,7 +10,7 @@ import asyncio
 
 import structlog
 
-from inboxserver.domain.models import ItemKind
+from inboxserver.domain.models import ItemKind, QueueLimits
 from inboxserver.domain.policy.dedup import fingerprint
 from inboxserver.domain.policy.retry import RetryAction, decide_on_failure
 from inboxserver.infrastructure.queue.dedup_store import DedupStore
@@ -29,10 +29,7 @@ async def consume(
     process_fn,
     name: str,
     *,
-    window_count: int,
-    window_sec: int,
-    daily_limit: int | None,
-    interval: float,
+    limits: QueueLimits,
     stop_event: asyncio.Event | None = None,
 ) -> None:
     """通用消费循环。
@@ -44,7 +41,10 @@ async def consume(
     structlog.contextvars.bind_contextvars(kind=kind.value)
     while stop_event is None or not stop_event.is_set():
         # 每日限额：满则停等明天（不消费、不 DLQ）
-        if daily_limit is not None and await rate_guard.daily_count(qkey) >= daily_limit:
+        if (
+            limits.daily_limit is not None
+            and await rate_guard.daily_count(qkey) >= limits.daily_limit
+        ):
             await _interruptible_sleep(1800, stop_event)
             continue
         item = await queue_repo.dequeue(kind)
@@ -56,7 +56,7 @@ async def consume(
         if await dedup_store.is_done(qkey, fp):
             continue
         # 窗口限速：满则回队尾等下个窗口
-        if not await rate_guard.token_acquire(qkey, window_count, window_sec):
+        if not await rate_guard.token_acquire(qkey, limits.window_count, limits.window_sec):
             await queue_repo.requeue(kind, item)
             await _interruptible_sleep(300, stop_event)
             continue
@@ -76,7 +76,7 @@ async def consume(
         except Exception as e:
             log.warning("consume_exception", name=name, error=repr(e))
             await _handle_fail(kind, queue_repo, item)
-        await _interruptible_sleep(interval, stop_event)
+        await _interruptible_sleep(limits.interval, stop_event)
     log.info("consumer_shutdown", name=name)
 
 
