@@ -2,6 +2,9 @@
 
 > 基于 Effective Python(90 items) + Clean Code + DDD + Data-Intensive Patterns + Using Asyncio 综合审查。
 
+> ⚠️ **本文档状态已严重滞后（写于 2026-06-27）**：P0 全部、P1 大部分（P1-3/4/5）已在 2026-06-28 代码中实现，但未回写本文档。
+> 当前进度以 [`roadmap.md`](../roadmap.md) 为准（每项 `[x]` 附 `文件:行号` 证据）。本文档保留为历史审查记录，**勿直接引用其状态判断**。
+
 ## 肯定的好模式(inbox-server 已做对)
 
 | 模式 | Effective Python Item | 体现 |
