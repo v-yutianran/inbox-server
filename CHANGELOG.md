@@ -2,6 +2,16 @@
 
 ## 2026-06-28
 
+### docs：CLAUDE.md 固化「禁 rebase，统一 merge」工作流
+
+用户偏好纠正：曾用 `git rebase` 解冲突 + `gh pr merge --squash`，现统一为 merge。
+
+- **PR merge 用 `gh pr merge --merge`**（merge commit），禁用 `--squash` / `--rebase`
+- **分支同步/解冲突用 `git merge`**（产生 merge commit），禁用 `git rebase`（保留完整历史、不改写提交）
+- 已同步记入 memory（跨会话）+ 本项目 CLAUDE.md Git 工作流
+
+---
+
 ### chore(ruff)：清理 main 既有 5 个 lint errors（CI ruff step 转绿）
 
 main 既有 5 个 ruff errors（PR #4 标注过，非任一功能 PR 引入），致 CI ruff step 一直红。本次清零：

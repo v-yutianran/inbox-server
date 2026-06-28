@@ -40,9 +40,9 @@ git checkout -b feat/xxx origin/main
 git push -u origin feat/xxx
 gh pr create --base main --title "feat(xxx): 简述" --body "..."
 # ⑤ 自动 code review（自验四件套全绿）+ merge 到 main
-#    CHANGELOG 同位置冲突 → rebase 解（保留所有条目）；语义冲突手动合并
-# ⑥ merge 后删分支
-gh pr merge --squash --delete-branch
+#    冲突解法（禁用 rebase）：本地 `git merge origin/main` 产生 merge commit 解冲突
+# ⑥ merge 后删分支（merge commit 模式，禁用 squash/rebase）
+gh pr merge --merge --delete-branch
 ```
 
 ### 3. Commit 规范
@@ -56,7 +56,8 @@ gh pr merge --squash --delete-branch
 - **target 永远是 `main`**（开发分支；`release` 稳定分支手动管，不在此流程）
 - PR 前跑「自验四件套」全绿
 - PR 描述含：改了什么 / 如何验证 / 关联 change（openspec）
-- **PR 提交后自动 review + merge**：main 是开发分支（CI 把关），无需人工放行；`gh pr merge --squash --delete-branch`
+- **PR 提交后自动 review + merge**：main 是开发分支（CI 把关），无需人工放行；`gh pr merge --merge --delete-branch`
+- **🔴 禁用 `git rebase`，统一 `merge`**：PR merge 用 `--merge`（不用 `--squash`/`--rebase`）；分支同步/解冲突用 `git merge origin/main`，保留 merge commit 历史、不改写提交
 
 ---
 
