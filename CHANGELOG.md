@@ -2,6 +2,16 @@
 
 ## 2026-06-28
 
+### docs：CLAUDE.md 补 YouTube 经验（WL/LL DOM 差异）+ consumer 限额诊断/临时忽略
+
+YouTube 完整流程验证后经验沉淀（CLAUDE.md 注意事项 13-14）：
+- **YouTube WL/LL DOM 差异**（13）：WL（稀后观看）用 `ytd-playlist-video-renderer`，LL（点赞）用 `#contents` 内 DIV——`_VIDEO_SELECT` 抓 `#contents a[href*="watch?v="]` 兼容；collect `goto networkidle` 后加 `wait_for_selector`（SPA 冷启动 DOM 渲染慢，曾 `enqueued {}`）
+- **consumer 限额**（14）：link `120/6h` + `480/日`（`runner.py` LIMITS）；**不消费时**查 redis `queue:link:ratelimit:*`（窗口 token >120 满）+ `queue:link:daily:*`；**临时忽略**：`DEL queue:link:ratelimit:*`（清窗口 token，不动代码、不需 restart）
+
+**如何验证**：YouTube collect WL+LL 增量 6 → 清限速 → consumer cubox POST 6（200 OK），`done+6`
+
+---
+
 ### fix(youtube)：LL 点赞 video 选择器（#contents a，兼容 DIV 容器）
 
 `_VIDEO_SELECT` 原遍历 `ytd-*-renderer`，但 LL（点赞）playlist 的 video 在 `#contents` 的 **DIV 容器**（非 ytd-renderer），抓不到。改为抓 `#contents` 内所有 `a[href*="watch?v="]`（兼容 WL 的 ytd-renderer + LL 的 DIV）。`wait_for_selector` 同步加 `#contents a`。
