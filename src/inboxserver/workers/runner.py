@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
+from contextlib import suppress
 from dataclasses import dataclass
 
 import httpx
@@ -82,6 +83,32 @@ def _make_process_text(http, flomo, llm_key):
     return process
 
 
+async def _browser_collect_loop(channels, http, queue_repo, stop_event):
+    """worker 定时 browser collect（每 60min），复用 worker 闲置的 chromium+Xvfb。
+
+    browser 源 collect 必须在有 DISPLAY 的 worker 跑（server 无 DISPLAY 会崩在 chromium.launch）。
+    异常隔离：collect 失败仅告警，不影响消费循环。graceful：stop_event 可立即中断等待。
+    """
+    from inboxserver.infrastructure.collectors.browser_collector import collect_browser_sources
+    from inboxserver.infrastructure.persistence.db import async_session_factory
+
+    while not stop_event.is_set():
+        try:
+            async with async_session_factory() as session:
+                results = await collect_browser_sources(channels, http, queue_repo, session)
+            if results:
+                log.info(
+                    "browser_collected",
+                    enqueued={k: v.get("enqueued") for k, v in results.items()},
+                )
+        except Exception as e:
+            # browser collect 失败不阻塞消费（附加能力，仅告警）
+            log.warning("browser_collect_failed", error=repr(e))
+        # 等下次（60min；stop_event 立即中断以 graceful shutdown）
+        with suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(stop_event.wait(), timeout=3600)
+
+
 async def run_worker() -> None:
     """启动三队列并发消费。link 走智能标签增强，text/file 直接 dispatch。
 
@@ -125,6 +152,8 @@ async def run_worker() -> None:
                 stop_event=stop_event,
             )
         )
+    # browser collect 定时（worker 有 Xvfb+chromium；无 browser 源时 collect_browser_sources 内部跳过）
+    tasks.append(_browser_collect_loop(channels, http, queue_repo, stop_event))
     await asyncio.gather(*tasks)
 
 

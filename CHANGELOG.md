@@ -162,3 +162,11 @@ skill 文档列了 9 端点但实际只 3 个（healthz/readyz/sync），其余 
 - **邮件通知**:汇总报告通道(agently-cli → QQ 邮箱,对等 inbox_sync.send_email_report)
 - **scheduler/alembic**:✅ 已完成(APScheduler + 初始迁移)
 - **docker-compose up 端到端**:进行中(验证 MVP server 可跑)
+
+### browser-collect-worker：browser 源架构重构 + 启用知乎（feat/browser-collect-worker）
+
+- 抽 `infrastructure/collectors/browser_collector.py` 共享模块（DRY），`orchestrator.run_collect` 瘦身只跑 API 源（server 无 DISPLAY 不再崩）
+- `workers/runner.py` 加 `_browser_collect_loop`（每 60min，复用 worker 闲置 chromium+Xvfb，异常隔离 + graceful）
+- `channels.yaml` 启用知乎（collection_id=1001447797，credential_name=zhihu_creds）；bilibili/inoreader/youtube 注释（缺凭据）
+- 凭据/缓存复用：zhihu z_c0（zhihu-export2chrome）+ baseline 预填 1077 known（backup/zhihu.json）
+- 端到端实测：worker browser collect 抓知乎收藏 20 条 → 13 skipped（known）+ 7 new（真正新增）入队 → GLM 标签 → cubox
