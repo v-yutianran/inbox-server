@@ -71,7 +71,7 @@ uv run mypy src/inboxserver --ignore-missing-imports   # 类型检查
 
 | 凭据 | 填入位置 | 获取方式 |
 |------|---------|---------|
-| **QQ SMTP 授权码** | `.env` `INBOX_SMTP_PASS`（+ `INBOX_SMTP_USER` 发件邮箱、`INBOX_EMAIL_TO` 收件） | QQ 邮箱 → 设置 → 账户 → 开启 SMTP 服务 → 生成授权码（**非登录密码**） |
+| **网易 163 SMTP 授权码** | `.env` `INBOX_SMTP_PASS`（+ `INBOX_SMTP_USER` 发件 163 邮箱、`INBOX_SMTP_HOST=smtp.163.com`） | 网易 163 邮箱 → 设置 → POP3/SMTP/IMAP → 开启 SMTP 服务 → 生成授权码（**非登录密码**） |
 | **Telegram chat_id** | `channels.yaml` `notification.telegram_chat_id` | Telegram 转发任意消息给 `@userinfobot`，回复的数字即 chat_id |
 | **browser 源登录凭据** | `POST /login/{platform}/cookie` | 知乎 `z_c0` / B站 `SESSDATA` / inoreader session / YouTube cookie——浏览器登录后从 DevTools 取，POST 写入（加密落库） |
 
