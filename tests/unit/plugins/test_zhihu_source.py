@@ -42,7 +42,8 @@ async def test_collect_enqueues_new_with_tags(source):
         "data": [
             {"content": {"url": "u1", "title": "t1"}},
             {"content": {"url": "u2", "title": "t2"}},
-        ]
+        ],
+        "paging": {"is_end": True},
     }
     body = json.dumps(data)
     source._scraper.fetch_via_page.return_value = {"status": 200, "body": body}
@@ -63,7 +64,7 @@ async def test_collect_enqueues_new_with_tags(source):
 
 
 async def test_collect_skips_known(source):
-    body = json.dumps({"data": [{"content": {"url": "u1", "title": "t1"}}]})
+    body = json.dumps({"data": [{"content": {"url": "u1", "title": "t1"}}], "paging": {"is_end": True}})
     source._scraper.fetch_via_page.return_value = {"status": 200, "body": body}
     source._session.acquire.return_value = {"cookies": []}
     source._baseline.get_known.return_value = {"u1"}  # 已知
@@ -77,7 +78,7 @@ async def test_collect_skips_known(source):
 
 async def test_collect_relogin_on_401(source):
     """scraper 401(LoginExpired) → mark_expired + 重试一次成功。"""
-    body = json.dumps({"data": [{"content": {"url": "u1", "title": "t1"}}]})
+    body = json.dumps({"data": [{"content": {"url": "u1", "title": "t1"}}], "paging": {"is_end": True}})
     source._scraper.fetch_via_page.side_effect = [
         LoginExpired("401"),
         {"status": 200, "body": body},
