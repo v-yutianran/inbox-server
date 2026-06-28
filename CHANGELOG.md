@@ -2,6 +2,15 @@
 
 ## 2026-06-28
 
+### docs：CLAUDE.md 沉淀会话经验 + 脚本部署顺序 + roadmap B站标记
+
+本次会话经验沉淀（方便复用）：
+- **CLAUDE.md 注意事项补 4 条**：① browser 源调试（collect error 藏 `meta`，查 `login_sessions` 表；`docker exec` 带 `-e DISPLAY=:99`）② baseline 防重复（新 source 跑 init 脚本预填，部署顺序 `stop worker → 脚本 → start`）③ B站双 source（`bilibili` 我的收藏 fav `media_id` + `bilibili_toview` 稀后再看）④ 邮件通知用网易 163（非 QQ）
+- **`scripts/init_bilibili_baseline.py` docstring**：固化部署顺序（`stop worker → run 脚本（Xvfb）→ start worker`），避免与 worker collect 并发竞态致首次全量重复
+- **roadmap B站标 `[x]`**：已启用（fav + 稀后再看 + 翻页增量 + baseline 防重复）
+
+---
+
 ### feat(bilibili)：baseline 初始化脚本（B站全量 → 填 baseline，不 cubox）
 
 新增 `scripts/init_bilibili_baseline.py`：从老 dispatcher（或首次启用）切换到 inbox-server 时，

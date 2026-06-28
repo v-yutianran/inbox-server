@@ -18,7 +18,7 @@
 
 - [x] 架构重构：browser collect 从 server `collect_job` 挪到 `runner._browser_collect_loop`（worker 有 Xvfb，headed 可过反爬）
 - [x] 知乎：已启用（`collection_id` + `credential_name`），分页 + content.type 取 title 两个 bug 已修
-- [ ] B站：`LoginStrategy` + `Scraper` 已就绪，待配凭据 + `channels.yaml` 取消注释
+- [x] B站：已启用（`bilibili` 我的收藏 fav `media_id` + `bilibili_toview` 稀后再看；翻页增量 + baseline 防重复，PR #13/#14/#15）
 - [ ] inoreader：同上，待启用
 - [ ] 油管（YouTube）：同上，待启用
 

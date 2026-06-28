@@ -3,8 +3,12 @@
 用途：从老 dispatcher（或首次启用）切换到 inbox-server 时，预填 baseline，
 让 inbox-server 后续 collect 只推**增量**（新增才 cubox），不重复导入老 dispatcher 已导入的。
 
-跑法（worker 容器，有 chromium + Xvfb DISPLAY）：
-    docker compose exec -e DISPLAY=:99 worker uv run python scripts/init_bilibili_baseline.py
+跑法（避免与 worker collect 并发竞态，致首次全量重复）：
+    docker compose stop worker    # 1. 停 worker（collect 停，不与脚本并发）
+    # 2. 新容器跑脚本（Xvfb+chromium；--rm 跑完即删）：
+    docker compose run --rm worker sh -c \
+      "Xvfb :99 & export DISPLAY=:99 && uv run python scripts/init_bilibili_baseline.py"
+    docker compose start worker   # 3. 启 worker（collect 增量，baseline 已填不重复）
 
 前置：channels.yaml 已启用 bilibili（media_id + credential_name=bilibili_creds）+
       bilibili_toview（credential_name=bilibili_creds），且已 POST /login/bilibili/cookie。

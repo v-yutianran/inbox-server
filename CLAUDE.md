@@ -133,3 +133,7 @@ uv run pytest -m e2e
 4. **env 前缀 `INBOX_`**：pydantic-settings 读取，配置见 `.env` / `.env.example`
 5. **`channels.yaml` 是配置单一数据源**：来源启用 / 分发目标 / 限速参数集中于此，server 与 worker 共享（只读挂载）
 6. **alembic 管生产 schema**：server 启动先 `alembic upgrade head`，lifespan `create_all` 仅兜底；schema 改动必须生成迁移
+7. **browser 源调试**：collect 的 error 藏在 `meta`（`browser_collected` log 只记 `enqueued`，失败看不出来）——调试查 `login_sessions` 表（`status`/`last_error`）+ collect 返回的 `meta`；`docker exec` 调试 worker 要带 `-e DISPLAY=:99`（worker 的 Xvfb）
+8. **baseline 防重复**（新 source 启用）：跑 `scripts/init_<source>_baseline.py` 预填全量 → 避免首次 collect 全量重复 cubox。**部署顺序**：`stop worker → 跑 baseline 脚本 → start worker`（避免 collect 与脚本并发竞态致首次全量）
+9. **B站双 source**：`bilibili`（我的收藏，fav `media_id`，翻页增量）+ `bilibili_toview`（稀后再看，无 `media_id`，credential 复用 `bilibili_creds`，独立 baseline）
+10. **邮件通知用网易 163**（非 QQ）：`settings.smtp_host` 默认 `smtp.163.com`；`.env` 配 `INBOX_SMTP_PASS`（163 授权码）+ `INBOX_SMTP_USER`（163 邮箱）+ `INBOX_EMAIL_TO`（收件）
