@@ -19,6 +19,22 @@ def test_parse_extracts_bookmarks():
     assert items[1].title == "u2"  # title 缺失回退 url
 
 
+def test_parse_answer_uses_question_title():
+    """answer 类型：标题取 question.title（不回退 url）"""
+    body = json.dumps(
+        {"data": [{"content": {"type": "answer", "url": "u1", "question": {"title": "问题标题"}}}]}
+    )
+    items = parse_zhihu_collections(body)
+    assert items[0].title == "问题标题"
+
+
+def test_parse_article_uses_content_title():
+    """article 类型：标题取 content.title"""
+    body = json.dumps({"data": [{"content": {"type": "article", "url": "u2", "title": "文章标题"}}]})
+    items = parse_zhihu_collections(body)
+    assert items[0].title == "文章标题"
+
+
 def test_parse_invalid_json_returns_empty():
     assert parse_zhihu_collections("not json") == []
     assert parse_zhihu_collections("") == []

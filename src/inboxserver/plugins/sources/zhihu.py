@@ -35,10 +35,27 @@ def parse_zhihu_collections(body_text: str) -> list[Bookmark]:
     items: list[Bookmark] = []
     for entry in data.get("data", []):
         content = entry.get("content") or entry
-        url = content.get("url")
-        if url:
-            title = content.get("title", "") or url
-            items.append(Bookmark(url=url, title=title))
+        # 按类型取 url+title（复刻老 dispatcher export_zhihu.mjs：answer→question.title，
+        # article→content.title，兜底 excerpt；避免 title 缺失回退成 url）
+        entry_type = content.get("type", "")
+        url = content.get("url", "")
+        title = ""
+        if entry_type == "answer":
+            question = content.get("question") or {}
+            if not url:
+                url = f"https://www.zhihu.com/question/{question.get('id', '')}/answer/{content.get('id', '')}"
+            title = question.get("title") or content.get("excerpt") or ""
+        elif entry_type == "article":
+            if not url:
+                url = f"https://zhuanlan.zhihu.com/p/{content.get('id', '')}"
+            title = content.get("title") or content.get("excerpt") or ""
+        else:
+            title = content.get("title") or content.get("excerpt") or entry_type
+        if not url:
+            continue
+        if len(title) > 100:
+            title = title[:100] + "..."
+        items.append(Bookmark(url=url, title=title or url))
     return items
 
 
