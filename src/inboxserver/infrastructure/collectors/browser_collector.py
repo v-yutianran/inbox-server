@@ -24,7 +24,7 @@ if TYPE_CHECKING:
         IncrementalBaselineRepo,
     )
 
-_BROWSER_NAMES = ("zhihu", "inoreader", "bilibili", "youtube")
+_BROWSER_NAMES = ("zhihu", "inoreader", "bilibili", "bilibili_toview", "youtube")
 
 
 @dataclass
@@ -106,11 +106,13 @@ async def collect_browser_sources(
     from inboxserver.plugins.login_strategies.bilibili import BILI_BASE
     from inboxserver.plugins.login_strategies.zhihu import ZHIHU_BASE
     from inboxserver.plugins.sources.bilibili import BilibiliSource
+    from inboxserver.plugins.sources.bilibili_toview import BilibiliToviewSource
     from inboxserver.plugins.sources.zhihu import ZhihuSource
 
     for name, cls, base in [
         ("zhihu", ZhihuSource, ZHIHU_BASE),
         ("bilibili", BilibiliSource, BILI_BASE),
+        ("bilibili_toview", BilibiliToviewSource, BILI_BASE),
     ]:
         cfg = enabled.get(name)
         if cfg and cfg.config.get("credential_name"):

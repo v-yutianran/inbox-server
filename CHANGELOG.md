@@ -2,6 +2,19 @@
 
 ## 2026-06-28
 
+### feat(bilibili)：新增「稍后再看」source（bilibili_toview）
+
+新增 `BilibiliToviewSource`（独立于「我的收藏」BilibiliSource）：
+- 抓 `/x/v2/history/toview/web`（无分页全量 ~349）→ bvid → 入队 link
+- 独立 baseline（`bilibili_toview`，与 fav 分开）；credential 复用 `bilibili_creds`，platform 复用 `bilibili`（同 SESSDATA cookie）
+- `channels.py` 加 `BilibiliToviewSourceConfig(credential_name)`（P1-6 校验，无 media_id）+ 路由
+- `browser_collector.py` fetch sources 循环加 `bilibili_toview`（同 bilibili：Scraper fetch_via_page + cast(Source)）
+- 单测：parse + collect 增量去重 + 独立 baseline 验证
+
+**如何验证**：`uv run pytest tests/unit/plugins/test_bilibili_toview_source.py` → 4 passed；全量 151 passed 无回归
+
+---
+
 ### feat(bilibili)：collect 翻页增量（pn 循环 + 整页 known 停）
 
 `BilibiliSource.collect` 之前只抓第一页（`pn=1, ps=20`，20 条），新增 >20 或在第 2 页后漏抓。改为翻页（pn=1..MAX_PAGES，复刻 zhihu 范式）：

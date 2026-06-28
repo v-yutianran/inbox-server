@@ -61,6 +61,10 @@ class BilibiliSourceConfig(BaseModel):
     media_id: str
 
 
+class BilibiliToviewSourceConfig(BaseModel):
+    credential_name: str
+
+
 class InoreaderSourceConfig(BaseModel):
     credential_name: str
 
@@ -88,6 +92,7 @@ _SOURCE_CONFIG_MODELS: dict[str, type[BaseModel]] = {
     "dida": DidaSourceConfig,
     "zhihu": ZhihuSourceConfig,
     "bilibili": BilibiliSourceConfig,
+    "bilibili_toview": BilibiliToviewSourceConfig,
     "inoreader": InoreaderSourceConfig,
     "youtube": YoutubeSourceConfig,
 }
