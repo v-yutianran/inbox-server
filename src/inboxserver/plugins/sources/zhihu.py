@@ -18,7 +18,6 @@ from inboxserver.infrastructure.persistence.repositories.baseline import Increme
 from inboxserver.infrastructure.queue.repository import RedisQueueRepository
 from inboxserver.plugins.contracts import CollectResult, SourceKind
 
-
 MAX_PAGES = 200  # 分页上限（防无限；对齐老 dispatcher 最多 ~4000 条）
 
 
@@ -43,7 +42,10 @@ def parse_zhihu_collections(body_text: str) -> list[Bookmark]:
         if entry_type == "answer":
             question = content.get("question") or {}
             if not url:
-                url = f"https://www.zhihu.com/question/{question.get('id', '')}/answer/{content.get('id', '')}"
+                url = (
+                    f"https://www.zhihu.com/question/{question.get('id', '')}"
+                    f"/answer/{content.get('id', '')}"
+                )
             title = question.get("title") or content.get("excerpt") or ""
         elif entry_type == "article":
             if not url:
@@ -94,7 +96,10 @@ class ZhihuSource:
             all_new: list[Bookmark] = []
             offset = 0
             for _ in range(MAX_PAGES):  # 最多 MAX_PAGES 页防无限
-                api_path = f"/api/v4/collections/{self._collection_id}/items?offset={offset}&limit=20"
+                api_path = (
+                    f"/api/v4/collections/{self._collection_id}/items"
+                    f"?offset={offset}&limit=20"
+                )
                 result = await self._fetch_with_relogin(api_path)
                 body = result.get("body", "")
                 bookmarks = parse_zhihu_collections(body)

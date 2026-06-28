@@ -2,6 +2,21 @@
 
 ## 2026-06-28
 
+### chore(ruff)：清理 main 既有 5 个 lint errors（CI ruff step 转绿）
+
+main 既有 5 个 ruff errors（PR #4 标注过，非任一功能 PR 引入），致 CI ruff step 一直红。本次清零：
+
+- **I001 import 组织**：`zhihu.py`（`ruff --fix` 自动）
+- **E501 长行拆分**：`settings.py:32` / `dida.py:51`（注释换行）、`zhihu.py:45,96`（f-string 括号续行，不改逻辑）
+
+**如何验证**：
+- `uv run ruff check src/inboxserver tests scripts` → **All checks passed**（0 error）
+- `uv run mypy src/inboxserver` → Success（0 issue）
+- `uv run pytest tests/unit tests/integration` → **146 passed**
+- CI 三关（ruff / mypy / pytest）首次全绿
+
+---
+
 ### docs：更新 CLAUDE.md 工作流 + roadmap 状态
 
 - **CLAUDE.md Git 工作流**：明确 `main`=开发分支（CI/CD 持续集成/构建）、`release`=稳定分支（手动管理）；PR 提交后**自动 code review + merge**（无需人工放行，`gh pr merge --squash --delete-branch`）

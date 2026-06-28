@@ -48,7 +48,8 @@ class DidaSource:
         for task in tasks:
             title = task.get("title", "")
             content = task.get("content", "")
-            # 复刻老 dispatcher.extract_url_and_title：从标题/内容提取 url + 干净标题（剥离 md 链接）
+            # 复刻老 dispatcher.extract_url_and_title：
+            # 从标题/内容提取 url + 干净标题（剥离 md 链接）
             url, clean_title = extract_url_and_title(title, content)
             task_id = task.get("id")
             project_id = task.get("projectId")
