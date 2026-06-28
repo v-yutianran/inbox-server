@@ -2,6 +2,16 @@
 
 ## 2026-06-28
 
+### docs：CLAUDE.md 补 inoreader 经验（凭据两类 + key 去重）
+
+inoreader 完整流程验证后经验沉淀（CLAUDE.md 注意事项 11-12）：
+- **凭据两类**（11）：cookie 类（zhihu `z_c0` / bilibili `SESSDATA` → `POST /login`）vs session 类（inoreader/youtube 全 storage_state → `import_credentials.py` + `state-save`）；db 在 docker（不暴露端口），凭据写入 `docker compose cp` + worker inline python 连内部 db
+- **inoreader key 去重**（12）：baseline `save_known` 存 key（DOM article id），`new` 用 key 对比——改去重前先确认 save 行存 key 还是 url，避免误判
+
+**如何验证**：inoreader collect `/starred` → 30 link 入队 → cubox（端到端跑通）；增量去重 key 对比正确（`inoreader.py:104` new + `:115` save 一致）
+
+---
+
 ### docs：CLAUDE.md 沉淀会话经验 + 脚本部署顺序 + roadmap B站标记
 
 本次会话经验沉淀（方便复用）：
