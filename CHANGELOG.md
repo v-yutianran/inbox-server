@@ -2,6 +2,20 @@
 
 ## 2026-06-28
 
+### security：开源前脱敏 settings.py（移除硬编码真实邮箱）
+
+开源准备：`settings.py` 的 `email_to` 默认值含真实 QQ 邮箱，属源码常量（.gitignore 管不到），开源会泄露。
+
+- `email_to` 默认值 → `""`（部署者 `.env` 配 `INBOX_EMAIL_TO`）
+- 注释里的真实邮箱移除；「QQ SMTP」注释改中性（实际默认网易 163）
+- `test_email_notifier` 用 monkeypatch mock `email_to`，改默认值不影响测试
+
+**如何验证**：ruff / mypy passed；pytest **146 passed**；grep 真实邮箱 = 0
+
+> ⚠️ 历史 2 个 commit（54311f4/485c46f）的 settings.py 仍含旧邮箱，开源前需 `git filter-repo` 清理历史（见后续）。
+
+---
+
 ### docs：CLAUDE.md 固化「禁 rebase，统一 merge」工作流
 
 用户偏好纠正：曾用 `git rebase` 解冲突 + `gh pr merge --squash`，现统一为 merge。
