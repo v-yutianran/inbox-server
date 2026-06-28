@@ -2,6 +2,20 @@
 
 ## 2026-06-28
 
+### fix(bilibili)：B站收集链路修复（example 模板 + worker Xvfb lock 根因）
+
+验证 B站收藏流程时发现并修复 2 个问题：
+
+1. **`channels.yaml.example` 补 bilibili 模板**：原文档缺 bilibili 模板，用户照 zhihu 误用 `collection_id`（BilibiliSource 实际读 `media_id`）→ KeyError。补 bilibili 模板（`media_id`，注释标明非 collection_id）
+2. **`docker-compose.yml` worker Xvfb lock 修复（根因）**：worker 重启时 `/tmp/.X99-lock` 残留 → 新 Xvfb「Server is already active」起不来 → chromium 无法 launch → 所有 browser 源 collect 静默失败。command 前加 `rm -f /tmp/.X99-lock /tmp/.X11-unix/X99`
+
+**如何验证**（端到端跑通）：
+- POST `/login/bilibili/cookie`（SESSDATA）+ channels.yaml 启用 bilibili（`media_id=994333594`）
+- force-recreate worker（清残留 lock）→ bilibili collect 抓 **20 条**收藏入队 link
+- consumer 消费 → **17 条 cubox POST 200 OK**；`/queue` link `done=84`
+
+---
+
 ### security：开源前脱敏 settings.py（移除硬编码真实邮箱）
 
 开源准备：`settings.py` 的 `email_to` 默认值含真实 QQ 邮箱，属源码常量（.gitignore 管不到），开源会泄露。

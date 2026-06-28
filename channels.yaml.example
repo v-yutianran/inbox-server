@@ -12,6 +12,11 @@ sources:
   #   enabled: false
   #   kind: BROWSER
   #   config: {collection_id: "你的收藏夹ID", credential_name: "zhihu_creds"}
+  # bilibili:  # 浏览器源：需先 POST /login/bilibili/cookie 配 SESSDATA
+  #   enabled: false
+  #   kind: BROWSER
+  #   config: {media_id: "你的B站收藏夹ID", credential_name: "bilibili_creds"}
+  #   # 注意：B站用 media_id（收藏夹 ID），不是 collection_id（那是知乎的 key）
 
 destinations:
   cubox:
