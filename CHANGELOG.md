@@ -2,6 +2,16 @@
 
 ## 2026-06-28
 
+### fix(youtube)：collect 加 wait_for_selector（冷启动）+ 抓「点赞」(LL)
+
+YouTubeSource collect 两个问题修复：
+1. **冷启动 wait**：`goto networkidle` 后加 `wait_for_selector`（`ytd-playlist-video-renderer` 等，timeout 10s）—— YouTube SPA 冷启动 DOM 渲染慢，不等会抓空（曾因此 collect 首次 `enqueued {}`，热了才 100）
+2. **加「点赞」(LL)**：collect 循环抓 `WL`（稍后观看）+ `LL`（点赞）两个 playlist，合并去重（之前只 WL，用户要的「点赞」没抓）
+
+**如何验证**：worker collect youtube → `enqueued {link: 100}`（WL）→ cubox；冷启动 wait 后不再 `{}`；3 单测 passed；全量 151 无回归
+
+---
+
 ### docs：CLAUDE.md 补 inoreader 经验（凭据两类 + key 去重）
 
 inoreader 完整流程验证后经验沉淀（CLAUDE.md 注意事项 11-12）：

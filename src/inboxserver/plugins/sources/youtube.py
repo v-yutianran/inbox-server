@@ -1,4 +1,4 @@
-"""YouTube 来源（浏览器源）：DOM 抓 WL playlist → video_id → 入队 link。
+"""YouTube 来源（浏览器源）：DOM 抓「稀后观看」(WL) + 「点赞」(LL) → video_id → 入队 link。
 
 YouTube Watch Later 被 Data API 锁死（2016 起 WL 返回空），只能浏览器 DOM 抓。
 多套容器选择器兜底（YouTube DOM 常变）。MVP 首屏（滚动加载 TODO）。
@@ -69,22 +69,33 @@ class YouTubeSource:
         ctx = await self._pool.context_for("youtube", storage_state)
         page = await ctx.new_page()
         try:
-            await page.goto(f"{YT_BASE}/playlist?list=WL", wait_until="networkidle")
-            if "accounts.google.com" in page.url:
-                await self._session.mark_expired("youtube")
-                return CollectResult(meta={"platform": "youtube", "error": "未登录"})
-            # 无限滚动加载：循环 evaluate + 滚动到底 + wait，累积去重直到无新内容
-            items = []
+            # 抓「稍后观看」(WL) + 「点赞」(LL) 两个 playlist，合并去重
+            items: list[dict] = []
             seen: set[str] = set()
-            for _ in range(20):
-                batch = await page.evaluate(_VIDEO_SELECT)
-                fresh = [i for i in batch if i["id"] not in seen]
-                if not fresh:
-                    break
-                items.extend(fresh)
-                seen.update(i["id"] for i in fresh)
-                await page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-                await page.wait_for_timeout(2000)
+            for list_id in ("WL", "LL"):
+                await page.goto(f"{YT_BASE}/playlist?list={list_id}", wait_until="networkidle")
+                if "accounts.google.com" in page.url:
+                    await self._session.mark_expired("youtube")
+                    return CollectResult(meta={"platform": "youtube", "error": "未登录"})
+                # 等 renderers 渲染（YouTube SPA 冷启动慢，networkidle 后 DOM 可能还没出来，
+                # 不等会抓空——曾因此 collect enqueued {}）
+                try:
+                    await page.wait_for_selector(
+                        "ytd-playlist-video-renderer,ytd-playlist-panel-video-renderer,ytd-rich-item",
+                        timeout=10000,
+                    )
+                except Exception:
+                    pass  # timeout 不阻塞（可能空列表或改版）
+                # 无限滚动加载：循环 evaluate + 滚动到底 + wait，累积去重直到无新内容
+                for _ in range(20):
+                    batch = await page.evaluate(_VIDEO_SELECT)
+                    fresh = [i for i in batch if i["id"] not in seen]
+                    if not fresh:
+                        break
+                    items.extend(fresh)
+                    seen.update(i["id"] for i in fresh)
+                    await page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+                    await page.wait_for_timeout(2000)
         except Exception as e:
             return CollectResult(meta={"platform": "youtube", "error": repr(e)})
         finally:
