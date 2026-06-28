@@ -137,3 +137,5 @@ uv run pytest -m e2e
 8. **baseline 防重复**（新 source 启用）：跑 `scripts/init_<source>_baseline.py` 预填全量 → 避免首次 collect 全量重复 cubox。**部署顺序**：`stop worker → 跑 baseline 脚本 → start worker`（避免 collect 与脚本并发竞态致首次全量）
 9. **B站双 source**：`bilibili`（我的收藏，fav `media_id`，翻页增量）+ `bilibili_toview`（稀后再看，无 `media_id`，credential 复用 `bilibili_creds`，独立 baseline）
 10. **邮件通知用网易 163**（非 QQ）：`settings.smtp_host` 默认 `smtp.163.com`；`.env` 配 `INBOX_SMTP_PASS`（163 授权码）+ `INBOX_SMTP_USER`（163 邮箱）+ `INBOX_EMAIL_TO`（收件）
+11. **browser 源凭据两类**：① **cookie 类**（zhihu `z_c0` / bilibili `SESSDATA`）→ `POST /login/{platform}/cookie`；② **session 类**（inoreader / youtube，全 storage_state）→ `scripts/import_credentials.py`（playwright `state-save` → vault）。db 在 docker（postgres 不暴露端口），本机连不到 → 凭据写入用 `docker compose cp state.json worker:` + worker 容器跑 inline python 连内部 db。persistent session 已登录可免手动登录
+12. **inoreader 增量去重用 key**（DOM article id），非 url——baseline `save_known` 存 key（`{i["key"]}`），`new` 用 key 对比。改去重逻辑前**先确认 save 行存的是 key 还是 url**，避免误判（曾因此误报 bug）
