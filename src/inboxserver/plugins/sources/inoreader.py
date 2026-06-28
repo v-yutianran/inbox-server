@@ -81,7 +81,7 @@ class InoreaderSource:
                 pass  # timeout 不阻塞（可能无文章或改版）
             # 无限滚动加载：循环 evaluate + 滚动到底 + wait，累积去重直到无新内容
             items = []
-            seen = set()
+            seen: set[str] = set()
             for _ in range(20):
                 batch = await page.evaluate(_ARTICLE_SELECT)
                 fresh = [i for i in batch if i.get("key") and i["key"] not in seen]

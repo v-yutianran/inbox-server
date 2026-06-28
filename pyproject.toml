@@ -59,3 +59,11 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.lint.per-file-ignores]
 # 测试中 mock URL/response 行长放宽（respx/httpx mock 常超 100）
 "tests/*" = ["E501"]
+
+[tool.mypy]
+# src layout 命门：mypy_path 让 inboxserver 解析到 src/inboxserver，
+# explicit_package_bases 避免 "src.inboxserver.x" vs "inboxserver.x" 重复命名（P2-10）。
+# 配合后可直接 `mypy inboxserver`（包名），CI 不再需要 || true。
+mypy_path = "src"
+explicit_package_bases = true
+ignore_missing_imports = true

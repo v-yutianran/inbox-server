@@ -37,7 +37,7 @@ def extract_first_url(text: str) -> str | None:
     return m.group(1).strip().rstrip(".,);]") if m else None
 
 
-def extract_url_and_title(title: str, content: str = "") -> tuple[str | None, str]:
+def extract_url_and_title(title: str, content: str = "") -> tuple[str | None, str | None]:
     """从（任务）标题/内容提取 (url, 干净标题)，复刻 inbox_dispatcher.extract_url_and_title。
 
     4 分支（优先级递减），保证 cubox 书签标题不再残留原始 md 链接格式：

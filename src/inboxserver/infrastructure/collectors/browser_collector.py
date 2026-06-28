@@ -7,12 +7,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
 
 import structlog
 
 from inboxserver.config.channels import ChannelsConfig
 from inboxserver.infrastructure.queue.repository import RedisQueueRepository
-from inboxserver.plugins.contracts import CollectResult
+from inboxserver.plugins.contracts import CollectResult, Source
+
+if TYPE_CHECKING:
+    # 仅类型检查时 import（运行时这些类在 _create_browser_deps 内延迟 import，
+    # 避免 server 无 playwright 时 import 崩）
+    from inboxserver.infrastructure.browser.pool import BrowserPool
+    from inboxserver.infrastructure.browser.session_manager import LoginSessionManager
+    from inboxserver.infrastructure.persistence.repositories.baseline import (
+        IncrementalBaselineRepo,
+    )
 
 _BROWSER_NAMES = ("zhihu", "inoreader", "bilibili", "youtube")
 
@@ -21,9 +31,9 @@ _BROWSER_NAMES = ("zhihu", "inoreader", "bilibili", "youtube")
 class _BrowserDeps:
     """浏览器源共享依赖（_create_browser_deps 产出，各 source 共用）。"""
 
-    sm: object  # LoginSessionManager
-    pool: object  # BrowserPool
-    baseline_repo: object  # IncrementalBaselineRepo
+    sm: LoginSessionManager
+    pool: BrowserPool
+    baseline_repo: IncrementalBaselineRepo
     llm_key: str
 
 
@@ -105,10 +115,12 @@ async def collect_browser_sources(
         cfg = enabled.get(name)
         if cfg and cfg.config.get("credential_name"):
             scraper = Scraper(deps.pool, base)
-            src = cls(
+            # cast(Source)：cls 是动态 source 类（type[object]），构造返回 object，
+            # cast 到 Source 协议让 .collect() 通过检查（运行时 cls 确为 Source 实现）
+            src = cast(Source, cls(
                 cfg.config, deps.sm, scraper, queue_repo, http,
                 deps.llm_key, deps.baseline_repo,
-            )
+            ))
             # P2-9：绑定 source 上下文，src.collect 内部日志自动带 source（merge_contextvars）
             with structlog.contextvars.bound_contextvars(source=name):
                 results[name] = _result_dict(await src.collect())
@@ -117,15 +129,17 @@ async def collect_browser_sources(
     from inboxserver.plugins.sources.inoreader import InoreaderSource
     from inboxserver.plugins.sources.youtube import YouTubeSource
 
-    for name, cls in [("inoreader", InoreaderSource), ("youtube", YouTubeSource)]:
+    for name, dcls in [("inoreader", InoreaderSource), ("youtube", YouTubeSource)]:
         cfg = enabled.get(name)
         if cfg and cfg.config.get("credential_name"):
-            src = cls(
+            # 独立命名 dcls/dsrc：避免与 fetch 循环的 cls/src 合并类型（mypy 会把同名
+            # for 变量合并，导致 dom 构造套用 fetch 的 Scraper 签名）
+            dsrc = cast(Source, dcls(
                 cfg.config, deps.sm, deps.pool, queue_repo, http,
                 deps.llm_key, deps.baseline_repo,
-            )
+            ))
             # P2-9：绑定 source 上下文，src.collect 内部日志自动带 source
             with structlog.contextvars.bound_contextvars(source=name):
-                results[name] = _result_dict(await src.collect())
+                results[name] = _result_dict(await dsrc.collect())
 
     return results

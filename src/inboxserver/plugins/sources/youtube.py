@@ -75,7 +75,7 @@ class YouTubeSource:
                 return CollectResult(meta={"platform": "youtube", "error": "未登录"})
             # 无限滚动加载：循环 evaluate + 滚动到底 + wait，累积去重直到无新内容
             items = []
-            seen = set()
+            seen: set[str] = set()
             for _ in range(20):
                 batch = await page.evaluate(_VIDEO_SELECT)
                 fresh = [i for i in batch if i["id"] not in seen]

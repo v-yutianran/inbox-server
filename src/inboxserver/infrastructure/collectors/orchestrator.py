@@ -38,8 +38,10 @@ async def run_collect(channels: ChannelsConfig, http, queue_redis, session) -> d
         )
         from inboxserver.plugins.sources.dida import DidaSource
 
-        src = DidaSource(enabled["dida"].config, http, queue_repo, DidaSyncStateRepo(session))
-        results["dida"] = _result_dict(await src.collect())
+        dida_src = DidaSource(
+            enabled["dida"].config, http, queue_repo, DidaSyncStateRepo(session)
+        )
+        results["dida"] = _result_dict(await dida_src.collect())
 
     return results
 

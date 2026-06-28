@@ -41,7 +41,7 @@ class BilibiliCookieLoginStrategy:
                     }
                 ]
             )
-            return await ctx.storage_state()
+            return {**await ctx.storage_state()}
         finally:
             await ctx.close()
 

@@ -6,6 +6,8 @@ Repository 接受 session 注入，测试用 sqlite 内存 session，不依赖�
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from inboxserver.config.settings import settings
@@ -15,7 +17,7 @@ engine = create_async_engine(settings.database_url, echo=False)
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
 
-async def get_session() -> AsyncSession:
-    """FastAPI 依赖：每请求一个 session。"""
+async def get_session() -> AsyncIterator[AsyncSession]:
+    """FastAPI 依赖：每请求一个 session（async generator）。"""
     async with async_session_factory() as session:
         yield session

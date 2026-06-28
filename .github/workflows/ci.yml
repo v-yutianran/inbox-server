@@ -24,5 +24,5 @@ jobs:
       # 测试（跳过 e2e，需真实凭据 + chromium）
       - run: uv run pytest tests/unit tests/integration -m "not e2e" --tb=short
 
-      # 类型检查（mypy）
-      - run: uv run mypy src/inboxserver --ignore-missing-imports || true
+      # 类型检查（mypy 硬门槛建：P2-10 修通 pyproject 配置 + 16 类型错误，去 || true）
+      - run: uv run mypy src/inboxserver
