@@ -39,7 +39,7 @@ services:
     # 不用 xvfb-run 作 PID1 包装：实测 xvfb-run 的 sh 作为容器 PID1 时，其 python 子进程不持久
     # （手动 docker exec 同命令能跑，PID1 却不行——PID1 进程组/信号差异吞掉子进程）
     # 改为手动后台起 Xvfb + exec python：runner 直接成为 PID1，信号直达，graceful shutdown 正常
-    command: ["sh", "-c", "Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp & export DISPLAY=:99 && exec /app/.venv/bin/python -m inboxserver.workers.runner"]
+    command: ["sh", "-c", "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp & export DISPLAY=:99 && exec /app/.venv/bin/python -m inboxserver.workers.runner"]
     healthcheck:
       # 进程级检查：runner 进程不在即 unhealthy（runner 作 PID1 崩即容器停 + restart 自动拉起）
       test: ["CMD-SHELL", "pgrep -f 'inboxserver.workers.runner' >/dev/null || exit 1"]
