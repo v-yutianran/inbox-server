@@ -73,6 +73,10 @@ class YoutubeSourceConfig(BaseModel):
     credential_name: str
 
 
+class GitHubStarsSourceConfig(BaseModel):
+    token: str
+
+
 class CuboxDestinationConfig(BaseModel):
     api_url: str
 
@@ -95,6 +99,7 @@ _SOURCE_CONFIG_MODELS: dict[str, type[BaseModel]] = {
     "bilibili_toview": BilibiliToviewSourceConfig,
     "inoreader": InoreaderSourceConfig,
     "youtube": YoutubeSourceConfig,
+    "github_stars": GitHubStarsSourceConfig,
 }
 _DESTINATION_CONFIG_MODELS: dict[str, type[BaseModel]] = {
     "cubox": CuboxDestinationConfig,

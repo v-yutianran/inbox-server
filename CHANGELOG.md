@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2026-06-29
+
+### feat(github)：新增 GitHub Star source 入队 Cubox
+
+新增 `github_stars` API source：
+- 使用 `GITHUB_TOKEN` 读取当前 GitHub 账号 Star 仓库
+- 首次启用时分页导入历史全部 Star，后续通过 `incremental_baselines` 只收新增 Star
+- 入队为 link payload：`url=html_url`、`title=full_name`、`tags=[]`，复用现有 Cubox 分发和 GitHub 标签逻辑
+- 新增 OpenSpec 变更 `add-github-stars-source`
+
+**如何验证**：
+- `uv run ruff check src/inboxserver tests scripts` → passed
+- `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 158 passed（8 个既有浏览器 source 测试 warning）
+- `uv run mypy src/inboxserver --ignore-missing-imports` → passed
+- `openspec validate add-github-stars-source` → valid
+
 ## 2026-06-28
 
 ### fix(youtube)：_VIDEO_SELECT 标题误抓时长（改 #video-title / h3 a）

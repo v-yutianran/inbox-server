@@ -54,6 +54,23 @@ def test_validate_zhihu_requires_both_fields(tmp_path):
         load_channels(p)
 
 
+def test_validate_github_stars_requires_token(tmp_path):
+    """GitHub Star source 启用时必须配置 token。"""
+    p = _write_channels(tmp_path, sources={"github_stars": {"enabled": True, "config": {}}})
+    with pytest.raises(ValueError, match="github_stars"):
+        load_channels(p)
+
+
+def test_validate_github_stars_complete_ok(tmp_path):
+    """GitHub Star source 配置 token 后可正常加载。"""
+    p = _write_channels(
+        tmp_path,
+        sources={"github_stars": {"enabled": True, "config": {"token": "ghp_test"}}},
+    )
+    cfg = load_channels(p)
+    assert "github_stars" in cfg.enabled_sources()
+
+
 def test_validate_destination_missing_field_raises(tmp_path):
     """启用 cubox 但缺 api_url → fail-fast。"""
     p = _write_channels(

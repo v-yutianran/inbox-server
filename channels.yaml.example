@@ -8,6 +8,9 @@ sources:
   dida:
     enabled: true
     config: {access_token: "${DIDA365_ACCESS_TOKEN}"}
+  github_stars:
+    enabled: true
+    config: {token: "${GITHUB_TOKEN}"}
   # zhihu:  # 浏览器源：需先 POST /login/zhihu/cookie 配 z_c0（阶段3 命门已验证）
   #   enabled: false
   #   kind: BROWSER

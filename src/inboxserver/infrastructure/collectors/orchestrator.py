@@ -1,4 +1,4 @@
-"""收集编排：API 源（telegram/dida）→ 入队。
+"""收集编排：API 源（telegram/dida/github_stars）→ 入队。
 
 browser 源（zhihu/inoreader/bilibili/youtube）已抽到 browser_collector.py，在 worker
 （有 Xvfb+chromium）跑——server 无 DISPLAY，不在此调用（会崩在 chromium.launch）。
@@ -12,7 +12,7 @@ from inboxserver.plugins.contracts import CollectResult
 
 
 async def run_collect(channels: ChannelsConfig, http, queue_redis, session) -> dict[str, dict]:
-    """跑启用的 API 源（telegram/dida）collect，返回每个 source 结果摘要。
+    """跑启用的 API 源（telegram/dida/github_stars）collect，返回每个 source 结果摘要。
 
     browser 源由 worker 定时跑（browser_collector.collect_browser_sources），不在 server。
     """
@@ -42,6 +42,20 @@ async def run_collect(channels: ChannelsConfig, http, queue_redis, session) -> d
             enabled["dida"].config, http, queue_repo, DidaSyncStateRepo(session)
         )
         results["dida"] = _result_dict(await dida_src.collect())
+
+    if "github_stars" in enabled and enabled["github_stars"].config.get("token"):
+        from inboxserver.infrastructure.persistence.repositories.baseline import (
+            IncrementalBaselineRepo,
+        )
+        from inboxserver.plugins.sources.github_stars import GitHubStarsSource
+
+        github_src = GitHubStarsSource(
+            enabled["github_stars"].config,
+            http,
+            queue_repo,
+            IncrementalBaselineRepo(session),
+        )
+        results["github_stars"] = _result_dict(await github_src.collect())
 
     return results
 
