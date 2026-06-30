@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 2026-07-01
+
+### docs(agent)：新增 AGENTS.md 并将 CLAUDE.md 改为入口软链接
+
+项目协作规则入口迁移：
+- 新增 `AGENTS.md` 作为项目长期规则入口
+- 将 `CLAUDE.md` 改为指向 `AGENTS.md` 的软链接，避免多份 agent 规则漂移
+- 运行 GitNexus analyze，并保留 `AGENTS.md` 中自动追加的索引信息块
+
+**如何验证**：
+- `test -f AGENTS.md && test -L CLAUDE.md && test "$(readlink CLAUDE.md)" = "AGENTS.md"` → passed
+- `git diff --cached --check` → passed
+- `npx gitnexus detect-changes --scope staged --repo inbox-server` → low risk
+
 ## 2026-06-29
 
 ### feat(github)：新增 GitHub Star source 入队 Cubox
