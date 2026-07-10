@@ -1,7 +1,6 @@
-"""滴答清单来源（API 源）：inbox 全量拉 → 提取 url 入队 → DELETE 任务。
+"""滴答清单来源（API 源）：inbox 全量拉 → 提取 url 入队 → DELETE 链接任务。
 
-含 url 的任务入 link 队列；saved_titles 去重；无论是否含 url 都 DELETE 收集箱任务
-（保持收集箱干净）。语义同 inbox_sync.sync_dida365。
+含 url 的任务入 link 队列并清理；非链接任务留在收集箱，避免误删用户待办。
 """
 
 from __future__ import annotations
@@ -51,9 +50,11 @@ class DidaSource:
             # 复刻老 dispatcher.extract_url_and_title：
             # 从标题/内容提取 url + 干净标题（剥离 md 链接）
             url, clean_title = extract_url_and_title(title, content)
+            if not url:
+                continue
             task_id = task.get("id")
             project_id = task.get("projectId")
-            # DELETE 收集箱任务（清理，无论是否含 url —— 与现有 sync_dida365 一致）
+            # 只清理链接任务；非链接任务可能是用户真实待办，必须保留在滴答收集箱。
             if task_id and project_id:
                 try:
                     await self._http.delete(
@@ -61,7 +62,7 @@ class DidaSource:
                     )
                 except Exception:
                     pass
-            if url and title not in saved:
+            if title not in saved:
                 await self._queue.enqueue(
                     # clean_title 为空（裸 url 场景）时回退 url，保证标题非空
                     ItemKind.LINK, {"url": url, "title": clean_title or url, "tags": []}

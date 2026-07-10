@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 2026-07-11
+
+### fix(dida)：非链接任务不再被收集器删除
+
+滴答清单收集箱只处理含 URL 的任务：
+- 非链接任务保留在滴答收集箱，不入队、不删除、不写入去重状态
+- 已处理过的链接任务再次出现时仍会清理，但不会重复入队
+
+**如何验证**：
+- `uv run pytest tests/unit/plugins/test_dida_source.py --tb=short` → passed
+- `uv run pytest tests/unit/plugins/test_dida_source.py tests/unit/domain/policy/test_urls.py --tb=short` → 11 passed
+- `uv run ruff check src/inboxserver tests scripts` → passed
+- `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 160 passed（8 个既有 warning）
+- `uv run mypy src/inboxserver --ignore-missing-imports` → passed
+
 ## 2026-07-01
 
 ### docs(agent)：新增 AGENTS.md 并将 CLAUDE.md 改为入口软链接
