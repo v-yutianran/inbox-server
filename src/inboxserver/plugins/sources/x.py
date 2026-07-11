@@ -169,7 +169,7 @@ class XPlaywrightSource:
         timelines = await self._build_timelines(page)
         tweets_by_source: dict[str, list[XTweet]] = {}
         for timeline in timelines:
-            await page.goto(timeline.url, wait_until="networkidle")
+            await page.goto(timeline.url, wait_until="domcontentloaded")
             if is_x_login_url(page.url):
                 await self._session.mark_expired("x", "未登录")
                 raise RuntimeError("未登录")

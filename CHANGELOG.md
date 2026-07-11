@@ -2,6 +2,13 @@
 
 ## 2026-07-11
 
+### fix(x)：时间线导航不再等待网络完全空闲
+
+X 页面存在持续网络请求，`networkidle` 会导致收藏和喜欢列表导航超时。时间线改为在 DOM 就绪后开始等待 tweet 元素，避免首轮采集返回空结果。
+
+**如何验证**：
+- `uv run pytest tests/unit/plugins/test_x_source.py::test_scrape_timelines_does_not_wait_for_network_idle --tb=short` → passed
+
 ### feat(x)：新增 X 收藏和喜欢列表 Playwright source
 
 新增 `x_bookmarks` / `x_likes` browser source：
