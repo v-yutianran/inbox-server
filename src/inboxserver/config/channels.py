@@ -73,6 +73,15 @@ class YoutubeSourceConfig(BaseModel):
     credential_name: str
 
 
+class XBookmarksSourceConfig(BaseModel):
+    credential_name: str
+
+
+class XLikesSourceConfig(BaseModel):
+    credential_name: str
+    username: str | None = None
+
+
 class GitHubStarsSourceConfig(BaseModel):
     token: str
 
@@ -99,6 +108,8 @@ _SOURCE_CONFIG_MODELS: dict[str, type[BaseModel]] = {
     "bilibili_toview": BilibiliToviewSourceConfig,
     "inoreader": InoreaderSourceConfig,
     "youtube": YoutubeSourceConfig,
+    "x_bookmarks": XBookmarksSourceConfig,
+    "x_likes": XLikesSourceConfig,
     "github_stars": GitHubStarsSourceConfig,
 }
 _DESTINATION_CONFIG_MODELS: dict[str, type[BaseModel]] = {

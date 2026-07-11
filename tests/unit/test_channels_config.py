@@ -71,6 +71,23 @@ def test_validate_github_stars_complete_ok(tmp_path):
     assert "github_stars" in cfg.enabled_sources()
 
 
+def test_validate_x_bookmarks_requires_credential_name(tmp_path):
+    """X Bookmarks source 启用时必须配置 credential_name。"""
+    p = _write_channels(tmp_path, sources={"x_bookmarks": {"enabled": True, "config": {}}})
+    with pytest.raises(ValueError, match="x_bookmarks"):
+        load_channels(p)
+
+
+def test_validate_x_likes_accepts_optional_username(tmp_path):
+    """X Likes source 可只配置 credential_name；username 未填时运行期自动识别。"""
+    p = _write_channels(
+        tmp_path,
+        sources={"x_likes": {"enabled": True, "config": {"credential_name": "x_creds"}}},
+    )
+    cfg = load_channels(p)
+    assert "x_likes" in cfg.enabled_sources()
+
+
 def test_validate_destination_missing_field_raises(tmp_path):
     """启用 cubox 但缺 api_url → fail-fast。"""
     p = _write_channels(

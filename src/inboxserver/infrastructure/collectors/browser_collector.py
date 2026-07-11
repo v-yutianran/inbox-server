@@ -1,4 +1,4 @@
-"""browser 源收集（zhihu/inoreader/bilibili/youtube）：在 worker（有 Xvfb+chromium）跑。
+"""browser 源收集（zhihu/inoreader/bilibili/youtube/X）：在 worker（有 Xvfb+chromium）跑。
 
 从 orchestrator 抽出（DRY）：server collect_job 不再调用（server 无 DISPLAY，chromium.launch
 会崩），由 worker 定时调用。逻辑等价迁移自 orchestrator._collect_browser_sources。
@@ -24,7 +24,15 @@ if TYPE_CHECKING:
         IncrementalBaselineRepo,
     )
 
-_BROWSER_NAMES = ("zhihu", "inoreader", "bilibili", "bilibili_toview", "youtube")
+_BROWSER_NAMES = (
+    "zhihu",
+    "inoreader",
+    "bilibili",
+    "bilibili_toview",
+    "youtube",
+    "x_bookmarks",
+    "x_likes",
+)
 
 
 @dataclass
@@ -55,6 +63,7 @@ async def _create_browser_deps(channels: ChannelsConfig, session) -> _BrowserDep
         )
         from inboxserver.plugins.login_strategies.bilibili import BilibiliCookieLoginStrategy
         from inboxserver.plugins.login_strategies.inoreader import InoreaderSessionLoginStrategy
+        from inboxserver.plugins.login_strategies.x import XSessionLoginStrategy
         from inboxserver.plugins.login_strategies.youtube import YouTubeSessionLoginStrategy
         from inboxserver.plugins.login_strategies.zhihu import ZhihuCookieLoginStrategy
 
@@ -70,6 +79,7 @@ async def _create_browser_deps(channels: ChannelsConfig, session) -> _BrowserDep
             "inoreader": InoreaderSessionLoginStrategy(pool),
             "bilibili": BilibiliCookieLoginStrategy(pool),
             "youtube": YouTubeSessionLoginStrategy(pool),
+            "x": XSessionLoginStrategy(pool),
         },
     )
     return _BrowserDeps(
@@ -129,6 +139,7 @@ async def collect_browser_sources(
 
     # dom sources（inoreader/youtube：pool DOM 抓取）
     from inboxserver.plugins.sources.inoreader import InoreaderSource
+    from inboxserver.plugins.sources.x import X_SOURCE_NAMES, XPlaywrightSource
     from inboxserver.plugins.sources.youtube import YouTubeSource
 
     for name, dcls in [("inoreader", InoreaderSource), ("youtube", YouTubeSource)]:
@@ -143,5 +154,19 @@ async def collect_browser_sources(
             # P2-9：绑定 source 上下文，src.collect 内部日志自动带 source
             with structlog.contextvars.bound_contextvars(source=name):
                 results[name] = _result_dict(await dsrc.collect())
+
+    x_configs: dict[str, dict] = {}
+    for name in X_SOURCE_NAMES:
+        cfg = enabled.get(name)
+        if cfg and cfg.config.get("credential_name"):
+            x_configs[name] = cfg.config
+    if x_configs:
+        xsrc = XPlaywrightSource(
+            x_configs, deps.sm, deps.pool, queue_repo, http,
+            deps.llm_key, deps.baseline_repo,
+        )
+        with structlog.contextvars.bound_contextvars(source="x"):
+            for name, result in (await xsrc.collect()).items():
+                results[name] = _result_dict(result)
 
     return results

@@ -1,11 +1,11 @@
 """从 playwright-cli default session 提取登录态 → 写入 inbox-server CredentialVault。
 
 用法（inbox-server 目录）：uv run python scripts/import_credentials.py
-前提：playwright-cli default session 已登录知乎/B站/inoreader/YouTube。
+前提：playwright-cli default session 已登录知乎/B站/inoreader/YouTube/X。
 
 提取：
   zhihu z_c0 / bilibili SESSDATA（单 cookie，LoginStrategy 注入时构造完整 cookie）
-  inoreader/youtube 全 storage_state（多 cookie，LoginStrategy 直接用）
+  inoreader/youtube/X 全 storage_state（多 cookie，LoginStrategy 直接用）
 """
 
 from __future__ import annotations
@@ -79,6 +79,23 @@ def extract_credentials(state: dict) -> dict[str, dict]:
             "payload": {"storage_state": {"cookies": yt, "origins": []}},
         }
 
+    x_cookies = [
+        c
+        for c in cookies
+        if "x.com" in c.get("domain", "") or "twitter.com" in c.get("domain", "")
+    ]
+    if x_cookies:
+        x_origins = [
+            o
+            for o in state.get("origins", [])
+            if "x.com" in o.get("origin", "") or "twitter.com" in o.get("origin", "")
+        ]
+        creds["x_creds"] = {
+            "platform": "x",
+            "kind": "session",
+            "payload": {"storage_state": {"cookies": x_cookies, "origins": x_origins}},
+        }
+
     return creds
 
 
@@ -107,7 +124,7 @@ async def main() -> None:
     if not creds:
         print(
             "⚠️ 未提取到任何平台凭证。请确认 default session 已登录 "
-            "知乎/B站/inoreader/YouTube（playwright-cli open 登录后持久化）。"
+            "知乎/B站/inoreader/YouTube/X（playwright-cli open 登录后持久化）。"
         )
         return
     print(f"→ 提取到 {len(creds)} 个平台: {list(creds)}")

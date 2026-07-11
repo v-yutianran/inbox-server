@@ -2,6 +2,22 @@
 
 ## 2026-07-11
 
+### feat(x)：新增 X 收藏和喜欢列表 Playwright source
+
+新增 `x_bookmarks` / `x_likes` browser source：
+- 使用 `x_creds` Playwright storage_state 登录态采集 X Bookmarks 与 Likes，不依赖 OAuth/API
+- 按 tweet id 使用 `incremental_baselines` 做全局去重，收藏和喜欢重叠时只入队一次并合并 `x-bookmarks`、`x-likes` 标签
+- 入队为现有 link payload，复用 Cubox 分发、限速和重试
+- `scripts/import_credentials.py` 支持提取 `x_creds`
+- 新增 `scripts/init_x_baseline.py`，首次启用前可预填 X tweet id baseline，避免重复转存
+- 新增 OpenSpec 变更 `add-x-playwright-source`
+
+**如何验证**：
+- `openspec validate add-x-playwright-source` → valid
+- `uv run ruff check src/inboxserver tests scripts` → passed
+- `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 169 passed（8 个既有 warning）
+- `uv run mypy src/inboxserver --ignore-missing-imports` → passed
+
 ### fix(dida)：非链接任务不再被收集器删除
 
 滴答清单收集箱只处理含 URL 的任务：
