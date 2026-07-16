@@ -2,6 +2,16 @@
 
 ## 2026-07-16
 
+### docs(agent)：Git 交付统一委托 git-manager
+
+- 移除项目级“禁止直接修改 main、所有任务强制 feature 分支 + PR、固定 merge 策略”等覆盖规则
+- 保留 `main` 开发分支与 `release` 稳定分支的项目事实，具体交付路径统一遵循全局 `git-manager` skill
+- 将自验门禁从“PR 前”改为“交付前”，保持现有验证命令不变
+
+**如何验证**：
+- `rg "禁止直接|所有改动走 feature|target 永远|禁用 git rebase|PR 前强制" AGENTS.md` → 无匹配
+- `git diff --check` → passed
+
 ### docs(openspec)：规划 Cubox 后置文章 Markdown 归档
 
 - 新增 OpenSpec 变更 `add-article-markdown-archive`，定义 Cubox 成功后独立归档文章型网页的行为

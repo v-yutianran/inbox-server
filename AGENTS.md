@@ -15,53 +15,15 @@
 
 ---
 
-## 🔴 Git 工作流硬规则（最高优先级）
+## Git 交付
 
-> **分支定位**：`main` = **开发分支**（CI/CD 持续集成/构建，PR 合入即触发）；`release` = **稳定分支**（手动管理，不自动动）。
-> **核心规则**：禁止直接在 `main` 改代码 → 所有改动走 feature 分支 + PR → **自动 code review（自验四件套）+ merge 到 main**。
-> 历史先例：PR #1–#7 全部走此流程。
-
-### 1. 分支命名
-
-`feat/*` · `fix/*` · `refactor/*` · `docs/*` · `test/*` · `chore/*`
-
-### 2. 标准流程（每个任务都走）
-
-```bash
-# ① 开工前自检：绝不在 main 上动手
-git branch --show-current          # 若输出 main → 必须先切分支
-
-# ② 基于最新 main 开分支（本地 main 可能落后远程，必须 fetch）
-git fetch origin
-git checkout -b feat/xxx origin/main
-
-# ③ 小步 commit（conventional commits + 中文正文，见下）
-# ④ 推送并开 PR（target=main）
-git push -u origin feat/xxx
-gh pr create --base main --title "feat(xxx): 简述" --body "..."
-# ⑤ 自动 code review（自验四件套全绿）+ merge 到 main
-#    冲突解法（禁用 rebase）：本地 `git merge origin/main` 产生 merge commit 解冲突
-# ⑥ merge 后删分支（merge commit 模式，禁用 squash/rebase）
-gh pr merge --merge --delete-branch
-```
-
-### 3. Commit 规范
-
-- 格式：`type(scope): 描述`（Conventional Commits），**描述与正文用中文**
-- `type`：`feat` / `fix` / `refactor` / `docs` / `test` / `chore` / `perf`
-- 一事一 commit，不堆砌；每个 commit 可独立通过自验
-
-### 4. PR 规范
-
-- **target 永远是 `main`**（开发分支；`release` 稳定分支手动管，不在此流程）
-- PR 前跑「自验四件套」全绿
-- PR 描述含：改了什么 / 如何验证 / 关联 change（openspec）
-- **PR 提交后自动 review + merge**：main 是开发分支（CI 把关），无需人工放行；`gh pr merge --merge --delete-branch`
-- **🔴 禁用 `git rebase`，统一 `merge`**：PR merge 用 `--merge`（不用 `--squash`/`--rebase`）；分支同步/解冲突用 `git merge origin/main`，保留 merge commit 历史、不改写提交
+- 分支定位：`main` 是开发分支，`release` 是手动维护的稳定分支。
+- 所有 Git/GitHub 状态检查、分支或 worktree、提交、推送、PR、CI、tag 和 Release 操作统一遵循全局 `git-manager` skill。
+- 本项目不额外强制 feature 分支、PR、分支命名或 merge 策略；由 `git-manager` 根据当前分支和用户意图选择交付路径。
 
 ---
 
-## 自验四件套（PR 前强制全绿）
+## 自验四件套（交付前强制全绿）
 
 ```bash
 # 1. lint（ruff）
@@ -127,20 +89,19 @@ uv run pytest -m e2e
 
 ## 注意事项
 
-1. **本地 main 易落后远程**：开分支务必 `git fetch origin` 后基于 `origin/main`，不要基于可能过时的本地 main
-2. **worker 必须 headed**：`playwright_runtime` 硬编码 `headless=False`（知乎等平台检测 headless 反爬），worker 靠 Xvfb 提供 `DISPLAY=:99`
-3. **runner 作 PID1**：worker 容器用 `exec` 让 runner 成为 PID1，信号直达 → graceful shutdown；不要用 `xvfb-run` 包 PID1（会吞子进程）
-4. **env 前缀 `INBOX_`**：pydantic-settings 读取，配置见 `.env` / `.env.example`
-5. **`channels.yaml` 是配置单一数据源**：来源启用 / 分发目标 / 限速参数集中于此，server 与 worker 共享（只读挂载）
-6. **alembic 管生产 schema**：server 启动先 `alembic upgrade head`，lifespan `create_all` 仅兜底；schema 改动必须生成迁移
-7. **browser 源调试**：collect 的 error 藏在 `meta`（`browser_collected` log 只记 `enqueued`，失败看不出来）——调试查 `login_sessions` 表（`status`/`last_error`）+ collect 返回的 `meta`；`docker exec` 调试 worker 要带 `-e DISPLAY=:99`（worker 的 Xvfb）
-8. **baseline 防重复**（新 source 启用）：跑 `scripts/init_<source>_baseline.py` 预填全量 → 避免首次 collect 全量重复 cubox。**部署顺序**：`stop worker → 跑 baseline 脚本 → start worker`（避免 collect 与脚本并发竞态致首次全量）
-9. **B站双 source**：`bilibili`（我的收藏，fav `media_id`，翻页增量）+ `bilibili_toview`（稀后再看，无 `media_id`，credential 复用 `bilibili_creds`，独立 baseline）
-10. **邮件通知用网易 163**（非 QQ）：`settings.smtp_host` 默认 `smtp.163.com`；`.env` 配 `INBOX_SMTP_PASS`（163 授权码）+ `INBOX_SMTP_USER`（163 邮箱）+ `INBOX_EMAIL_TO`（收件）
-11. **browser 源凭据两类**：① **cookie 类**（zhihu `z_c0` / bilibili `SESSDATA`）→ `POST /login/{platform}/cookie`；② **session 类**（inoreader / youtube，全 storage_state）→ `scripts/import_credentials.py`（playwright `state-save` → vault）。db 在 docker（postgres 不暴露端口），本机连不到 → 凭据写入用 `docker compose cp state.json worker:` + worker 容器跑 inline python 连内部 db。persistent session 已登录可免手动登录
-12. **inoreader 增量去重用 key**（DOM article id），非 url——baseline `save_known` 存 key（`{i["key"]}`），`new` 用 key 对比。改去重逻辑前**先确认 save 行存的是 key 还是 url**，避免误判（曾因此误报 bug）
-13. **YouTube 双 playlist DOM 差异**：WL（稀后观看）用 `ytd-playlist-video-renderer`，LL（点赞）用 `#contents` 内 DIV——`_VIDEO_SELECT` 抓 `#contents a[href*="watch?v="]` 兼容两者。collect `goto networkidle` 后加 `wait_for_selector`（YouTube SPA 冷启动 DOM 渲染慢，不等会抓空 `enqueued {}`）
-14. **consumer 限速**（link `120/6h` 窗口 + `480/日`，`runner.py` LIMITS）：**不消费时**查 redis `queue:link:ratelimit:*`（窗口 token >120 满）+ `queue:link:daily:*`（日计数）。**临时忽略限额**：`DEL queue:link:ratelimit:*`（清窗口 token，consumer 下次 `token_acquire` 成功立即消费，不动代码、不需 restart）
+1. **worker 必须 headed**：`playwright_runtime` 硬编码 `headless=False`（知乎等平台检测 headless 反爬），worker 靠 Xvfb 提供 `DISPLAY=:99`
+2. **runner 作 PID1**：worker 容器用 `exec` 让 runner 成为 PID1，信号直达 → graceful shutdown；不要用 `xvfb-run` 包 PID1（会吞子进程）
+3. **env 前缀 `INBOX_`**：pydantic-settings 读取，配置见 `.env` / `.env.example`
+4. **`channels.yaml` 是配置单一数据源**：来源启用 / 分发目标 / 限速参数集中于此，server 与 worker 共享（只读挂载）
+5. **alembic 管生产 schema**：server 启动先 `alembic upgrade head`，lifespan `create_all` 仅兜底；schema 改动必须生成迁移
+6. **browser 源调试**：collect 的 error 藏在 `meta`（`browser_collected` log 只记 `enqueued`，失败看不出来）——调试查 `login_sessions` 表（`status`/`last_error`）+ collect 返回的 `meta`；`docker exec` 调试 worker 要带 `-e DISPLAY=:99`（worker 的 Xvfb）
+7. **baseline 防重复**（新 source 启用）：跑 `scripts/init_<source>_baseline.py` 预填全量 → 避免首次 collect 全量重复 cubox。**部署顺序**：`stop worker → 跑 baseline 脚本 → start worker`（避免 collect 与脚本并发竞态致首次全量）
+8. **B站双 source**：`bilibili`（我的收藏，fav `media_id`，翻页增量）+ `bilibili_toview`（稀后再看，无 `media_id`，credential 复用 `bilibili_creds`，独立 baseline）
+9. **邮件通知用网易 163**（非 QQ）：`settings.smtp_host` 默认 `smtp.163.com`；`.env` 配 `INBOX_SMTP_PASS`（163 授权码）+ `INBOX_SMTP_USER`（163 邮箱）+ `INBOX_EMAIL_TO`（收件）
+10. **browser 源凭据两类**：① **cookie 类**（zhihu `z_c0` / bilibili `SESSDATA`）→ `POST /login/{platform}/cookie`；② **session 类**（inoreader / youtube，全 storage_state）→ `scripts/import_credentials.py`（playwright `state-save` → vault）。db 在 docker（postgres 不暴露端口），本机连不到 → 凭据写入用 `docker compose cp state.json worker:` + worker 容器跑 inline python 连内部 db。persistent session 已登录可免手动登录
+11. **inoreader 增量去重用 key**（DOM article id），非 url——baseline `save_known` 存 key（`{i["key"]}`），`new` 用 key 对比。改去重逻辑前**先确认 save 行存的是 key 还是 url**，避免误判（曾因此误报 bug）
+12. **YouTube 双 playlist DOM 差异**：WL（稀后观看）用 `ytd-playlist-video-renderer`，LL（点赞）用 `#contents` 内 DIV——`_VIDEO_SELECT` 抓 `#contents a[href*="watch?v="]` 兼容两者。collect `goto networkidle` 后加 `wait_for_selector`（YouTube SPA 冷启动 DOM 渲染慢，不等会抓空 `enqueued {}`）
+13. **consumer 限速**（link `120/6h` 窗口 + `480/日`，`runner.py` LIMITS）：**不消费时**查 redis `queue:link:ratelimit:*`（窗口 token >120 满）+ `queue:link:daily:*`（日计数）。**临时忽略限额**：`DEL queue:link:ratelimit:*`（清窗口 token，consumer 下次 `token_acquire` 成功立即消费，不动代码、不需 restart）
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
