@@ -2,6 +2,20 @@
 
 ## 2026-07-16
 
+### fix(article)：修复 Obsidian frontmatter 换行并回填历史归档
+
+- 禁用 Eta 4 默认的换行裁剪，确保六个 Properties 各自独立成行、引号正确转义且结束分隔符合法
+- 增加支持 `--dry-run`、全量预解析和原子替换的历史修复脚本，避免迁移中途产生半完成文件
+- 备份并修复“文章归档”中的 70 个 Markdown；逐文件确认 YAML 可解析、正文逐字节不变且坚果云远端内容与本地一致
+
+**如何验证**：
+- `uv run pytest tests/integration/test_defuddle_node_bridge.py::test_node_bridge_parses_html_and_renders_obsidian_markdown tests/integration/test_repair_article_frontmatter.py --tb=short` → 2 passed
+- `uv run ruff check src/inboxserver tests scripts` → passed
+- `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 216 passed（8 个既有 warning）
+- `uv run mypy src/inboxserver --ignore-missing-imports` → passed
+- `docker compose build worker` 并强制重建 worker → 健康；容器内 Eta 渲染得到 8 行合法 frontmatter 与非空正文
+- 历史归档校验 → 70/70 YAML 合法、70/70 正文不变、70/70 WebDAV 远端逐字节一致
+
 ### feat(article)：Cubox 成功后独立归档文章 Markdown 到坚果云
 
 - 新增独立 `article` 队列、限速、去重、重试和 DLQ；仅在 Cubox 返回成功后入队，归档失败不重试 Cubox

@@ -39,3 +39,10 @@
 - [x] 6.1 使用本地普通文章、微信公众号错误页/完整页、视频页和同名文件样本完成非 E2E 集成验证；未获授权时不连接真实网页或坚果云执行自动化 E2E
 - [x] 6.2 运行 `uv run ruff check src/inboxserver tests scripts`、非 E2E pytest、mypy，并构建 Compose worker 镜像验证 Node.js/Defuddle 运行时
 - [x] 6.3 更新 `CHANGELOG.md`、运行 `openspec validate add-article-markdown-archive`，并用 GitNexus `detect_changes` 确认仅影响预期符号与流程
+
+## 7. Frontmatter 回归修复
+
+- [x] 7.1 增加真实 Eta 渲染回归测试，使用 YAML 解析器验证六个 Properties 独立成行、引号正确转义且结束分隔符合法，并先确认测试能复现失败
+- [x] 7.2 禁用 Eta 自动换行裁剪，并增加支持 `--dry-run` 的历史 frontmatter 修复脚本；脚本必须先完整解析全部目标再写入，且保持正文逐字节不变
+- [x] 7.3 备份并全量修复坚果云本地“文章归档”目录中的 70 个受影响文件，逐文件验证 YAML、字段、正文和本地/远端字节一致
+- [x] 7.4 运行完整门禁、OpenSpec 校验和 GitNexus `detect_changes`，重建并重启 worker，验证新渲染结果后更新 `CHANGELOG.md`

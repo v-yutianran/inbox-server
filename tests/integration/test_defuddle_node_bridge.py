@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import yaml
+
 from inboxserver.domain.policy.article_archive import (
     assess_article,
     normalize_archive_metadata,
@@ -20,7 +22,7 @@ async def test_node_bridge_parses_html_and_renders_obsidian_markdown() -> None:
 
     article = await bridge.parse("https://example.com/article", html)
     metadata = normalize_archive_metadata(
-        title=article.title,
+        title='带"引号"的固定样本文章',
         source_url="https://example.com/article",
         archived_at=datetime(2026, 7, 16, tzinfo=UTC),
         author=article.author,
@@ -33,8 +35,18 @@ async def test_node_bridge_parses_html_and_renders_obsidian_markdown() -> None:
     assert "用于验证 Defuddle" in article.markdown
     assert "https://img.example.com/remote.jpg" in article.markdown
     assert markdown.startswith("---\n")
-    assert 'title: "固定样本文章"' in markdown
+    frontmatter, body = markdown.removeprefix("---\n").split("\n---\n", maxsplit=1)
+    properties = yaml.safe_load(frontmatter)
+    assert properties == {
+        "title": '带"引号"的固定样本文章',
+        "source_url": "https://example.com/article",
+        "archived_at": "2026-07-16T08:00:00+08:00",
+        "author": "测试作者",
+        "published_at": "2026-07-15T08:00:00+08:00",
+        "tags": ["AI", '带"引号"'],
+    }
     assert 'tags: ["AI","带\\"引号\\""]' in markdown
+    assert body.startswith("\n这是用于验证 Defuddle")
     assert markdown.endswith("\n")
 
 

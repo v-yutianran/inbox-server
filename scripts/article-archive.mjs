@@ -10,7 +10,7 @@ import { Eta } from "eta";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE = await readFile(path.join(ROOT, "templates/article.md.eta"), "utf8");
-const eta = new Eta({ autoEscape: false });
+const eta = new Eta({ autoEscape: false, autoTrim: false });
 
 function yamlScalar(value) {
   return JSON.stringify(String(value ?? ""));

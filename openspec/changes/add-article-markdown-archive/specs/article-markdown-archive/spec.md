@@ -54,7 +54,7 @@
 - **THEN** 系统 SHALL 将任务判定为失败并应用独立归档重试策略
 
 ### Requirement: Obsidian 安全 Markdown
-系统 SHALL 生成带稳定 Obsidian Properties 的 Markdown，文件名 MUST 使用 Asia/Shanghai 归档日期并移除全部空白和特殊字符。
+系统 SHALL 生成带稳定且可被 YAML 解析器读取的 Obsidian Properties 的 Markdown，文件名 MUST 使用 Asia/Shanghai 归档日期并移除全部空白和特殊字符。
 
 #### Scenario: 生成文件名
 - **WHEN** 标题为可归档文章标题且归档日期为某一自然日
@@ -67,6 +67,10 @@
 #### Scenario: 写入 Obsidian Properties
 - **WHEN** 系统生成文章 Markdown
 - **THEN** frontmatter SHALL 包含 `title`、`source_url`、`archived_at`、`author`、`published_at`、`tags`，其中标签 MUST 沿用提交给 Cubox 的智能标签
+
+#### Scenario: Properties 保持合法 YAML
+- **WHEN** 标题、原文链接或标签包含引号、查询参数或空值
+- **THEN** 六个 Properties SHALL 各自独立成行、正确转义并由独立结束分隔符封闭，且 MUST 能被 YAML 解析器还原为原始值
 
 #### Scenario: 保留远程图片
 - **WHEN** Defuddle 正文包含图片
