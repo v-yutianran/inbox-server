@@ -34,7 +34,7 @@ async def consume(
 ) -> None:
     """通用消费循环。
 
-    流程：每日限额→dequeue→去重→窗口限速→process→OK(mark_done+daily_incr)/QUOTA(requeue停)/FAIL(retry/DLQ)。
+    流程：每日限额→dequeue→去重→可选窗口限速→process→OK(mark_done+daily_incr)/QUOTA(requeue停)/FAIL(retry/DLQ)。
     stop_event.set() 触发 graceful shutdown（_interruptible_sleep 立即中断）。
     """
     qkey = queue_key(kind)
@@ -55,8 +55,10 @@ async def consume(
         fp = fingerprint(item, kind)
         if await dedup_store.is_done(qkey, fp):
             continue
-        # 窗口限速：满则回队尾等下个窗口
-        if not await rate_guard.token_acquire(qkey, limits.window_count, limits.window_sec):
+        # window_count=0 表示禁用固定窗口；否则满额时回队尾等待下个窗口。
+        if limits.window_count > 0 and not await rate_guard.token_acquire(
+            qkey, limits.window_count, limits.window_sec
+        ):
             await queue_repo.requeue(kind, item)
             await _interruptible_sleep(300, stop_event)
             continue

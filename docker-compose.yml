@@ -18,6 +18,8 @@ services:
   server:
     build: .
     env_file: .env
+    environment:
+      TZ: Asia/Shanghai
     restart: unless-stopped
     depends_on:
       postgres: {condition: service_healthy}
@@ -30,6 +32,8 @@ services:
   worker:
     build: .
     env_file: .env
+    environment:
+      TZ: Asia/Shanghai
     restart: unless-stopped
     depends_on:
       postgres: {condition: service_healthy}

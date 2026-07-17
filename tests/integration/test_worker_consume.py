@@ -131,3 +131,82 @@ async def test_consume_stop_event_graceful_shutdown(deps):
     await asyncio.wait_for(task, timeout=2.0)  # 应在 2s 内优雅退出
     assert task.done()
     process_fn.assert_called()  # 确实处理了 item
+
+
+async def test_consume_link_with_zero_window_skips_fixed_window_guard(deps):
+    """window_count=0 的 link 仅受日限额控制，不读取历史固定窗口桶。"""
+    queue_repo, dedup, rate = deps
+    await queue_repo.enqueue(ItemKind.LINK, {"url": "https://no-window.example"})
+    rate.token_acquire = AsyncMock(side_effect=AssertionError("不应检查固定窗口"))
+    process_fn = AsyncMock(return_value=(True, DispatchOutcome.OK))
+    limits = QueueLimits(window_count=0, window_sec=21600, daily_limit=500, interval=0.01)
+
+    await _run_until_stopped(
+        lambda ev: consume(
+            ItemKind.LINK,
+            queue_repo,
+            dedup,
+            rate,
+            process_fn,
+            "link",
+            limits=limits,
+            stop_event=ev,
+        ),
+        settle_sec=0.1,
+    )
+
+    process_fn.assert_awaited_once()
+    rate.token_acquire.assert_not_awaited()
+
+
+async def test_consume_link_stops_at_daily_limit_before_window_guard(deps):
+    """达到每日 500 条时不出队，也不检查固定窗口。"""
+    queue_repo, _dedup, rate = deps
+    await queue_repo.enqueue(ItemKind.LINK, {"url": "https://daily-limit.example"})
+    rate.daily_count = AsyncMock(return_value=500)
+    rate.token_acquire = AsyncMock()
+    process_fn = AsyncMock(return_value=(True, DispatchOutcome.OK))
+    limits = QueueLimits(window_count=0, window_sec=21600, daily_limit=500, interval=0.01)
+
+    await _run_until_stopped(
+        lambda ev: consume(
+            ItemKind.LINK,
+            queue_repo,
+            _dedup,
+            rate,
+            process_fn,
+            "link",
+            limits=limits,
+            stop_event=ev,
+        ),
+        settle_sec=0.1,
+    )
+
+    process_fn.assert_not_awaited()
+    rate.token_acquire.assert_not_awaited()
+
+
+async def test_consume_non_link_keeps_fixed_window_guard(deps):
+    """非 link 队列继续使用既有固定窗口限速。"""
+    queue_repo, dedup, rate = deps
+    await queue_repo.enqueue(ItemKind.TEXT, {"content": "保留窗口限速"})
+    rate.token_acquire = AsyncMock(return_value=False)
+    process_fn = AsyncMock(return_value=(True, DispatchOutcome.OK))
+    limits = QueueLimits(window_count=25, window_sec=21600, daily_limit=96, interval=0.01)
+
+    await _run_until_stopped(
+        lambda ev: consume(
+            ItemKind.TEXT,
+            queue_repo,
+            dedup,
+            rate,
+            process_fn,
+            "text",
+            limits=limits,
+            stop_event=ev,
+        ),
+        settle_sec=0.1,
+    )
+
+    rate.token_acquire.assert_awaited()
+    process_fn.assert_not_awaited()

@@ -38,9 +38,9 @@ from inboxserver.workers.consumer import consume
 log = structlog.get_logger(__name__)
 
 
-# 限速常量（来自 inbox_queue：link 120/6h+480日、text 25/6h+96日、file 1400/30min）
+# 限速常量：window_count=0 表示禁用固定窗口；link 仅保留每日 500 条上限。
 LIMITS: dict[ItemKind, QueueLimits] = {
-    ItemKind.LINK: QueueLimits(window_count=120, window_sec=21600, daily_limit=480, interval=5),
+    ItemKind.LINK: QueueLimits(window_count=0, window_sec=21600, daily_limit=500, interval=5),
     ItemKind.TEXT: QueueLimits(window_count=25, window_sec=21600, daily_limit=96, interval=10),
     ItemKind.FILE: QueueLimits(window_count=1400, window_sec=1800, daily_limit=None, interval=1),
 }

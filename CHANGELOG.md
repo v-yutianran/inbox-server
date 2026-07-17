@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 2026-07-17
+
+### fix(link)：每日最多 500 条并取消 6 小时限制
+
+- link 固定窗口配置设为禁用，仅保留每 5 秒消费间隔和上海自然日最多 500 条
+- 通用消费器仅在 `window_count > 0` 时检查固定窗口，text、file、article 既有限速行为不变
+- server、worker 显式设置 `TZ=Asia/Shanghai`，部署时继承旧 UTC 日计数，避免切换日扩大配额
+
+**如何验证**：
+- 目标 TDD 用例 → 5 passed
+- `uv run ruff check src/inboxserver tests scripts` → passed
+- `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 221 passed（8 个既有 warning）
+- `uv run mypy src/inboxserver --ignore-missing-imports` → passed
+- `docker compose config --quiet` → passed
+- `openspec validate change-link-daily-limit` → valid
+- 旧 UTC 段 360 与当前段 120 一次性合并为上海日计数 480；worker 恢复后增长到 500，pending 在随后 20 秒保持 220 不变
+- 强制重建 server、worker → `Asia/Shanghai` 与 Python `+08:00` 生效，健康接口 200、worker healthy、重启策略 `unless-stopped`、持久化卷与 `.env` 哈希不变
+
 ## 2026-07-16
 
 ### fix(article)：修复 Obsidian frontmatter 换行并回填历史归档
