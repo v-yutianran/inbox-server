@@ -42,15 +42,19 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v6
 
-      - name: 配置 Python
-        uses: actions/setup-python@v6
+      - name: 配置 pnpm
+        uses: pnpm/action-setup@v6
         with:
-          python-version: "3.x"
-          cache: pip
+          run_install: false
+      - name: 配置 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
 
       - name: 安装依赖
         run: |
-          python -m pip install uv==0.11.29 && uv sync --dev --frozen
+          python -m pip install uv==0.11.29 && uv sync --dev --frozen && pnpm install --frozen-lockfile
 
       - name: 质量检查 1
         run: |

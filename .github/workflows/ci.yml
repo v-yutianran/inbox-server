@@ -12,11 +12,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.17.0
+          cache: pnpm
+
       # uv（astral 官方 action）
       - uses: astral-sh/setup-uv@v3
 
       # 装依赖（含 dev: pytest/ruff/fakeredis/respx/aiosqlite）
       - run: uv sync --dev
+
+      # 安装 Defuddle / Eta，供 Node 桥接集成测试使用
+      - run: pnpm install --frozen-lockfile
 
       # lint
       - run: uv run ruff check src/inboxserver tests scripts

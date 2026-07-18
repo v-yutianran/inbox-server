@@ -14,9 +14,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_git_manager_config_enables_quality_gate_and_automatic_cd() -> None:
     config = yaml.safe_load((ROOT / "git-manager.yml").read_text())
+    generated_ci = (ROOT / ".github/workflows/git-manager-ci.yml").read_text()
+    legacy_ci = (ROOT / ".github/workflows/ci.yml").read_text()
 
     assert config["version"] == "0.1.0"
     assert config["ci"]["branches"] == ["main"]
+    assert config["ci"]["jobs"][0]["stack"] == "node"
+    assert "pnpm install --frozen-lockfile" in config["ci"]["jobs"][0][
+        "installCommand"
+    ]
     assert config["ci"]["jobs"][0]["checkCommands"] == [
         'uv run ruff check src/inboxserver tests scripts',
         'uv run pytest tests/unit tests/integration -m "not e2e" --tb=short',
@@ -29,6 +35,10 @@ def test_git_manager_config_enables_quality_gate_and_automatic_cd() -> None:
         "retainReleases": 5,
         "autoDeploy": True,
     }
+    for workflow in (generated_ci, legacy_ci):
+        assert "pnpm/action-setup@" in workflow
+        assert "actions/setup-node@" in workflow
+        assert "pnpm install --frozen-lockfile" in workflow
 
 
 def test_container_images_and_restart_policies_are_reproducible() -> None:

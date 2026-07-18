@@ -8,7 +8,8 @@
 - 新增参数化 `entrypoint.sh`，从服务器 `shared` 目录连接 `.env`、`channels.yaml`，固定 Compose 项目名并校验四个服务、重启策略、健康接口和持久化卷
 - 固定 Postgres 16.14、Redis 7.4.9 与 uv 0.11.29 镜像版本，为 Postgres、Redis、server、worker 统一配置 `unless-stopped` 和健康检查
 - testing 服务器仅在回环地址发布 8000 端口，管理 API 通过 SSH 隧道访问，避免公网明文传输 API Key
-- 新增部署 ADR、OpenSpec 变更与部署文件契约测试；现有 `.github/workflows/ci.yml` 保持不变
+- 两套 CI 均配置 Node.js 与 pnpm，并按冻结锁文件安装 Defuddle/Eta，确保 Linux runner 执行真实 Node 桥接集成测试
+- 新增部署 ADR、OpenSpec 变更与部署文件契约测试
 
 **如何验证**：
 - `openspec validate add-github-cicd` → valid
@@ -21,6 +22,7 @@
 - `uv run ruff check src/inboxserver tests scripts` → passed
 - `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 224 passed（8 个既有 warning）
 - `uv run mypy src/inboxserver --ignore-missing-imports` → passed
+- git-manager → 121 tests、typecheck、Prettier、build 全部通过
 
 ## 2026-07-17
 
