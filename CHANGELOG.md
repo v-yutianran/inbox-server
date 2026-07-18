@@ -7,6 +7,7 @@
 - 使用 git-manager 生成独立质量门禁与 Release/CD workflow；`main` 的 git-manager CI 成功后复用 `release-<version>-<sha7>` 并通过 `testing` Environment 执行 SSH 部署
 - 新增参数化 `entrypoint.sh`，从服务器 `shared` 目录连接 `.env`、`channels.yaml`，固定 Compose 项目名并校验四个服务、重启策略、健康接口和持久化卷
 - 固定 Postgres 16.14、Redis 7.4.9 与 uv 0.11.29 镜像版本，为 Postgres、Redis、server、worker 统一配置 `unless-stopped` 和健康检查
+- testing 服务器仅在回环地址发布 8000 端口，管理 API 通过 SSH 隧道访问，避免公网明文传输 API Key
 - 新增部署 ADR、OpenSpec 变更与部署文件契约测试；现有 `.github/workflows/ci.yml` 保持不变
 
 **如何验证**：

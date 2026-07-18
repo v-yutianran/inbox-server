@@ -40,6 +40,7 @@ def test_container_images_and_restart_policies_are_reproducible() -> None:
     for name in ("postgres", "redis", "server", "worker"):
         assert services[name]["restart"] == "unless-stopped"
         assert "healthcheck" in services[name]
+    assert services["server"]["ports"] == ["127.0.0.1:8000:8000"]
     assert services["server"]["depends_on"]["redis"]["condition"] == "service_healthy"
     assert services["worker"]["depends_on"]["redis"]["condition"] == "service_healthy"
 
