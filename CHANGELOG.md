@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 2026-07-19
+
+### fix(scheduler)：收集触发间隔调整为 10 分钟
+
+- 将 APScheduler 的 `collect_job` interval 从每 60 分钟调整为每 10 分钟，保留 `max_instances=1` 与 `coalesce=True`
+
+**如何验证**：
+- `uv run pytest tests/unit/test_scheduler.py --tb=short` → passed
+- `uv run ruff check src/inboxserver tests scripts` → passed
+- `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 226 passed（8 个既有 warning）
+- `uv run mypy src/inboxserver --ignore-missing-imports` → passed
+
 ## 2026-07-18
 
 ### fix(article)：每日上限提高至 10,000 条

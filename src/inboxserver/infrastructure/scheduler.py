@@ -1,4 +1,4 @@
-"""APScheduler：定时收集（每 60min）+ 汇总通知。
+"""APScheduler：定时收集（每 10min）+ 汇总通知。
 
 collect_job：加载 channels → orchestrator 跑启用的 source → 汇总结果 → notify
 （EmailNotifier 若开启，否则 LogNotifier）。无新内容不发（对齐 inbox_sync）。
@@ -75,12 +75,12 @@ async def notify_results(results: dict, channels, http) -> None:
 
 
 def setup_scheduler() -> AsyncIOScheduler:
-    """创建 scheduler：每 60min 跑 collect_job（max_instances=1 防重叠，coalesce 合并积压）。"""
+    """创建 scheduler：每 10min 跑 collect_job（max_instances=1 防重叠，coalesce 合并积压）。"""
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
         collect_job,
         "interval",
-        minutes=60,
+        minutes=10,
         id="collect",
         max_instances=1,
         coalesce=True,
