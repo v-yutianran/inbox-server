@@ -24,6 +24,9 @@
 - `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 224 passed（8 个既有 warning）
 - `uv run mypy src/inboxserver --ignore-missing-imports` → passed
 - git-manager → 121 tests、typecheck、Prettier、build 全部通过
+- GitHub Actions → 两套 CI 与自动 Release/CD 全绿，生成非草稿 Release 及代码 ZIP，并部署到 testing 服务器
+- testing 强制重建 → 四容器 healthy，`healthz`/`readyz` 为 200、未授权管理请求为 401、8000 仅监听回环地址，重建后错误数为 0
+- 持久化验收 → Postgres 系统标识与数据库 OID、Postgres/Redis 卷创建时间、`.env`/`channels.yaml` 哈希在强制重建前后保持一致
 
 ## 2026-07-17
 

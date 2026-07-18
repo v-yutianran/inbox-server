@@ -18,4 +18,4 @@
 
 - [x] 4.1 运行 OpenSpec、ruff、非 E2E pytest、mypy、workflow 和 shell 校验
 - [x] 4.2 运行 GitNexus detect changes，使用 git-manager 提交并推送 `main`
-- [ ] 4.3 等待 CI/CD，验证 Release、远端容器、端口、重启策略和持久化卷
+- [x] 4.3 等待 CI/CD，验证 Release、远端容器、端口、重启策略和持久化卷
