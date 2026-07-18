@@ -14,7 +14,8 @@ def test_article_archive_defaults_to_disabled(tmp_path) -> None:
     config = load_channels(config_path)
 
     assert config.article_archive.enabled is False
-    assert config.article_archive.remote_dir == "/我的坚果云/文章归档"
+    assert config.article_archive.repository_dir == "/article-repository"
+    assert config.article_archive.articles_dir == "references/article"
     assert config.article_archive.min_visible_characters == 200
     assert config.article_archive.daily_limit == 10_000
 
@@ -25,7 +26,8 @@ def test_article_archive_loads_typed_limits(tmp_path) -> None:
         """
 article_archive:
   enabled: true
-  remote_dir: /我的坚果云/文章归档
+  repository_dir: /custom-agents
+  articles_dir: references/custom-article
   min_visible_characters: 300
   http_timeout_seconds: 12
   browser_timeout_seconds: 34
@@ -43,6 +45,8 @@ article_archive:
     config = load_channels(config_path).article_archive
 
     assert config.enabled is True
+    assert config.repository_dir == "/custom-agents"
+    assert config.articles_dir == "references/custom-article"
     assert config.min_visible_characters == 300
     assert config.enqueue_attempts == 2
     assert config.daily_limit == 100

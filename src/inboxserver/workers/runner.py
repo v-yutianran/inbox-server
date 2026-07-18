@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import signal
 from collections.abc import Callable
 from contextlib import suppress
@@ -23,10 +24,10 @@ from inboxserver.domain.policy.article_archive import url_fingerprint
 from inboxserver.domain.policy.tags import fmt_cubox_tags, fmt_flomo_tags
 from inboxserver.infrastructure.article_archive.defuddle import DefuddleBridge
 from inboxserver.infrastructure.article_archive.fetcher import DirectHtmlFetcher
+from inboxserver.infrastructure.article_archive.git_repository import GitArticleRepository
 from inboxserver.infrastructure.article_archive.service import ArticleArchiveService
 from inboxserver.infrastructure.browser.playwright_runtime import fetch_rendered_html
 from inboxserver.infrastructure.destinations.dispatcher import build_destinations
-from inboxserver.infrastructure.destinations.webdav import JianguoyunWebDav
 from inboxserver.infrastructure.http_client import make_http_client
 from inboxserver.infrastructure.llm import generate_smart_tags
 from inboxserver.infrastructure.queue.dedup_store import DedupStore
@@ -127,11 +128,8 @@ def _article_limits(config) -> QueueLimits:
 
 
 def _build_article_archive_service(channels, http) -> ArticleArchiveService:
-    """使用仓库内 Defuddle、headed Playwright 和现有坚果云凭据构建归档服务。"""
+    """使用仓库内 Defuddle、headed Playwright 和本地 Git 仓库构建归档服务。"""
     config = channels.article_archive
-    jianguoyun = channels.destinations.get("jianguoyun")
-    if jianguoyun is None or not jianguoyun.enabled:
-        raise ValueError("article_archive_requires_enabled_jianguoyun")
     bridge = DefuddleBridge(
         timeout_seconds=config.defuddle_timeout_seconds,
         max_input_bytes=config.max_html_bytes,
@@ -153,8 +151,11 @@ def _build_article_archive_service(channels, http) -> ArticleArchiveService:
         ),
         bridge=bridge,
         browser_fetch=browser_fetch,
-        webdav=JianguoyunWebDav(jianguoyun.config),
-        remote_dir=config.remote_dir,
+        repository=GitArticleRepository(
+            config.repository_dir,
+            articles_dir=config.articles_dir,
+            github_token=os.environ.get("GITHUB_TOKEN"),
+        ),
         min_visible_characters=config.min_visible_characters,
     )
 

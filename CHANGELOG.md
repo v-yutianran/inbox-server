@@ -2,6 +2,19 @@
 
 ## 2026-07-19
 
+### fix(article)：自动归档切换到 `.agents` Git 仓库
+
+- worker 将有效文章写入宿主机 `~/.agents/references/article`，按 frontmatter `source_url` 精确去重，并立即提交、push
+- 同名不同 URL 自动追加稳定 URL 指纹；重试可补交已写未提交或已提交未推送状态
+- Compose 仅向 worker 挂载 `.agents` 仓库，通过现有 `GITHUB_TOKEN` 的 HTTPS askpass 推送，不暴露宿主 SSH 私钥且不再依赖坚果云 WebDAV
+
+**如何验证**：
+- Git 适配器和文章归档定向测试覆盖新建、去重、同名冲突、中间状态补交、无关工作区保留和失败重试
+- 重建 worker 后实际投递文章链接，并核对本地 Markdown、frontmatter、无效提示、Git 提交及 GitHub 远端文件树
+- `uv run ruff check src/inboxserver tests scripts` → passed
+- `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 233 passed（8 个既有 warning）
+- `uv run mypy src/inboxserver --ignore-missing-imports` → passed
+
 ### fix(scheduler)：收集触发间隔调整为 10 分钟
 
 - 将 APScheduler 的 `collect_job` interval 从每 60 分钟调整为每 10 分钟，保留 `max_instances=1` 与 `coalesce=True`

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import inboxserver.workers.runner as runner
-from inboxserver.config.channels import ChannelEntry, ChannelsConfig
+from inboxserver.config.channels import ArticleArchiveConfig, ChannelEntry, ChannelsConfig
 from inboxserver.domain.models import ItemKind
 from inboxserver.plugins.contracts import DispatchOutcome
 from inboxserver.workers.runner import _make_process_link
@@ -14,6 +14,45 @@ from inboxserver.workers.runner import _make_process_link
 
 def _clock() -> datetime:
     return datetime(2026, 7, 16, 8, tzinfo=UTC)
+
+
+def test_build_archive_service_uses_git_repository_without_jianguoyun(monkeypatch) -> None:
+    channels = ChannelsConfig(
+        article_archive=ArticleArchiveConfig(
+            enabled=True,
+            repository_dir="/article-repository",
+            articles_dir="references/article",
+        )
+    )
+    repository = object()
+    captured: dict = {}
+    repository_config: dict = {}
+
+    def build_repository(*args, **kwargs):
+        repository_config.update({"args": args, "kwargs": kwargs})
+        return repository
+
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    monkeypatch.setattr(runner, "GitArticleRepository", build_repository)
+    monkeypatch.setattr(runner, "DefuddleBridge", lambda **kwargs: object())
+    monkeypatch.setattr(runner, "DirectHtmlFetcher", lambda *args, **kwargs: object())
+    monkeypatch.setattr(
+        runner,
+        "ArticleArchiveService",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+
+    runner._build_article_archive_service(channels, AsyncMock())
+
+    assert captured["repository"] is repository
+    assert "webdav" not in captured
+    assert repository_config == {
+        "args": ("/article-repository",),
+        "kwargs": {
+            "articles_dir": "references/article",
+            "github_token": "test-token",
+        },
+    }
 
 
 async def test_cubox_ok_enqueues_article_with_final_tags() -> None:

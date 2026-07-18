@@ -1,7 +1,8 @@
-"""文章归档应用编排：双阶段抓取、正文验收、渲染和 WebDAV 上传。"""
+"""文章归档应用编排：双阶段抓取、正文验收、渲染和仓库交付。"""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Protocol
@@ -19,6 +20,7 @@ from inboxserver.domain.policy.article_archive import (
 from inboxserver.plugins.contracts import DispatchOutcome
 
 log = structlog.get_logger(__name__)
+_SAFE_ERROR_CODE = re.compile(r"^[a-z0-9_]{1,64}$")
 
 
 class HtmlFetcher(Protocol):
@@ -31,10 +33,8 @@ class ArticleBridge(Protocol):
     async def render(self, metadata: dict, markdown: str) -> str: ...
 
 
-class ArticleWebDav(Protocol):
-    async def exists(self, remote_path: str) -> bool: ...
-
-    async def upload_bytes(self, remote_path: str, content: bytes) -> None: ...
+class ArticleRepository(Protocol):
+    async def save_if_absent(self, filename: str, source_url: str, content: bytes) -> bool: ...
 
 
 class ArticleArchiveService:
@@ -46,16 +46,14 @@ class ArticleArchiveService:
         fetcher: HtmlFetcher,
         bridge: ArticleBridge,
         browser_fetch: Callable[[str], Awaitable[str]],
-        webdav: ArticleWebDav,
-        remote_dir: str,
+        repository: ArticleRepository,
         min_visible_characters: int,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._fetcher = fetcher
         self._bridge = bridge
         self._browser_fetch = browser_fetch
-        self._webdav = webdav
-        self._remote_dir = remote_dir.rstrip("/")
+        self._repository = repository
         self._min_visible_characters = min_visible_characters
         self._clock = clock or (lambda: datetime.now(UTC))
 
@@ -105,27 +103,25 @@ class ArticleArchiveService:
             )
             markdown = await self._bridge.render(metadata, article.markdown)
             filename = build_archive_filename(url, article.title, archived_at)
-            remote_path = f"{self._remote_dir}/{filename}"
-            if await self._webdav.exists(remote_path):
-                log.info(
-                    "article_archive_exists",
-                    url_fingerprint=fp,
-                    filename=filename,
-                )
-                return True, DispatchOutcome.OK
-            await self._webdav.upload_bytes(remote_path, markdown.encode())
+            created = await self._repository.save_if_absent(
+                filename,
+                url,
+                markdown.encode(),
+            )
             log.info(
-                "article_archive_uploaded",
+                "article_archive_committed" if created else "article_archive_exists",
                 url_fingerprint=fp,
                 filename=filename,
                 bytes=len(markdown.encode()),
             )
             return True, DispatchOutcome.OK
         except Exception as error:
+            error_code = str(error)
             log.warning(
                 "article_archive_failed",
                 url_fingerprint=fp,
                 error_type=type(error).__name__,
+                error_code=error_code if _SAFE_ERROR_CODE.fullmatch(error_code) else None,
             )
             return False, DispatchOutcome.FAIL
 

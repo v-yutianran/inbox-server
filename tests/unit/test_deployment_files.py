@@ -54,6 +54,8 @@ def test_container_images_and_restart_policies_are_reproducible() -> None:
     assert services["server"]["depends_on"]["redis"]["condition"] == "service_healthy"
     assert services["worker"]["depends_on"]["redis"]["condition"] == "service_healthy"
     assert services["worker"]["depends_on"]["server"]["condition"] == "service_healthy"
+    assert "${HOME}/.agents:/article-repository" in services["worker"]["volumes"]
+    assert all("/.ssh:" not in volume for volume in services["worker"]["volumes"])
 
     dockerfile = (ROOT / "Dockerfile").read_text()
     assert "ghcr.io/astral-sh/uv:0.11.29" in dockerfile

@@ -29,7 +29,8 @@ class ArticleArchiveConfig(BaseModel):
     """文章 Markdown 归档配置；默认关闭以保持旧部署行为。"""
 
     enabled: bool = False
-    remote_dir: str = "/我的坚果云/文章归档"
+    repository_dir: str = "/article-repository"
+    articles_dir: str = "references/article"
     min_visible_characters: int = Field(default=200, gt=0)
     http_timeout_seconds: float = Field(default=30, gt=0)
     browser_timeout_seconds: float = Field(default=45, gt=0)

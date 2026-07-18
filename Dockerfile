@@ -32,6 +32,7 @@ RUN uv sync --frozen --no-dev
 # 注：chromium 由基镜像预装（PLAYWRIGHT_BROWSERS_PATH 已设），无需 playwright install
 
 COPY . .
+RUN chmod 0555 /app/scripts/github-askpass.sh
 RUN node --version && node -e "Promise.all([import('defuddle/node'), import('eta')])"
 ENV INBOX_CHANNELS=/app/channels.yaml
 ENV PYTHONUNBUFFERED=1

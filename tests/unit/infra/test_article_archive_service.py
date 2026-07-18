@@ -50,32 +50,25 @@ class _BrowserFetch:
         return self.html
 
 
-class _WebDav:
-    def __init__(self, exists: bool = False, error: Exception | None = None):
-        self._exists = exists
+class _ArchiveRepository:
+    def __init__(self, created: bool = True, error: Exception | None = None):
+        self._created = created
         self.error = error
-        self.checked: list[str] = []
-        self.uploaded: list[tuple[str, bytes]] = []
+        self.saved: list[tuple[str, str, bytes]] = []
 
-    async def exists(self, remote_path: str) -> bool:
-        self.checked.append(remote_path)
+    async def save_if_absent(self, filename: str, source_url: str, content: bytes) -> bool:
         if self.error:
             raise self.error
-        return self._exists
-
-    async def upload_bytes(self, remote_path: str, content: bytes) -> None:
-        if self.error:
-            raise self.error
-        self.uploaded.append((remote_path, content))
+        self.saved.append((filename, source_url, content))
+        return self._created
 
 
-def _service(fetcher, bridge, browser, webdav) -> ArticleArchiveService:
+def _service(fetcher, bridge, browser, repository) -> ArticleArchiveService:
     return ArticleArchiveService(
         fetcher=fetcher,
         bridge=bridge,
         browser_fetch=browser,
-        webdav=webdav,
-        remote_dir="/我的坚果云/文章归档",
+        repository=repository,
         min_visible_characters=20,
         clock=lambda: datetime(2026, 7, 16, 1, tzinfo=UTC),
     )
@@ -90,12 +83,12 @@ def _valid(title: str = "测试 文章") -> DefuddleArticle:
     )
 
 
-async def test_direct_valid_article_skips_browser_and_uploads_markdown() -> None:
+async def test_direct_valid_article_skips_browser_and_saves_markdown() -> None:
     fetcher = _Fetcher()
     bridge = _Bridge([_valid()])
     browser = _BrowserFetch()
-    webdav = _WebDav()
-    service = _service(fetcher, bridge, browser, webdav)
+    repository = _ArchiveRepository()
+    service = _service(fetcher, bridge, browser, repository)
 
     ok, outcome = await service.process(
         {"url": "https://example.com/a", "title": "queue title", "tags": ["AI"]}
@@ -103,32 +96,35 @@ async def test_direct_valid_article_skips_browser_and_uploads_markdown() -> None
 
     assert ok is True and outcome is DispatchOutcome.OK
     assert browser.calls == 0
-    assert webdav.uploaded[0][0] == "/我的坚果云/文章归档/20260716-测试文章.md"
-    assert "https://img.example.com/a.jpg" in webdav.uploaded[0][1].decode()
+    assert repository.saved[0][:2] == (
+        "20260716-测试文章.md",
+        "https://example.com/a",
+    )
+    assert "https://img.example.com/a.jpg" in repository.saved[0][2].decode()
     assert bridge.rendered[0][0]["tags"] == ["AI"]
 
 
 async def test_short_direct_result_uses_playwright_then_uploads() -> None:
     bridge = _Bridge([DefuddleArticle(title="短", markdown="短"), _valid("完整文章")])
     browser = _BrowserFetch()
-    webdav = _WebDav()
+    repository = _ArchiveRepository()
 
-    ok, outcome = await _service(_Fetcher(), bridge, browser, webdav).process(
+    ok, outcome = await _service(_Fetcher(), bridge, browser, repository).process(
         {"url": "https://example.com/a", "tags": []}
     )
 
     assert ok is True and outcome is DispatchOutcome.OK
     assert bridge.parsed == ["direct", "rendered"]
     assert browser.calls == 1
-    assert len(webdav.uploaded) == 1
+    assert len(repository.saved) == 1
 
 
 async def test_preexcluded_and_twice_invalid_pages_are_successful_skips() -> None:
     pre_fetcher = _Fetcher()
     pre_bridge = _Bridge([])
     pre_browser = _BrowserFetch()
-    pre_webdav = _WebDav()
-    assert await _service(pre_fetcher, pre_bridge, pre_browser, pre_webdav).process(
+    pre_repository = _ArchiveRepository()
+    assert await _service(pre_fetcher, pre_bridge, pre_browser, pre_repository).process(
         {"url": "https://youtube.com/watch?v=1"}
     ) == (True, DispatchOutcome.OK)
     assert pre_fetcher.calls == 0 and pre_browser.calls == 0
@@ -139,38 +135,38 @@ async def test_preexcluded_and_twice_invalid_pages_are_successful_skips() -> Non
             DefuddleArticle(title="还是短", markdown="还是短"),
         ]
     )
-    webdav = _WebDav()
-    assert await _service(_Fetcher(), bridge, _BrowserFetch(), webdav).process(
+    repository = _ArchiveRepository()
+    assert await _service(_Fetcher(), bridge, _BrowserFetch(), repository).process(
         {"url": "https://example.com/navigation"}
     ) == (True, DispatchOutcome.OK)
-    assert not webdav.checked and not webdav.uploaded
+    assert not repository.saved
 
 
 async def test_existing_target_is_successful_skip_without_overwrite() -> None:
-    webdav = _WebDav(exists=True)
+    repository = _ArchiveRepository(created=False)
 
-    result = await _service(_Fetcher(), _Bridge([_valid()]), _BrowserFetch(), webdav).process(
-        {"url": "https://example.com/a", "tags": []}
-    )
+    result = await _service(
+        _Fetcher(), _Bridge([_valid()]), _BrowserFetch(), repository
+    ).process({"url": "https://example.com/a", "tags": []})
 
     assert result == (True, DispatchOutcome.OK)
-    assert not webdav.uploaded
+    assert len(repository.saved) == 1
 
 
-async def test_recoverable_browser_or_webdav_failures_return_fail() -> None:
+async def test_recoverable_browser_or_git_failures_return_fail() -> None:
     short = DefuddleArticle(title="短", markdown="短")
     browser_failure = await _service(
         _Fetcher(),
         _Bridge([short]),
         _BrowserFetch(error=RuntimeError("timeout")),
-        _WebDav(),
+        _ArchiveRepository(),
     ).process({"url": "https://example.com/a"})
     assert browser_failure == (False, DispatchOutcome.FAIL)
 
-    webdav_failure = await _service(
+    git_failure = await _service(
         _Fetcher(),
         _Bridge([_valid()]),
         _BrowserFetch(),
-        _WebDav(error=RuntimeError("temporary")),
+        _ArchiveRepository(error=RuntimeError("temporary")),
     ).process({"url": "https://example.com/a"})
-    assert webdav_failure == (False, DispatchOutcome.FAIL)
+    assert git_failure == (False, DispatchOutcome.FAIL)

@@ -35,10 +35,11 @@ destinations:
     item_kind: file
     config: {webdav_user: "${JIANGUOYUN_WEBDAV_USER}", webdav_pass: "${JIANGUOYUN_WEBDAV_PASS}"}
 
-# 仅归档功能上线后 Cubox 成功的新链接；关闭时保持原有三类队列行为。
+# 仅归档功能上线后 Cubox 成功的新链接；worker 需挂载宿主机 ~/.agents，GITHUB_TOKEN 需有写权限。
 article_archive:
   enabled: false
-  remote_dir: /我的坚果云/文章归档
+  repository_dir: /article-repository
+  articles_dir: references/article
   min_visible_characters: 200
   http_timeout_seconds: 30
   browser_timeout_seconds: 45

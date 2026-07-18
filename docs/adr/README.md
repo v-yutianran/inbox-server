@@ -16,3 +16,4 @@
 ## 索引
 
 - [0001：使用 GitHub Actions 发布并部署 Docker Compose 服务](./0001-github-actions-docker-deployment.md) — 固定 Release、共享配置和 Compose 项目名，保证自动部署时凭据与持久化数据连续。
+- [0002：使用本地 Git 仓库交付文章归档](./0002-local-git-article-archive.md) — 由 worker 将文章写入 `.agents`、按原始 URL 去重并立即提交推送。
