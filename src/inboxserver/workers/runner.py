@@ -30,6 +30,11 @@ from inboxserver.infrastructure.browser.playwright_runtime import fetch_rendered
 from inboxserver.infrastructure.destinations.dispatcher import build_destinations
 from inboxserver.infrastructure.http_client import make_http_client
 from inboxserver.infrastructure.llm import generate_smart_tags
+from inboxserver.infrastructure.operations.heartbeat import worker_heartbeat_loop
+from inboxserver.infrastructure.persistence.db import async_session_factory
+from inboxserver.infrastructure.persistence.repositories.article_archive_event import (
+    ArticleArchiveEventRepo,
+)
 from inboxserver.infrastructure.queue.dedup_store import DedupStore
 from inboxserver.infrastructure.queue.rate_guard import RateGuard
 from inboxserver.infrastructure.queue.repository import RedisQueueRepository
@@ -143,6 +148,10 @@ def _build_article_archive_service(channels, http) -> ArticleArchiveService:
             max_html_bytes=config.max_html_bytes,
         )
 
+    async def record_event(**event) -> None:
+        async with async_session_factory() as session:
+            await ArticleArchiveEventRepo(session).record(**event)
+
     return ArticleArchiveService(
         fetcher=DirectHtmlFetcher(
             http,
@@ -156,6 +165,7 @@ def _build_article_archive_service(channels, http) -> ArticleArchiveService:
             articles_dir=config.articles_dir,
             github_token=os.environ.get("GITHUB_TOKEN"),
         ),
+        event_recorder=record_event,
         min_visible_characters=config.min_visible_characters,
     )
 
@@ -280,6 +290,7 @@ async def run_worker() -> None:
     # browser collect 定时（worker 有 Xvfb+chromium；
     # 无 browser 源时 collect_browser_sources 内部跳过）
     tasks.append(_browser_collect_loop(channels, http, queue_repo, stop_event))
+    tasks.append(worker_heartbeat_loop(queue_redis, stop_event))
     await asyncio.gather(*tasks)
 
 

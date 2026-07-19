@@ -20,12 +20,8 @@ from inboxserver.infrastructure.queue.repository import RedisQueueRepository, qu
 router = APIRouter(prefix="/queue", tags=["queue"])
 
 
-@router.get("")
-async def list_queue(
-    queue_redis: Annotated[aioredis.Redis, Depends(get_redis)],
-    _: Annotated[None, Depends(require_api_key)],
-) -> dict:
-    """各内容类型队列状态：pending（待消费）/ dlq（死信）/ done（去重已处理）。"""
+async def queue_summary(queue_redis: aioredis.Redis) -> dict[str, dict[str, int]]:
+    """读取四类队列的 pending、dlq 与 done 计数。"""
     repo = RedisQueueRepository(queue_redis)
     dedup = DedupStore(queue_redis)
     queues: dict[str, dict[str, int]] = {}
@@ -35,7 +31,16 @@ async def list_queue(
             "dlq": await repo.dlq_len(kind),
             "done": await dedup.done_count(queue_key(kind)),
         }
-    return {"status": "ok", "queues": queues}
+    return queues
+
+
+@router.get("")
+async def list_queue(
+    queue_redis: Annotated[aioredis.Redis, Depends(get_redis)],
+    _: Annotated[None, Depends(require_api_key)],
+) -> dict:
+    """各内容类型队列状态：pending（待消费）/ dlq（死信）/ done（去重已处理）。"""
+    return {"status": "ok", "queues": await queue_summary(queue_redis)}
 
 
 @router.get("/dlq")

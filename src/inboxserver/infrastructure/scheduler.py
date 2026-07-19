@@ -13,11 +13,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from inboxserver.config.channels import load_channels
 from inboxserver.config.settings import settings
 from inboxserver.infrastructure.collectors.orchestrator import run_collect
+from inboxserver.infrastructure.collectors.run_tracking import run_tracked_collect
 from inboxserver.infrastructure.http_client import make_http_client
 from inboxserver.infrastructure.persistence.db import async_session_factory
 from inboxserver.notifications.email_notifier import EmailNotifier
 from inboxserver.notifications.log_notifier import LogNotifier
 from inboxserver.notifications.telegram_notifier import TelegramNotifier
+
+SCHEDULE_INTERVAL_MINUTES = 10
 
 
 async def collect_job() -> None:
@@ -29,7 +32,10 @@ async def collect_job() -> None:
     queue_redis = aioredis.from_url(settings.redis_url)
     try:
         async with async_session_factory() as session:
-            results = await run_collect(channels, http, queue_redis, session)
+            async def collect() -> dict:
+                return await run_collect(channels, http, queue_redis, session)
+
+            results = await run_tracked_collect(session, "scheduler", collect)
         await notify_results(results, channels, http)
     except Exception as e:
         structlog.get_logger().error("scheduler collect failed", error=repr(e))
@@ -80,7 +86,7 @@ def setup_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         collect_job,
         "interval",
-        minutes=10,
+        minutes=SCHEDULE_INTERVAL_MINUTES,
         id="collect",
         max_instances=1,
         coalesce=True,

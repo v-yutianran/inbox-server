@@ -173,9 +173,12 @@ async def test_run_worker_disabled_does_not_start_article_consumer(monkeypatch) 
     consume = AsyncMock()
     monkeypatch.setattr(runner, "consume", consume)
     monkeypatch.setattr(runner, "_browser_collect_loop", AsyncMock())
+    heartbeat = AsyncMock()
+    monkeypatch.setattr(runner, "worker_heartbeat_loop", heartbeat)
 
     await runner.run_worker()
 
     build_archive.assert_not_called()
     assert consume.await_count == 1
     assert consume.call_args.args[0] is ItemKind.LINK
+    heartbeat.assert_awaited_once()

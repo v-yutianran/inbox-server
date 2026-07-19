@@ -16,6 +16,7 @@ from inboxserver.api.auth import require_api_key
 from inboxserver.api.deps import get_http, get_redis
 from inboxserver.config.channels import load_channels
 from inboxserver.infrastructure.collectors.orchestrator import run_collect
+from inboxserver.infrastructure.collectors.run_tracking import run_tracked_collect
 from inboxserver.infrastructure.persistence.db import get_session
 from inboxserver.infrastructure.scheduler import notify_results
 
@@ -31,7 +32,11 @@ async def sync(
 ) -> dict:
     """触发同步：跑启用的 source.collect，返回各来源入队摘要。"""
     channels = load_channels()
-    results = await run_collect(channels, http, queue_redis, session)
+
+    async def collect() -> dict:
+        return await run_collect(channels, http, queue_redis, session)
+
+    results = await run_tracked_collect(session, "manual", collect)
     # 手动 sync 也发同步报告（对齐老 dispatcher 统一入口；通知是附加通道，未配置/失败不阻塞）
     await notify_results(results, channels, http)
     return {"status": "ok", "results": results}

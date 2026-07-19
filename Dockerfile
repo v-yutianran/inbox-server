@@ -5,6 +5,15 @@ RUN corepack enable && corepack prepare pnpm@10.12.4 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 
+FROM node:22.17.0-bookworm-slim AS web-build
+
+WORKDIR /web-build
+RUN corepack enable && corepack prepare pnpm@10.12.4 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web ./web
+RUN pnpm build:web
+
 # 用 playwright 官方镜像（已预装 chromium + 全套系统依赖），避免 install 网络/超时卡住
 # tag 格式 v{version}（不是 1.60，是 v1.60.0）
 FROM mcr.microsoft.com/playwright/python:v1.60.0
@@ -32,6 +41,7 @@ RUN uv sync --frozen --no-dev
 # 注：chromium 由基镜像预装（PLAYWRIGHT_BROWSERS_PATH 已设），无需 playwright install
 
 COPY . .
+COPY --from=web-build /web-build/web/dist ./web/dist
 RUN chmod 0555 /app/scripts/github-askpass.sh
 RUN node --version && node -e "Promise.all([import('defuddle/node'), import('eta')])"
 ENV INBOX_CHANNELS=/app/channels.yaml

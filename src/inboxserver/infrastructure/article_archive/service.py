@@ -37,6 +37,19 @@ class ArticleRepository(Protocol):
     async def save_if_absent(self, filename: str, source_url: str, content: bytes) -> bool: ...
 
 
+class ArticleEventRecorder(Protocol):
+    async def __call__(
+        self,
+        *,
+        source_url: str,
+        url_fingerprint: str,
+        title: str,
+        status: str,
+        reason: str | None,
+        filename: str | None,
+    ) -> None: ...
+
+
 class ArticleArchiveService:
     """协调文章归档 IO；所有永久性非文章结果映射为成功跳过。"""
 
@@ -47,6 +60,7 @@ class ArticleArchiveService:
         bridge: ArticleBridge,
         browser_fetch: Callable[[str], Awaitable[str]],
         repository: ArticleRepository,
+        event_recorder: ArticleEventRecorder | None = None,
         min_visible_characters: int,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -54,6 +68,7 @@ class ArticleArchiveService:
         self._bridge = bridge
         self._browser_fetch = browser_fetch
         self._repository = repository
+        self._event_recorder = event_recorder
         self._min_visible_characters = min_visible_characters
         self._clock = clock or (lambda: datetime.now(UTC))
 
@@ -64,6 +79,14 @@ class ArticleArchiveService:
         excluded = preexclude_reason(url)
         if excluded:
             log.info("article_archive_skipped", url_fingerprint=fp, reason=excluded)
+            await self._record_event(
+                source_url=url,
+                url_fingerprint=fp,
+                title=str(item.get("title") or ""),
+                status="skipped",
+                reason=excluded,
+                filename=None,
+            )
             return True, DispatchOutcome.OK
 
         article = await self._try_direct(url, fp)
@@ -77,6 +100,14 @@ class ArticleArchiveService:
                     url_fingerprint=fp,
                     error_type=type(error).__name__,
                 )
+                await self._record_event(
+                    source_url=url,
+                    url_fingerprint=fp,
+                    title=str(item.get("title") or ""),
+                    status="failed",
+                    reason=type(error).__name__,
+                    filename=None,
+                )
                 return False, DispatchOutcome.FAIL
             assessment = assess_article(
                 article,
@@ -88,6 +119,14 @@ class ArticleArchiveService:
                     url_fingerprint=fp,
                     reason=assessment.reason,
                     visible_characters=assessment.visible_characters,
+                )
+                await self._record_event(
+                    source_url=url,
+                    url_fingerprint=fp,
+                    title=article.title,
+                    status="skipped",
+                    reason=assessment.reason,
+                    filename=None,
                 )
                 return True, DispatchOutcome.OK
 
@@ -114,6 +153,14 @@ class ArticleArchiveService:
                 filename=filename,
                 bytes=len(markdown.encode()),
             )
+            await self._record_event(
+                source_url=url,
+                url_fingerprint=fp,
+                title=article.title,
+                status="committed" if created else "exists",
+                reason=None,
+                filename=filename,
+            )
             return True, DispatchOutcome.OK
         except Exception as error:
             error_code = str(error)
@@ -123,7 +170,47 @@ class ArticleArchiveService:
                 error_type=type(error).__name__,
                 error_code=error_code if _SAFE_ERROR_CODE.fullmatch(error_code) else None,
             )
+            await self._record_event(
+                source_url=url,
+                url_fingerprint=fp,
+                title=article.title,
+                status="failed",
+                reason=(
+                    error_code
+                    if _SAFE_ERROR_CODE.fullmatch(error_code)
+                    else type(error).__name__
+                ),
+                filename=None,
+            )
             return False, DispatchOutcome.FAIL
+
+    async def _record_event(
+        self,
+        *,
+        source_url: str,
+        url_fingerprint: str,
+        title: str,
+        status: str,
+        reason: str | None,
+        filename: str | None,
+    ) -> None:
+        if self._event_recorder is None:
+            return
+        try:
+            await self._event_recorder(
+                source_url=source_url,
+                url_fingerprint=url_fingerprint,
+                title=title,
+                status=status,
+                reason=reason,
+                filename=filename,
+            )
+        except Exception as error:
+            log.warning(
+                "article_archive_event_record_failed",
+                url_fingerprint=url_fingerprint,
+                error_type=type(error).__name__,
+            )
 
     async def _try_direct(self, url: str, fp: str) -> DefuddleArticle | None:
         try:

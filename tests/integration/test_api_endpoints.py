@@ -6,6 +6,8 @@ sync 端点依赖 session/redis/http（需 dependency_overrides 注入 fakeredis
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from inboxserver.api.app import create_app
@@ -45,3 +47,17 @@ def test_new_routes_registered():
         "/login/{platform}/status",
     ]:
         assert ep in paths, f"missing route: {ep}"
+
+
+def test_console_static_files_do_not_shadow_existing_routes(tmp_path: Path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (tmp_path / "index.html").write_text("<main>operations console</main>")
+    (assets / "app.js").write_text("console.log('ok')")
+
+    client = TestClient(create_app(web_dist=tmp_path))
+
+    assert client.get("/").text == "<main>operations console</main>"
+    assert client.get("/assets/app.js").text == "console.log('ok')"
+    assert client.get("/healthz").json() == {"status": "ok"}
+    assert client.get("/openapi.json").status_code == 200

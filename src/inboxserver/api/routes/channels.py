@@ -11,17 +11,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from inboxserver.api.auth import require_api_key
-from inboxserver.config.channels import load_channels
+from inboxserver.config.channels import ChannelsConfig, load_channels
 
 router = APIRouter(tags=["channels"])
 
 
-@router.get("/channels")
-async def list_channels(
-    _: Annotated[None, Depends(require_api_key)],
-) -> dict:
-    """渠道列表（脱敏）：返回全部 source/destination 的启用状态与引用信息。"""
-    channels = load_channels()
+def safe_channel_summary(channels: ChannelsConfig) -> dict:
+    """生成不含 credentials、token 与 webhook 的渠道摘要。"""
     # source：enabled + kind + 凭据引用名（引用名非明文凭据，可安全返回）
     sources: dict[str, dict] = {}
     for name, entry in channels.sources.items():
@@ -38,4 +34,12 @@ async def list_channels(
             "enabled": entry.enabled,
             "item_kind": entry.item_kind,
         }
-    return {"status": "ok", "sources": sources, "destinations": destinations}
+    return {"sources": sources, "destinations": destinations}
+
+
+@router.get("/channels")
+async def list_channels(
+    _: Annotated[None, Depends(require_api_key)],
+) -> dict:
+    """渠道列表（脱敏）：返回全部 source/destination 的启用状态与引用信息。"""
+    return {"status": "ok", **safe_channel_summary(load_channels())}

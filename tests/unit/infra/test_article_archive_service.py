@@ -63,12 +63,24 @@ class _ArchiveRepository:
         return self._created
 
 
-def _service(fetcher, bridge, browser, repository) -> ArticleArchiveService:
+class _Recorder:
+    def __init__(self, error: Exception | None = None):
+        self.error = error
+        self.events: list[dict] = []
+
+    async def __call__(self, **event) -> None:
+        if self.error:
+            raise self.error
+        self.events.append(event)
+
+
+def _service(fetcher, bridge, browser, repository, recorder=None) -> ArticleArchiveService:
     return ArticleArchiveService(
         fetcher=fetcher,
         bridge=bridge,
         browser_fetch=browser,
         repository=repository,
+        event_recorder=recorder,
         min_visible_characters=20,
         clock=lambda: datetime(2026, 7, 16, 1, tzinfo=UTC),
     )
@@ -170,3 +182,42 @@ async def test_recoverable_browser_or_git_failures_return_fail() -> None:
         _ArchiveRepository(error=RuntimeError("temporary")),
     ).process({"url": "https://example.com/a"})
     assert git_failure == (False, DispatchOutcome.FAIL)
+
+
+async def test_terminal_outcomes_are_recorded() -> None:
+    committed = _Recorder()
+    result = await _service(
+        _Fetcher(), _Bridge([_valid()]), _BrowserFetch(), _ArchiveRepository(), committed
+    ).process({"url": "https://example.com/a", "title": "队列标题"})
+    assert result == (True, DispatchOutcome.OK)
+    assert committed.events == [
+        {
+            "source_url": "https://example.com/a",
+            "url_fingerprint": "2dce0a4c50",
+            "title": "测试 文章",
+            "status": "committed",
+            "reason": None,
+            "filename": "20260716-测试文章.md",
+        }
+    ]
+
+    skipped = _Recorder()
+    short = DefuddleArticle(title="短", markdown="短")
+    result = await _service(
+        _Fetcher(), _Bridge([short, short]), _BrowserFetch(), _ArchiveRepository(), skipped
+    ).process({"url": "https://example.com/short", "title": "队列标题"})
+    assert result == (True, DispatchOutcome.OK)
+    assert skipped.events[0]["status"] == "skipped"
+    assert skipped.events[0]["reason"] == "short_content"
+
+
+async def test_event_recorder_failure_does_not_reverse_archive_result() -> None:
+    result = await _service(
+        _Fetcher(),
+        _Bridge([_valid()]),
+        _BrowserFetch(),
+        _ArchiveRepository(),
+        _Recorder(error=RuntimeError("database unavailable")),
+    ).process({"url": "https://example.com/a"})
+
+    assert result == (True, DispatchOutcome.OK)
