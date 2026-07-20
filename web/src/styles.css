@@ -42,6 +42,7 @@ a { color: inherit; }
 .unlock-card { width: min(520px, 100%); padding: clamp(28px, 6vw, 54px); background: var(--paper); border-top: 12px solid var(--signal); box-shadow: 18px 18px 0 rgba(214,255,87,.22); }
 .unlock-card h1 { margin: 10px 0 16px; font: 500 clamp(38px, 8vw, 64px)/.95 Georgia, "Songti SC", serif; letter-spacing: -.05em; }
 .unlock-card > p:not(.eyebrow) { color: var(--muted); line-height: 1.7; }
+.unlock-card > .unlock-error { color: var(--danger); }
 .unlock-form { display: grid; gap: 10px; margin-top: 30px; }
 .unlock-form label { font: 700 11px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .unlock-form input { width: 100%; min-height: 50px; padding: 0 14px; border: 1px solid var(--ink); border-radius: 0; background: white; }
@@ -107,7 +108,8 @@ a { color: inherit; }
 .event-badge.is-committed { background: var(--signal); }
 .event-badge.is-failed { color: white; border-color: var(--danger); background: var(--danger); }
 .event-badge.is-skipped { background: #ddd5c5; }
-.article-copy a { font: 500 19px/1.25 Georgia, "Songti SC", serif; text-decoration-thickness: 1px; text-underline-offset: 4px; }
+.article-copy { min-width: 0; }
+.article-copy a { font: 500 19px/1.25 Georgia, "Songti SC", serif; overflow-wrap: anywhere; text-decoration-thickness: 1px; text-underline-offset: 4px; }
 .article-copy p { margin: 7px 0 0; color: var(--muted); font: 11px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
 .empty-copy { margin: 0; padding: 30px 0; color: var(--muted); border-top: 1px solid var(--line); }
 footer { display: flex; justify-content: space-between; padding-top: 18px; border-top: 1px solid var(--ink); color: var(--muted); font: 10px/1 ui-monospace, monospace; letter-spacing: .12em; }
@@ -134,6 +136,6 @@ footer { display: flex; justify-content: space-between; padding-top: 18px; borde
   .section-heading p { text-align: left; }
   .queue-grid, .channel-grid { grid-template-columns: 1fr; }
   .queue-card > strong { font-size: 64px; }
-  .article-list li { grid-template-columns: 1fr; gap: 12px; }
+  .article-list li { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   footer { flex-direction: column; gap: 8px; }
 }

@@ -53,6 +53,18 @@ test("有效 API Key 仅写入 sessionStorage 并加载汇总", async () => {
   expect(screen.getByText("运行总览")).toBeInTheDocument();
 });
 
+test("错误 API Key 返回解锁界面并显示原因", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 401 }));
+  const user = userEvent.setup();
+  render(<App />);
+
+  await user.type(screen.getByLabelText("管理 API Key"), "wrong-key");
+  await user.click(screen.getByRole("button", { name: "进入控制台" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("API Key 无效，请重新输入");
+  expect(sessionStorage.getItem(API_KEY_STORAGE)).toBeNull();
+});
+
 test("控制台展示服务、队列、渠道和两类历史", async () => {
   sessionStorage.setItem(API_KEY_STORAGE, "secret-key");
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -137,6 +149,25 @@ test("手动同步完成后刷新汇总并提供反馈", async () => {
   });
   expect(await screen.findByText("同步完成，运行状态已刷新")).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledTimes(3);
+});
+
+test("手动同步鉴权失效时返回解锁界面并显示原因", async () => {
+  sessionStorage.setItem(API_KEY_STORAGE, "secret-key");
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    if (input === "/sync") return new Response(null, { status: 401 });
+    return new Response(JSON.stringify(overview), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByText("运行总览");
+
+  await user.click(screen.getByRole("button", { name: "立即同步" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("API Key 无效，请重新输入");
+  expect(sessionStorage.getItem(API_KEY_STORAGE)).toBeNull();
 });
 
 test("汇总加载失败时显示错误和重试入口", async () => {

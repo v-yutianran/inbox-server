@@ -5,10 +5,11 @@ import { Dashboard } from "./components/Dashboard";
 import type { OperationsOverview } from "./types";
 
 type UnlockProps = {
+  error?: string | null;
   onUnlock: (apiKey: string) => void;
 };
 
-function Unlock({ onUnlock }: UnlockProps) {
+function Unlock({ error, onUnlock }: UnlockProps) {
   const [value, setValue] = useState("");
 
   return (
@@ -17,6 +18,7 @@ function Unlock({ onUnlock }: UnlockProps) {
         <p className="eyebrow">INBOX / OPERATIONS</p>
         <h1 id="unlock-title">连接控制台</h1>
         <p>管理密钥只保存在当前浏览器会话，关闭标签页后自动清除。</p>
+        {error ? <p className="unlock-error" role="alert">{error}</p> : null}
         <form className="unlock-form"
           onSubmit={(event) => {
             event.preventDefault();
@@ -57,6 +59,7 @@ function ErrorState({ message, onRetry, onLock }: { message: string; onRetry: ()
 
 export function App() {
   const [apiKey, setApiKey] = useState(readApiKey);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
   const [overview, setOverview] = useState<OperationsOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -68,8 +71,14 @@ export function App() {
     setApiKey("");
     setOverview(null);
     setError(null);
+    setUnlockError(null);
     setNotice(null);
   }, []);
+
+  const rejectApiKey = useCallback(() => {
+    lock();
+    setUnlockError("API Key 无效，请重新输入");
+  }, [lock]);
 
   const loadOverview = useCallback(async () => {
     if (!apiKey) return;
@@ -79,14 +88,14 @@ export function App() {
       setOverview(await fetchOverview(apiKey));
     } catch (reason: unknown) {
       if (reason instanceof ApiError && reason.status === 401) {
-        lock();
+        rejectApiKey();
         return;
       }
       setError(reason instanceof Error ? reason.message : "无法加载运行状态");
     } finally {
       setRefreshing(false);
     }
-  }, [apiKey, lock]);
+  }, [apiKey, rejectApiKey]);
 
   useEffect(() => {
     void loadOverview();
@@ -95,7 +104,9 @@ export function App() {
   if (!apiKey) {
     return (
       <Unlock
+        error={unlockError}
         onUnlock={(value) => {
+          setUnlockError(null);
           writeApiKey(value);
           setApiKey(value);
         }}
@@ -120,7 +131,7 @@ export function App() {
           .then(loadOverview)
           .then(() => setNotice("同步完成，运行状态已刷新"))
           .catch((reason: unknown) => {
-            if (reason instanceof ApiError && reason.status === 401) lock();
+            if (reason instanceof ApiError && reason.status === 401) rejectApiKey();
             else setError(reason instanceof Error ? reason.message : "同步失败");
           })
           .finally(() => setSyncing(false));

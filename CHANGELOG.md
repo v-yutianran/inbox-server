@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 2026-07-21
+
+### fix(console)：修复移动端溢出与鉴权反馈
+
+- 错误 API Key 返回解锁界面时显示明确原因，并继续清除当前会话中的 Key
+- 文章历史中的长链接在手机视口内换行，不再撑出横向滚动条
+- 使用内联 SVG favicon，避免浏览器请求缺失的 `/favicon.ico`
+
+**如何验证**：
+- `pnpm test:web` → 7 passed
+- `pnpm typecheck:web`、`pnpm build:web` → passed
+- Playwright 在 390×844 与 1200×918 视口确认无横向溢出，错误 Key 显示可见提示且 favicon 不再产生额外请求
+
 ## 2026-07-20
 
 ### fix(worker)：以 Redis 心跳识别消费停摆
