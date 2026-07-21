@@ -48,6 +48,7 @@ _DOWNLOAD_SUFFIXES = {
 }
 _ERROR_MARKERS = (
     "访问过于频繁",
+    "当前请求存在异常",
     "环境异常",
     "请完成验证",
     "Unable to access",
@@ -107,10 +108,10 @@ def assess_article(
     visible = _MARKDOWN_LINK.sub(r"\1", visible)
     visible = _HTML_TAG.sub(" ", visible)
     visible_characters = sum(1 for char in visible if char.isalnum())
-    if not article.title.strip():
-        return ArticleAssessment(False, visible_characters, "missing_title")
     if any(marker.casefold() in markdown.casefold() for marker in _ERROR_MARKERS):
         return ArticleAssessment(False, visible_characters, "error_marker")
+    if not article.title.strip():
+        return ArticleAssessment(False, visible_characters, "missing_title")
     if visible_characters < min_visible_characters:
         return ArticleAssessment(False, visible_characters, "short_content")
     return ArticleAssessment(True, visible_characters, None)

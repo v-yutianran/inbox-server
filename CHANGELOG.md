@@ -2,6 +2,22 @@
 
 ## 2026-07-21
 
+### fix(article)：修复知乎文章误跳过与异常队列
+
+- 知乎回答、专栏和想法改用已有登录态调用内容 API，保留 90 秒硬超时；API 拒绝或登录失效时进入重试，不再把限制页当成无标题文章永久跳过
+- 将 API 正文封装为 Defuddle 可解析的完整 HTML，并在解析器缺失标题时复用队列标题
+- 知乎有效短正文不再套用通用 200 字门槛；限制页标记和非 200 响应仍会被拒绝
+- Git 交付保留容器代理配置；命令超时时终止整个进程组，避免残留 `git-remote-https` 阻塞后续消费
+- 备份并重新投递历史 20 条 DLQ、34 条无标题跳过记录和 3 条短正文跳过记录
+
+**如何验证**：
+- 定向单元和集成测试覆盖知乎回答、专栏、想法、登录失效、API 拒绝、限制页、标题回退、短正文及真实 Defuddle 解析
+- Git 适配器测试覆盖远端重试、运行时代理保留和超时子进程组终止
+- 本机 OrbStack worker 使用真实知乎登录态完成三类链接抓取，并确认历史本地提交推送到远端、重放任务落库且 DLQ 为 0
+- `uv run ruff check src/inboxserver tests scripts`、`uv run mypy src/inboxserver --ignore-missing-imports` 与 `docker compose config --quiet` → passed
+- `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 258 passed（8 个既有 warning）
+- Playwright 在 1200×918 与 390×844 视口确认 Article 队列显示“正常”、待处理 `0`、DLQ `0`，且最新知乎链接显示“已归档并推送”
+
 ### fix(console)：修复移动端溢出与鉴权反馈
 
 - 错误 API Key 返回解锁界面时显示明确原因，并继续清除当前会话中的 Key

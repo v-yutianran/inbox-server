@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import yaml
 
@@ -12,6 +13,7 @@ from inboxserver.domain.policy.article_archive import (
     normalize_archive_metadata,
 )
 from inboxserver.infrastructure.article_archive.defuddle import DefuddleBridge
+from inboxserver.infrastructure.article_archive.zhihu_fetcher import ZhihuArticleFetcher
 
 ROOT = Path(__file__).parents[2]
 
@@ -68,3 +70,28 @@ async def test_node_bridge_handles_local_weixin_full_and_error_samples() -> None
         "error_marker",
         "short_content",
     }
+
+
+async def test_zhihu_api_document_is_parseable_by_real_defuddle() -> None:
+    session = AsyncMock()
+    session.acquire.return_value = {"cookies": []}
+    scraper = AsyncMock()
+    scraper.fetch_via_page.return_value = {
+        "status": 200,
+        "body": (
+            '{"question":{"title":"知乎问题标题"},'
+            '"content":"<p>这是知乎回答正文。</p><p>第二段正文。</p>"}'
+        ),
+    }
+    fetcher = ZhihuArticleFetcher(
+        session_manager=session,
+        scrapers={"zhihu": scraper},
+        credential_name="zhihu_creds",
+    )
+    bridge = DefuddleBridge(script_path=ROOT / "scripts/article-archive.mjs")
+
+    html = await fetcher.fetch("https://www.zhihu.com/question/1/answer/2")
+    article = await bridge.parse("https://www.zhihu.com/question/1/answer/2", html)
+
+    assert article.title == "知乎问题标题"
+    assert "这是知乎回答正文" in article.markdown
