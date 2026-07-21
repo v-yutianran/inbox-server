@@ -2,6 +2,18 @@
 
 ## 2026-07-21
 
+### style(console)：应用 Notion 风格视觉系统
+
+- 依据 `design-reference` 的 Notion 规范，将控制台调整为白色画布、warm neutral 灰阶、Notion Blue 主操作和 Inter 字体层级
+- 状态卡与队列卡改用 12px 圆角、whisper border 和低透明度多层阴影；正常状态使用低噪声 pill，异常状态保留语义色
+- 解锁页、输入框、提示、文章状态和响应式布局同步统一，保留 Astryx 组件结构与全部业务交互
+
+**如何验证**：
+- `pnpm test:web` → 7 passed
+- `pnpm typecheck:web`、`pnpm build:web` → passed
+- Playwright 自动化 E2E 覆盖 1200×900、900×900 与 390×844：三视口无横向溢出，手机和平板主操作高度不低于 44px
+- 真实刷新接口返回 200，Article 队列显示正常，浏览器 console 为 0 error、0 warning
+
 ### feat(console)：接入 Astryx 设计系统
 
 - 固定接入 Astryx Core、Neutral Theme 与 StyleX 0.1.7/0.19.0，并按官方顺序加载 reset、组件和静态主题 CSS
