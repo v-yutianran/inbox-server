@@ -14,7 +14,9 @@
 - `pnpm typecheck:web`、`pnpm build:web` → passed
 - `uv run ruff check src/inboxserver tests scripts`、`uv run mypy src/inboxserver --ignore-missing-imports` 与 `docker compose config --quiet` → passed
 - `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 258 passed（8 个既有 warning）
-- 未运行自动化 E2E：当前任务未授权浏览器自动化；需在 390px、900px 与桌面视口手工确认控件、卡片、徽标和加载状态
+- Playwright 自动化 E2E 覆盖 1200×900、900×900 与 390×844：三视口均无横向溢出，移动端主要按钮高度不低于 44px
+- 真实 API 概览与刷新返回 200，Article 队列显示正常、待处理 0、DLQ 0，8 条知乎归档链接可见；同步反馈使用浏览器 mock，未触发真实外部采集
+- 错误 API Key 返回解锁页并显示明确原因；主控制台浏览器 console 为 0 error、0 warning
 
 ### fix(article)：修复知乎文章误跳过与异常队列
 
