@@ -28,6 +28,7 @@ test("没有会话 API Key 时只显示解锁界面", () => {
 
   expect(screen.getByRole("heading", { name: "连接控制台" })).toBeInTheDocument();
   expect(screen.getByLabelText("管理 API Key")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "进入控制台" })).toHaveClass("astryx-button");
   expect(fetchMock).not.toHaveBeenCalled();
 });
 

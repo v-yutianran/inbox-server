@@ -2,6 +2,20 @@
 
 ## 2026-07-21
 
+### feat(console)：接入 Astryx 设计系统
+
+- 固定接入 Astryx Core、Neutral Theme 与 StyleX 0.1.7/0.19.0，并按官方顺序加载 reset、组件和静态主题 CSS
+- 使用 Astryx `Theme`、`Button`、`TextInput`、`Card`、`Badge`、`Banner` 与 `StatusDot` 统一控制台基础交互和状态表达
+- 保留现有纸张、油墨和荧光信号色视觉语言，通过稳定组件类覆盖圆角、边框与响应式布局，不改文章归档业务结构
+- 为 Astryx 加载状态补充 JSDOM `matchMedia` 测试环境，并新增基础组件接入断言
+
+**如何验证**：
+- `pnpm test:web` → 7 passed
+- `pnpm typecheck:web`、`pnpm build:web` → passed
+- `uv run ruff check src/inboxserver tests scripts`、`uv run mypy src/inboxserver --ignore-missing-imports` 与 `docker compose config --quiet` → passed
+- `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 258 passed（8 个既有 warning）
+- 未运行自动化 E2E：当前任务未授权浏览器自动化；需在 390px、900px 与桌面视口手工确认控件、卡片、徽标和加载状态
+
 ### fix(article)：修复知乎文章误跳过与异常队列
 
 - 知乎回答、专栏和想法改用已有登录态调用内容 API，保留 90 秒硬超时；API 拒绝或登录失效时进入重试，不再把限制页当成无标题文章永久跳过

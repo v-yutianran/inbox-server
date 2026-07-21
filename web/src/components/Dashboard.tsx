@@ -1,3 +1,6 @@
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
+
 import { formatTime } from "../format";
 import type { OperationsOverview } from "../types";
 import { ArticleHistory } from "./ArticleHistory";
@@ -32,16 +35,12 @@ export function Dashboard({
         <div className="header-copy"><span className="eyebrow">PRIVATE DISTRIBUTION SYSTEM</span><h1>运行总览</h1></div>
         <div className="header-stamp"><span>数据时间</span><strong>{formatTime(overview.generated_at)}</strong></div>
         <div className="header-actions">
-          <button className="button button--signal" type="button" onClick={onSync} disabled={syncing}>
-            {syncing ? "同步中…" : "立即同步"}
-          </button>
-          <button className="button" type="button" onClick={onRefresh} disabled={refreshing}>
-            {refreshing ? "刷新中…" : "刷新状态"}
-          </button>
-          <button className="text-button" type="button" onClick={onLock}>锁定</button>
+          <Button className="ops-button" label="立即同步" variant="primary" onClick={onSync} isLoading={syncing} />
+          <Button className="ops-button" label="刷新状态" onClick={onRefresh} isLoading={refreshing} />
+          <Button className="ops-button lock-button" label="锁定" variant="ghost" size="sm" onClick={onLock} />
         </div>
       </header>
-      {notice ? <p className="notice" role="status">{notice}</p> : null}
+      {notice ? <Banner className="notice" status="success" title={notice} /> : null}
       <StatusOverview server={overview.server} worker={overview.worker} scheduler={overview.scheduler} />
       <QueuePanel queues={overview.queues} />
       <div className="split-grid">

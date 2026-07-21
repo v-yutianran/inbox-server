@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@astryxdesign/core/Button";
+import { TextInput } from "@astryxdesign/core/TextInput";
 
 import { ApiError, clearApiKey, fetchOverview, readApiKey, triggerSync, writeApiKey } from "./api";
 import { Dashboard } from "./components/Dashboard";
@@ -26,15 +28,24 @@ function Unlock({ error, onUnlock }: UnlockProps) {
             if (apiKey) onUnlock(apiKey);
           }}
         >
-          <label htmlFor="api-key">管理 API Key</label>
-          <input
-            id="api-key"
+          <TextInput
+            {...{ autoComplete: "current-password" }}
+            className="unlock-input"
+            label="管理 API Key"
             type="password"
             value={value}
-            autoComplete="current-password"
-            onChange={(event) => setValue(event.target.value)}
+            width="100%"
+            size="lg"
+            onChange={setValue}
           />
-          <button type="submit">进入控制台</button>
+          <Button
+            className="ops-button unlock-submit"
+            label="进入控制台"
+            type="submit"
+            variant="primary"
+            size="lg"
+            width="100%"
+          />
         </form>
       </section>
     </main>
@@ -49,8 +60,8 @@ function ErrorState({ message, onRetry, onLock }: { message: string; onRetry: ()
         <h1>状态暂时不可用</h1>
         <p role="alert">{message}</p>
         <div className="error-actions">
-          <button className="button button--signal" type="button" onClick={onRetry}>重新加载</button>
-          <button className="button" type="button" onClick={onLock}>更换 API Key</button>
+          <Button className="ops-button" label="重新加载" variant="primary" onClick={onRetry} />
+          <Button className="ops-button" label="更换 API Key" onClick={onLock} />
         </div>
       </section>
     </main>
