@@ -1,0 +1,123 @@
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: inbox-server-worker
+spec:
+  title: Inbox Server Worker
+  url: https://github.com/fishyer/inbox-server
+  gitRepo: https://github.com/fishyer/inbox-server
+  author: fishyer
+  description: TypeScript headed-browser 收集与分发 Worker
+  readme: https://raw.githubusercontent.com/labring-actions/templates/kb-0.9/template/inbox-server-worker/README.md
+  icon: https://raw.githubusercontent.com/labring-actions/templates/kb-0.9/template/inbox-server-worker/logo.svg
+  templateType: inline
+  locale: en
+  i18n:
+    zh:
+      description: TypeScript headed-browser 收集与分发 Worker
+      readme: https://raw.githubusercontent.com/labring-actions/templates/kb-0.9/template/inbox-server-worker/README_zh.md
+  categories:
+    - tool
+  defaults:
+    app_name:
+      type: string
+      value: inbox-server-worker-${{ random(8) }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ${{ defaults.app_name }}
+  annotations:
+    originImageName: ghcr.io/v-yutianran/inbox-server-worker@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
+    deploy.cloud.sealos.io/minReplicas: "1"
+    deploy.cloud.sealos.io/maxReplicas: "1"
+  labels:
+    app: ${{ defaults.app_name }}
+    cloud.sealos.io/app-deploy-manager: ${{ defaults.app_name }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 1
+  serviceName: ${{ defaults.app_name }}
+  selector:
+    matchLabels:
+      app: ${{ defaults.app_name }}
+  template:
+    metadata:
+      labels:
+        app: ${{ defaults.app_name }}
+        cloud.sealos.io/app-deploy-manager: ${{ defaults.app_name }}
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ${{ defaults.app_name }}
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: ${{ defaults.app_name }}
+          image: ghcr.io/v-yutianran/inbox-server-worker@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: DISPLAY
+              value: :99
+            - name: HEALTH_PORT
+              value: "8080"
+            - name: TZ
+              value: Asia/Shanghai
+          ports:
+            - name: health
+              containerPort: 8080
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            failureThreshold: 12
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            failureThreshold: 3
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            failureThreshold: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 102Mi
+            limits:
+              cpu: 200m
+              memory: 1024Mi
+          volumeMounts:
+            - name: vn-data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: vn-data
+        annotations:
+          path: /data
+          value: "1"
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi

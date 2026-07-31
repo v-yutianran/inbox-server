@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Inbox Server Worker">
+  <rect width="128" height="128" rx="28" fill="#111827"/>
+  <path d="M25 36h78l11 40v20a8 8 0 0 1-8 8H22a8 8 0 0 1-8-8V76l11-40Z" fill="#2563eb"/>
+  <path d="M25 36h78L90 72H75a12 12 0 0 1-22 0H38L25 36Z" fill="#93c5fd"/>
+  <path d="M14 76h39a12 12 0 0 0 22 0h39" fill="none" stroke="#dbeafe" stroke-width="8" stroke-linejoin="round"/>
+</svg>
