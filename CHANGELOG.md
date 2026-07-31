@@ -7,7 +7,7 @@
 - 根项目迁为 npm workspace，新增 strict TypeScript 领域包、Hono Cloudflare API 骨架和版本化队列任务契约
 - Docker Worker 保持 headed Chromium/Xvfb，提供 liveness/readiness、结构化日志、AbortSignal 生命周期和 Cloudflare Queues pull/ack/retry 适配器
 - 使用固定 Node 22.17.0 与 Playwright 1.62.1 只安装 Chromium，将 `linux/amd64` 镜像从 2.35 GiB 降至 1.18 GiB
-- 生成 worker-only Sealos 模板与 TopologyEvidence，并在 `bja` 的 `ns-tbs948af` 部署单副本 staging StatefulSet、私有镜像 Secret 和 1 Gi PVC；不创建 Service 或 Ingress
+- 生成 worker-only Sealos 模板与 TopologyEvidence，并在 `bja` 的 `ns-tbs948af` 部署单副本 staging StatefulSet、公开 GHCR 镜像和 1 Gi PVC；拉取统一使用南京大学 `ghcr.nju.edu.cn` 代理且不配置 registry pull Secret，不创建 Service 或 Ingress
 - 保留现有 Python/FastAPI/PostgreSQL/Redis 生产路径，本阶段未启用新 Queue 消费、外部分发或生产切换
 
 **如何验证**：
@@ -15,7 +15,7 @@
 - `npm audit --omit=dev` → 0 vulnerability；4 个中危仅位于 `drizzle-kit` 开发依赖链
 - `linux/amd64` Docker 实测 → 非 root、Node PID 1、Xvfb、健康探针、SIGTERM 退出码 0、PVC 哈希持久化均通过
 - docker-to-sealos 8 项静态校验与 quality gate → passed
-- Sealos staging → StatefulSet 1/1 Ready、0 重启、60 秒稳定，PVC Bound；空 Service/Ingress 列表
+- 南京大学 GHCR 代理实拉 → 与源站 digest 一致；Sealos staging → StatefulSet 1/1 Ready、0 重启、60 秒稳定、无 registry pull Secret，PVC Bound；空 Service/Ingress 列表
 - 未运行自动化浏览器 E2E：当前任务未授权；真实站点登录态、页面交互和来源迁移仍保留在后续 OpenSpec 任务
 
 ## 2026-07-21

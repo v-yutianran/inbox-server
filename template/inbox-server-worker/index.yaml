@@ -28,7 +28,7 @@ kind: StatefulSet
 metadata:
   name: ${{ defaults.app_name }}
   annotations:
-    originImageName: ghcr.io/v-yutianran/inbox-server-worker@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
+    originImageName: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
     deploy.cloud.sealos.io/minReplicas: "1"
     deploy.cloud.sealos.io/maxReplicas: "1"
   labels:
@@ -48,8 +48,6 @@ spec:
         cloud.sealos.io/app-deploy-manager: ${{ defaults.app_name }}
     spec:
       automountServiceAccountToken: false
-      imagePullSecrets:
-        - name: ${{ defaults.app_name }}
       securityContext:
         fsGroup: 1001
         runAsGroup: 1001
@@ -60,7 +58,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: ${{ defaults.app_name }}
-          image: ghcr.io/v-yutianran/inbox-server-worker@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
+          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

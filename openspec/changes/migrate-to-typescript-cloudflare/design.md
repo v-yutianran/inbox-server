@@ -74,7 +74,7 @@ worker 提供仅 Pod 内使用的 liveness/readiness HTTP 端点，不创建公�
 
 ### 6. Sealos 只承载私有 worker
 
-目标为 `sealos.run` 北京区 `bja`、工作区 `ns-tbs948af`。模板只包含 worker 及其持久化卷，不复制 Cloudflare 托管的 D1/Queues，也不为 worker 创建 Service/Ingress。镜像必须固定版本；敏感配置通过 Sealos Secret 注入且不进入模板输出或日志。
+目标为 `sealos.run` 北京区 `bja`、工作区 `ns-tbs948af`。模板只包含 worker 及其持久化卷，不复制 Cloudflare 托管的 D1/Queues，也不为 worker 创建 Service/Ingress。worker 镜像发布为公开 GHCR 镜像，拉取地址将 `ghcr.io` 替换为南京大学代理 `ghcr.nju.edu.cn` 并继续固定同一 digest，因此不配置 registry pull Secret；业务敏感配置仍通过 Sealos Secret 注入且不进入模板输出或日志。
 
 Chromium 容器从 `cpu=200m,memory=1024Mi` 的浏览器验证起点开始，按 Sealos 资源阶梯用冷启动、轻量页、真实页面、一次交互和 60 秒稳定窗口向上或向下验证，最终值以最低通过档为准。
 
