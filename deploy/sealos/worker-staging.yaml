@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: inbox-server-worker-staging
+  namespace: ns-tbs948af
+  annotations:
+    originImageName: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
+    deploy.cloud.sealos.io/minReplicas: "1"
+    deploy.cloud.sealos.io/maxReplicas: "1"
+  labels:
+    app: inbox-server-worker-staging
+    cloud.sealos.io/app-deploy-manager: inbox-server-worker-staging
+spec:
+  replicas: 1
+  revisionHistoryLimit: 1
+  serviceName: inbox-server-worker-staging
+  selector:
+    matchLabels:
+      app: inbox-server-worker-staging
+  template:
+    metadata:
+      labels:
+        app: inbox-server-worker-staging
+        cloud.sealos.io/app-deploy-manager: inbox-server-worker-staging
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: inbox-server-worker-staging
+          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: DISPLAY
+              value: :99
+            - name: HEALTH_PORT
+              value: "8080"
+            - name: TZ
+              value: Asia/Shanghai
+          ports:
+            - name: health
+              containerPort: 8080
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            failureThreshold: 12
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            failureThreshold: 3
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            failureThreshold: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 102Mi
+            limits:
+              cpu: 200m
+              memory: 1024Mi
+          volumeMounts:
+            - name: vn-data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: vn-data
+        annotations:
+          path: /data
+          value: "1"
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi

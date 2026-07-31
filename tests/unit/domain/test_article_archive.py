@@ -34,10 +34,15 @@ def test_preexclude_known_non_article_urls() -> None:
 
 def test_assess_article_rejects_error_missing_title_and_short_body() -> None:
     error = DefuddleArticle(title="错误页", markdown="请完成验证" * 100)
+    zhihu_restricted = DefuddleArticle(
+        title="",
+        markdown='{"error":{"message":"您当前请求存在异常，暂时限制本次访问。"}}',
+    )
     missing_title = DefuddleArticle(title="", markdown="有效正文" * 100)
     short = DefuddleArticle(title="短文", markdown="[链接](https://example.com) 很短")
 
     assert assess_article(error, min_visible_characters=20).reason == "error_marker"
+    assert assess_article(zhihu_restricted, min_visible_characters=20).reason == "error_marker"
     assert assess_article(missing_title, min_visible_characters=20).reason == "missing_title"
     assert assess_article(short, min_visible_characters=20).reason == "short_content"
 

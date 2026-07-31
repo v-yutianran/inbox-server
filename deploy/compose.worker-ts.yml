@@ -1,0 +1,23 @@
+services:
+  worker:
+    image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      DISPLAY: :99
+      HEALTH_PORT: "8080"
+      TZ: Asia/Shanghai
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - apps/worker/dist/healthcheck.js
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    volumes:
+      - worker-data:/data
+
+volumes:
+  worker-data:

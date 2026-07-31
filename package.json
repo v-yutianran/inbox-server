@@ -1,17 +1,31 @@
 {
-  "name": "inbox-server-article-runtime",
+  "name": "@inbox/root",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.12.4",
+  "packageManager": "npm@11.17.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.17 <27"
   },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
+    "build": "npm run typecheck && npm run build:web && npm run build:workspaces",
+    "build:workspaces": "npm run build --workspaces --if-present",
     "build:web": "vite build --config web/vite.config.ts",
+    "test": "npm run test:web && npm run test:workspaces",
+    "test:workspaces": "npm run test --workspaces --if-present",
     "test:web": "vitest run --config web/vitest.config.ts",
-    "typecheck:web": "tsc --noEmit -p web/tsconfig.json"
+    "typecheck": "npm run typecheck:web && npm run typecheck:workspaces",
+    "typecheck:web": "tsc --noEmit -p web/tsconfig.json",
+    "typecheck:workspaces": "npm run typecheck --workspaces --if-present"
   },
   "dependencies": {
+    "@astryxdesign/core": "0.1.7",
+    "@astryxdesign/theme-neutral": "0.1.7",
+    "@stylexjs/stylex": "0.19.0",
     "defuddle": "0.19.1",
     "eta": "4.6.0",
     "react": "19.2.7",

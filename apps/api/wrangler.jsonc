@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "inbox-server-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-31",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  }
+}

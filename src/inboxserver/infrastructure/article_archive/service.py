@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Protocol
+from urllib.parse import urlparse
 
 import structlog
 
@@ -21,6 +23,22 @@ from inboxserver.plugins.contracts import DispatchOutcome
 
 log = structlog.get_logger(__name__)
 _SAFE_ERROR_CODE = re.compile(r"^[a-z0-9_]{1,64}$")
+
+
+def _with_fallback_title(article: DefuddleArticle, fallback_title: str) -> DefuddleArticle:
+    """解析器漏标题时复用队列标题，正文验收规则仍照常执行。"""
+    title = fallback_title.strip()
+    if article.title.strip() or not title:
+        return article
+    return replace(article, title=title)
+
+
+def _minimum_visible_characters(url: str, default: int) -> int:
+    """知乎回答、专栏和想法允许短正文；错误页仍由标记与 API 状态拦截。"""
+    hostname = (urlparse(url).hostname or "").lower()
+    if hostname == "zhihu.com" or hostname.endswith(".zhihu.com"):
+        return 1
+    return default
 
 
 class HtmlFetcher(Protocol):
@@ -75,6 +93,7 @@ class ArticleArchiveService:
     async def process(self, item: dict) -> tuple[bool, DispatchOutcome]:
         """处理单个归档任务，保持通用 consumer 的返回契约。"""
         url = str(item.get("url") or "")
+        fallback_title = str(item.get("title") or "")
         fp = url_fingerprint(url)
         excluded = preexclude_reason(url)
         if excluded:
@@ -89,11 +108,12 @@ class ArticleArchiveService:
             )
             return True, DispatchOutcome.OK
 
-        article = await self._try_direct(url, fp)
+        article = await self._try_direct(url, fp, fallback_title)
         if article is None:
             try:
                 html = await self._browser_fetch(url)
                 article = await self._bridge.parse(url, html)
+                article = _with_fallback_title(article, fallback_title)
             except Exception as error:
                 log.warning(
                     "article_archive_browser_failed",
@@ -111,7 +131,9 @@ class ArticleArchiveService:
                 return False, DispatchOutcome.FAIL
             assessment = assess_article(
                 article,
-                min_visible_characters=self._min_visible_characters,
+                min_visible_characters=_minimum_visible_characters(
+                    url, self._min_visible_characters
+                ),
             )
             if not assessment.valid:
                 log.info(
@@ -212,9 +234,12 @@ class ArticleArchiveService:
                 error_type=type(error).__name__,
             )
 
-    async def _try_direct(self, url: str, fp: str) -> DefuddleArticle | None:
+    async def _try_direct(
+        self, url: str, fp: str, fallback_title: str
+    ) -> DefuddleArticle | None:
         try:
             article = await self._bridge.parse(url, await self._fetcher.fetch(url))
+            article = _with_fallback_title(article, fallback_title)
         except Exception as error:
             log.info(
                 "article_archive_fallback",
@@ -224,7 +249,9 @@ class ArticleArchiveService:
             return None
         assessment = assess_article(
             article,
-            min_visible_characters=self._min_visible_characters,
+            min_visible_characters=_minimum_visible_characters(
+                url, self._min_visible_characters
+            ),
         )
         if assessment.valid:
             return article

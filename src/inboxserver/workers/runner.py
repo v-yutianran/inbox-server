@@ -11,6 +11,7 @@ import signal
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 import httpx
 import redis.asyncio as aioredis
@@ -26,19 +27,30 @@ from inboxserver.infrastructure.article_archive.defuddle import DefuddleBridge
 from inboxserver.infrastructure.article_archive.fetcher import DirectHtmlFetcher
 from inboxserver.infrastructure.article_archive.git_repository import GitArticleRepository
 from inboxserver.infrastructure.article_archive.service import ArticleArchiveService
+from inboxserver.infrastructure.article_archive.zhihu_fetcher import ZhihuArticleFetcher
 from inboxserver.infrastructure.browser.playwright_runtime import fetch_rendered_html
+from inboxserver.infrastructure.browser.pool import BrowserPool
+from inboxserver.infrastructure.browser.scraper import Scraper
+from inboxserver.infrastructure.browser.session_manager import LoginSessionManager
 from inboxserver.infrastructure.destinations.dispatcher import build_destinations
 from inboxserver.infrastructure.http_client import make_http_client
 from inboxserver.infrastructure.llm import generate_smart_tags
 from inboxserver.infrastructure.operations.heartbeat import worker_heartbeat_loop
+from inboxserver.infrastructure.persistence.crypto.vault import CredentialVault
 from inboxserver.infrastructure.persistence.db import async_session_factory
 from inboxserver.infrastructure.persistence.repositories.article_archive_event import (
     ArticleArchiveEventRepo,
 )
+from inboxserver.infrastructure.persistence.repositories.credential import CredentialRepo
+from inboxserver.infrastructure.persistence.repositories.login_session import LoginSessionRepo
 from inboxserver.infrastructure.queue.dedup_store import DedupStore
 from inboxserver.infrastructure.queue.rate_guard import RateGuard
 from inboxserver.infrastructure.queue.repository import RedisQueueRepository
 from inboxserver.plugins.contracts import DispatchOutcome
+from inboxserver.plugins.login_strategies.zhihu import (
+    ZHIHU_BASE,
+    ZhihuCookieLoginStrategy,
+)
 from inboxserver.workers.consumer import consume
 
 log = structlog.get_logger(__name__)
@@ -150,8 +162,46 @@ def _build_article_archive_service(channels, http) -> ArticleArchiveService:
         max_input_bytes=config.max_html_bytes,
         max_output_bytes=config.max_output_bytes,
     )
+    zhihu_entry = channels.enabled_sources().get("zhihu")
+    zhihu_credential_name = (
+        str(zhihu_entry.config.get("credential_name") or "") if zhihu_entry else ""
+    )
+    zhihu_pool = BrowserPool() if zhihu_credential_name else None
+    zhihu_vault = CredentialVault() if zhihu_credential_name else None
+    zhihu_strategy = (
+        ZhihuCookieLoginStrategy(zhihu_pool) if zhihu_pool is not None else None
+    )
+    zhihu_scrapers = (
+        {
+            "zhihu": Scraper(zhihu_pool, ZHIHU_BASE),
+            "zhihu_article": Scraper(zhihu_pool, "https://zhuanlan.zhihu.com"),
+        }
+        if zhihu_pool is not None
+        else {}
+    )
 
     async def browser_fetch(url: str) -> str:
+        hostname = (urlparse(url).hostname or "").lower()
+        if (
+            zhihu_credential_name
+            and hostname in {"www.zhihu.com", "zhuanlan.zhihu.com"}
+            and zhihu_pool is not None
+            and zhihu_vault is not None
+            and zhihu_strategy is not None
+        ):
+            async with async_session_factory() as session:
+                session_manager = LoginSessionManager(
+                    zhihu_pool,
+                    zhihu_vault,
+                    CredentialRepo(session),
+                    LoginSessionRepo(session),
+                    {"zhihu": zhihu_strategy},
+                )
+                return await ZhihuArticleFetcher(
+                    session_manager=session_manager,
+                    scrapers=zhihu_scrapers,
+                    credential_name=zhihu_credential_name,
+                ).fetch(url)
         return await fetch_rendered_html(
             url,
             timeout_seconds=config.browser_timeout_seconds,

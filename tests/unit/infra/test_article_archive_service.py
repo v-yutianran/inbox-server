@@ -131,6 +131,58 @@ async def test_short_direct_result_uses_playwright_then_uploads() -> None:
     assert len(repository.saved) == 1
 
 
+async def test_browser_article_uses_queue_title_when_parser_omits_title() -> None:
+    bridge = _Bridge(
+        [
+            DefuddleArticle(
+                title="",
+                markdown='{"error":{"message":"您当前请求存在异常，暂时限制本次访问。"}}',
+            ),
+            _valid(""),
+        ]
+    )
+    browser = _BrowserFetch()
+    repository = _ArchiveRepository()
+
+    result = await _service(_Fetcher(), bridge, browser, repository).process(
+        {
+            "url": "https://www.zhihu.com/question/1/answer/2",
+            "title": "知乎问题标题",
+            "tags": [],
+        }
+    )
+
+    assert result == (True, DispatchOutcome.OK)
+    assert browser.calls == 1
+    assert repository.saved[0][0] == "20260716-知乎问题标题.md"
+    assert bridge.rendered[0][0]["title"] == "知乎问题标题"
+
+
+async def test_short_zhihu_content_is_archived_when_it_is_not_an_error_page() -> None:
+    restricted = DefuddleArticle(
+        title="",
+        markdown='{"error":{"message":"您当前请求存在异常，暂时限制本次访问。"}}',
+    )
+    short_article = DefuddleArticle(title="知乎想法", markdown="短正文")
+    repository = _ArchiveRepository()
+
+    result = await _service(
+        _Fetcher(),
+        _Bridge([restricted, short_article]),
+        _BrowserFetch(),
+        repository,
+    ).process(
+        {
+            "url": "https://www.zhihu.com/video/immersion/feed/2?object_type=pin",
+            "title": "知乎想法",
+            "tags": [],
+        }
+    )
+
+    assert result == (True, DispatchOutcome.OK)
+    assert repository.saved[0][0] == "20260716-知乎想法.md"
+
+
 async def test_preexcluded_and_twice_invalid_pages_are_successful_skips() -> None:
     pre_fetcher = _Fetcher()
     pre_bridge = _Bridge([])

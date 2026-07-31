@@ -174,6 +174,57 @@ async def test_transient_remote_failure_retries_without_refetching_article(tmp_p
     )
 
 
+async def test_git_timeout_terminates_spawned_process_group(tmp_path: Path) -> None:
+    _, worktree, _ = _repository(tmp_path)
+    child_pid_path = worktree / "child.pid"
+    _git(
+        worktree,
+        "config",
+        "alias.hang",
+        f"!sleep 60 & echo $! > {child_pid_path}; wait",
+    )
+    repository = GitArticleRepository(worktree, git_timeout_seconds=1.0)
+
+    with pytest.raises(RuntimeError, match="git_hang_failed"):
+        await asyncio.to_thread(repository._run_git, "hang")
+
+    child_pid = child_pid_path.read_text().strip()
+    state = subprocess.run(
+        ["ps", "-o", "state=", "-p", child_pid],
+        check=False,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert state in {"", "Z"}
+
+
+def test_github_auth_keeps_runtime_proxy_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _CompletedGit:
+        pid = 1
+        returncode = 0
+
+        @staticmethod
+        def communicate(timeout: float) -> tuple[str, str]:
+            return "ok", ""
+
+    def fake_popen(command: list[str], **kwargs: object) -> _CompletedGit:
+        captured["command"] = command
+        captured["environment"] = kwargs["env"]
+        return _CompletedGit()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    repository = GitArticleRepository(tmp_path, github_token="test-token")
+
+    assert repository._run_git("status", "--short") == "ok"
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert "http.proxy=" not in command
+
+
 async def test_commit_uses_worker_identity_without_host_git_config(tmp_path: Path) -> None:
     _, worktree, _ = _repository(tmp_path)
     _git(worktree, "config", "--unset", "user.name")

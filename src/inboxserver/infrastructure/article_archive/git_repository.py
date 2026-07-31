@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import subprocess
 import tempfile
 import time
@@ -154,8 +155,6 @@ class GitArticleRepository:
     def _run_git(self, *args: str) -> str:
         action = args[0].replace("-", "_")
         git_config = ["-c", f"safe.directory={self._repository_dir}"]
-        if self._github_token:
-            git_config.extend(["-c", "http.proxy="])
         environment = {
             **os.environ,
             "GIT_TERMINAL_PROMPT": "0",
@@ -173,7 +172,7 @@ class GitArticleRepository:
                 }
             )
         try:
-            result = subprocess.run(
+            process = subprocess.Popen(
                 [
                     "git",
                     *git_config,
@@ -181,17 +180,26 @@ class GitArticleRepository:
                     str(self._repository_dir),
                     *args,
                 ],
-                check=False,
-                capture_output=True,
+                start_new_session=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=self._git_timeout_seconds,
                 env=environment,
             )
-        except (OSError, subprocess.TimeoutExpired) as error:
+        except OSError as error:
             raise RuntimeError(f"git_{action}_failed") from error
-        if result.returncode != 0:
+        try:
+            stdout, _ = process.communicate(timeout=self._git_timeout_seconds)
+        except subprocess.TimeoutExpired as error:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.communicate()
+            raise RuntimeError(f"git_{action}_failed") from error
+        if process.returncode != 0:
             raise RuntimeError(f"git_{action}_failed")
-        return result.stdout.strip()
+        return stdout.strip()
 
     def _run_remote_git(self, *args: str) -> str:
         for attempt in range(1, self._git_attempts + 1):

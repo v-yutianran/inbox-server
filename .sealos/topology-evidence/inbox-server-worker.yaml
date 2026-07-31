@@ -1,0 +1,12 @@
+apiVersion: docker-to-sealos/v1
+kind: TopologyEvidence
+metadata:
+  name: inbox-server-worker-topology
+spec:
+  appName: inbox-server-worker
+  source: deploy/compose.worker-ts.yml@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
+  resources:
+    - kind: StatefulSet
+      name: ${{ defaults.app_name }}
+      when: always
+      replicas: 1

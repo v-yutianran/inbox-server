@@ -1,3 +1,5 @@
+import { StatusDot } from "@astryxdesign/core/StatusDot";
+
 import type { ChannelSummary, OperationsOverview } from "../types";
 
 function ChannelList({ title, items }: { title: string; items: Record<string, ChannelSummary> }) {
@@ -9,7 +11,7 @@ function ChannelList({ title, items }: { title: string; items: Record<string, Ch
         <ul className="channel-list">
           {entries.map(([name, channel]) => (
             <li key={name}>
-              <span className={channel.enabled ? "status-dot is-online" : "status-dot"} />
+              <StatusDot variant={channel.enabled ? "success" : "neutral"} label={channel.enabled ? `${name} 已启用` : `${name} 已停用`} />
               <div><strong>{name}</strong><small>{channel.kind ?? channel.item_kind ?? "未分类"}</small></div>
               <span className="channel-state">{channel.enabled ? "启用" : "停用"}</span>
             </li>

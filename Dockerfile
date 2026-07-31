@@ -1,18 +1,16 @@
 FROM node:22.17.0-bookworm-slim AS article-node
 
 WORKDIR /node-app
-RUN corepack enable && corepack prepare pnpm@10.12.4 --activate
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile --prod
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --workspaces=false
 
 FROM node:22.17.0-bookworm-slim AS web-build
 
 WORKDIR /web-build
-RUN corepack enable && corepack prepare pnpm@10.12.4 --activate
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json package-lock.json ./
+RUN npm ci --workspaces=false
 COPY web ./web
-RUN pnpm build:web
+RUN npm run build:web
 
 FROM nginx:1.30.3-alpine3.23 AS console
 
@@ -32,10 +30,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.29 /uv /bin/uv
 
 WORKDIR /app
 
-# 固定 Node.js + pnpm 锁定的 Defuddle/Eta 生产依赖；运行时不依赖宿主机全局 npm。
+# 固定 Node.js + npm 锁定的 Defuddle/Eta 生产依赖；运行时不依赖宿主机全局 npm。
 COPY --from=article-node /usr/local/bin/node /usr/local/bin/node
 COPY --from=article-node /node-app/node_modules ./node_modules
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json package-lock.json ./
 
 # 依赖先装（利用 docker layer 缓存）
 COPY pyproject.toml uv.lock README.md ./

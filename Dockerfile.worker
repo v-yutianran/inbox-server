@@ -1,0 +1,61 @@
+FROM node:22.17.0-bookworm-slim AS build
+
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+WORKDIR /app
+
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY packages/domain/package.json packages/domain/package.json
+RUN npm ci \
+    --workspace @inbox/worker \
+    --workspace @inbox/domain \
+    --include-workspace-root=false
+
+COPY apps/worker apps/worker
+COPY packages/domain packages/domain
+RUN npm run build --workspace @inbox/domain \
+    && npm run build --workspace @inbox/worker \
+    && npm prune --omit=dev \
+        --workspace @inbox/worker \
+        --workspace @inbox/domain \
+        --include-workspace-root=false
+
+FROM node:22.17.0-bookworm-slim
+
+ENV DISPLAY=:99 \
+    HEALTH_PORT=8080 \
+    HOME=/home/pwuser \
+    INBOX_ARCHIVE_DIR=/data/archive \
+    INBOX_BROWSER_STATE_DIR=/data/browser \
+    NODE_ENV=production \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+WORKDIR /app
+
+RUN groupadd --gid 1001 pwuser \
+    && useradd --create-home --gid 1001 --uid 1001 pwuser
+
+COPY --from=build --chown=pwuser:pwuser /app/node_modules ./node_modules
+COPY --from=build --chown=pwuser:pwuser /app/apps/worker/package.json ./apps/worker/package.json
+COPY --from=build --chown=pwuser:pwuser /app/apps/worker/dist ./apps/worker/dist
+COPY --from=build --chown=pwuser:pwuser /app/packages/domain/package.json ./packages/domain/package.json
+COPY --from=build --chown=pwuser:pwuser /app/packages/domain/dist ./packages/domain/dist
+COPY --chown=pwuser:pwuser apps/worker/docker-entrypoint.sh /usr/local/bin/inbox-worker-entrypoint
+
+USER root
+RUN ./node_modules/.bin/playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* \
+    && chmod -R a+rX /ms-playwright \
+    && chmod 755 /usr/local/bin/inbox-worker-entrypoint \
+    && mkdir -p /data/archive /data/browser /tmp/.X11-unix \
+    && chmod 1777 /tmp/.X11-unix \
+    && chown -R pwuser:pwuser /data /home/pwuser
+USER pwuser
+
+VOLUME ["/data"]
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD ["node", "apps/worker/dist/healthcheck.js"]
+
+ENTRYPOINT ["/usr/local/bin/inbox-worker-entrypoint"]

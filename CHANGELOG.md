@@ -1,5 +1,80 @@
 # CHANGELOG
 
+## 2026-07-31
+
+### feat(runtime)：建立 TypeScript、Cloudflare 与 Docker Worker 迁移基线
+
+- 根项目迁为 npm workspace，新增 strict TypeScript 领域包、Hono Cloudflare API 骨架和版本化队列任务契约
+- Docker Worker 保持 headed Chromium/Xvfb，提供 liveness/readiness、结构化日志、AbortSignal 生命周期和 Cloudflare Queues pull/ack/retry 适配器
+- 使用固定 Node 22.17.0 与 Playwright 1.62.1 只安装 Chromium，将 `linux/amd64` 镜像从 2.35 GiB 降至 1.18 GiB
+- 生成 worker-only Sealos 模板与 TopologyEvidence，并在 `bja` 的 `ns-tbs948af` 部署单副本 staging StatefulSet、公开 GHCR 镜像和 1 Gi PVC；拉取统一使用南京大学 `ghcr.nju.edu.cn` 代理且不配置 registry pull Secret，不创建 Service 或 Ingress
+- 保留现有 Python/FastAPI/PostgreSQL/Redis 生产路径，本阶段未启用新 Queue 消费、外部分发或生产切换
+
+**如何验证**：
+- npm workspace 的测试、strict typecheck、Vite/Wrangler/TypeScript production build → passed
+- `npm audit --omit=dev` → 0 vulnerability；4 个中危仅位于 `drizzle-kit` 开发依赖链
+- `linux/amd64` Docker 实测 → 非 root、Node PID 1、Xvfb、健康探针、SIGTERM 退出码 0、PVC 哈希持久化均通过
+- docker-to-sealos 8 项静态校验与 quality gate → passed
+- 南京大学 GHCR 代理实拉 → 与源站 digest 一致；Sealos staging → StatefulSet 1/1 Ready、0 重启、60 秒稳定、无 registry pull Secret，PVC Bound；空 Service/Ingress 列表
+- 未运行自动化浏览器 E2E：当前任务未授权；真实站点登录态、页面交互和来源迁移仍保留在后续 OpenSpec 任务
+
+## 2026-07-21
+
+### style(console)：应用 Notion 风格视觉系统
+
+- 依据 `design-reference` 的 Notion 规范，将控制台调整为白色画布、warm neutral 灰阶、Notion Blue 主操作和 Inter 字体层级
+- 状态卡与队列卡改用 12px 圆角、whisper border 和低透明度多层阴影；正常状态使用低噪声 pill，异常状态保留语义色
+- 解锁页、输入框、提示、文章状态和响应式布局同步统一，保留 Astryx 组件结构与全部业务交互
+
+**如何验证**：
+- `pnpm test:web` → 7 passed
+- `pnpm typecheck:web`、`pnpm build:web` → passed
+- Playwright 自动化 E2E 覆盖 1200×900、900×900 与 390×844：三视口无横向溢出，手机和平板主操作高度不低于 44px
+- 真实刷新接口返回 200，Article 队列显示正常，浏览器 console 为 0 error、0 warning
+
+### feat(console)：接入 Astryx 设计系统
+
+- 固定接入 Astryx Core、Neutral Theme 与 StyleX 0.1.7/0.19.0，并按官方顺序加载 reset、组件和静态主题 CSS
+- 使用 Astryx `Theme`、`Button`、`TextInput`、`Card`、`Badge`、`Banner` 与 `StatusDot` 统一控制台基础交互和状态表达
+- 保留现有纸张、油墨和荧光信号色视觉语言，通过稳定组件类覆盖圆角、边框与响应式布局，不改文章归档业务结构
+- 为 Astryx 加载状态补充 JSDOM `matchMedia` 测试环境，并新增基础组件接入断言
+
+**如何验证**：
+- `pnpm test:web` → 7 passed
+- `pnpm typecheck:web`、`pnpm build:web` → passed
+- `uv run ruff check src/inboxserver tests scripts`、`uv run mypy src/inboxserver --ignore-missing-imports` 与 `docker compose config --quiet` → passed
+- `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 258 passed（8 个既有 warning）
+- Playwright 自动化 E2E 覆盖 1200×900、900×900 与 390×844：三视口均无横向溢出，移动端主要按钮高度不低于 44px
+- 真实 API 概览与刷新返回 200，Article 队列显示正常、待处理 0、DLQ 0，8 条知乎归档链接可见；同步反馈使用浏览器 mock，未触发真实外部采集
+- 错误 API Key 返回解锁页并显示明确原因；主控制台浏览器 console 为 0 error、0 warning
+
+### fix(article)：修复知乎文章误跳过与异常队列
+
+- 知乎回答、专栏和想法改用已有登录态调用内容 API，保留 90 秒硬超时；API 拒绝或登录失效时进入重试，不再把限制页当成无标题文章永久跳过
+- 将 API 正文封装为 Defuddle 可解析的完整 HTML，并在解析器缺失标题时复用队列标题
+- 知乎有效短正文不再套用通用 200 字门槛；限制页标记和非 200 响应仍会被拒绝
+- Git 交付保留容器代理配置；命令超时时终止整个进程组，避免残留 `git-remote-https` 阻塞后续消费
+- 备份并重新投递历史 20 条 DLQ、34 条无标题跳过记录和 3 条短正文跳过记录
+
+**如何验证**：
+- 定向单元和集成测试覆盖知乎回答、专栏、想法、登录失效、API 拒绝、限制页、标题回退、短正文及真实 Defuddle 解析
+- Git 适配器测试覆盖远端重试、运行时代理保留和超时子进程组终止
+- 本机 OrbStack worker 使用真实知乎登录态完成三类链接抓取，并确认历史本地提交推送到远端、重放任务落库且 DLQ 为 0
+- `uv run ruff check src/inboxserver tests scripts`、`uv run mypy src/inboxserver --ignore-missing-imports` 与 `docker compose config --quiet` → passed
+- `uv run pytest tests/unit tests/integration -m "not e2e" --tb=short` → 258 passed（8 个既有 warning）
+- Playwright 在 1200×918 与 390×844 视口确认 Article 队列显示“正常”、待处理 `0`、DLQ `0`，且最新知乎链接显示“已归档并推送”
+
+### fix(console)：修复移动端溢出与鉴权反馈
+
+- 错误 API Key 返回解锁界面时显示明确原因，并继续清除当前会话中的 Key
+- 文章历史中的长链接在手机视口内换行，不再撑出横向滚动条
+- 使用内联 SVG favicon，避免浏览器请求缺失的 `/favicon.ico`
+
+**如何验证**：
+- `pnpm test:web` → 7 passed
+- `pnpm typecheck:web`、`pnpm build:web` → passed
+- Playwright 在 390×844 与 1200×918 视口确认无横向溢出，错误 Key 显示可见提示且 favicon 不再产生额外请求
+
 ## 2026-07-20
 
 ### fix(worker)：以 Redis 心跳识别消费停摆

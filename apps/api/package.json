@@ -1,0 +1,28 @@
+{
+  "name": "@inbox/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run build --workspace @inbox/domain && wrangler deploy --dry-run --outdir dist",
+    "deploy:dry-run": "wrangler deploy --dry-run",
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@inbox/domain": "0.1.0",
+    "drizzle-orm": "0.45.2",
+    "hono": "4.12.33",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.20.1",
+    "@cloudflare/workers-types": "5.20260731.1",
+    "drizzle-kit": "0.31.10",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10",
+    "wrangler": "4.118.0"
+  }
+}

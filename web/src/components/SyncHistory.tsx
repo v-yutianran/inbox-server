@@ -1,3 +1,5 @@
+import { StatusDot } from "@astryxdesign/core/StatusDot";
+
 import { formatTime, totalEnqueued } from "../format";
 import type { OperationsOverview } from "../types";
 
@@ -11,7 +13,11 @@ export function SyncHistory({ sync_jobs: jobs }: Pick<OperationsOverview, "sync_
         <ol className="timeline">
           {jobs.map((job) => (
             <li key={job.id}>
-              <span className={`timeline__mark is-${job.status}`} />
+              <StatusDot
+                className="timeline__mark"
+                variant={job.status === "done" ? "success" : job.status === "failed" ? "error" : "warning"}
+                label={job.status === "done" ? "同步完成" : job.status === "failed" ? "同步失败" : "同步执行中"}
+              />
               <div className="timeline__content">
                 <div><strong>{job.triggered_by === "manual" ? "手动触发" : "自动调度"}</strong><time>{formatTime(job.started_at)}</time></div>
                 <p>{job.status === "done" ? `完成 · 新增 ${totalEnqueued(job)} 项` : job.status === "running" ? "执行中" : `失败 · ${job.error ?? "未知错误"}`}</p>

@@ -1,3 +1,6 @@
+import { Badge } from "@astryxdesign/core/Badge";
+import { Card } from "@astryxdesign/core/Card";
+
 import type { OperationsOverview } from "../types";
 
 const queueOrder = ["link", "text", "file", "article"] as const;
@@ -13,18 +16,16 @@ export function QueuePanel({ queues }: Pick<OperationsOverview, "queues">) {
         {queueOrder.map((name) => {
           const stats = queues[name];
           return (
-            <article className="queue-card" key={name}>
+            <Card className="queue-card" key={name} padding={0} role="article">
               <div className="queue-card__header">
                 <h3>{name[0].toUpperCase() + name.slice(1)} 队列</h3>
-                <span className={stats.dlq > 0 ? "queue-alert" : "queue-ok"}>
-                  {stats.dlq > 0 ? `${stats.dlq} 异常` : "正常"}
-                </span>
+                <Badge variant={stats.dlq > 0 ? "error" : "neutral"} label={stats.dlq > 0 ? `${stats.dlq} 异常` : "正常"} />
               </div>
               <strong>{stats.pending.toString().padStart(2, "0")}</strong>
               <div className="queue-card__meta">
                 <span>待处理</span><span>已完成 {stats.done}</span><span>DLQ {stats.dlq}</span>
               </div>
-            </article>
+            </Card>
           );
         })}
       </div>
