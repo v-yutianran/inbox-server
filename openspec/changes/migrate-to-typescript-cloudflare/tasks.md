@@ -54,7 +54,7 @@
 ## 8. Cloudflare 与生产切换
 
 - [ ] 8.1 在本地/预览环境应用 D1 migration、Queues 与 Cron 配置并验证 API/worker 端到端契约
-- [ ] 8.2 部署 console/API 预览环境，完成非 E2E 自动检查并提供手工 UI 与真实凭据验收清单
+- [x] 8.2 部署 console/API 预览环境，完成非 E2E 自动检查并提供手工 UI 与真实凭据验收清单
 - [ ] 8.3 经用户确认生产迁移窗口后停止旧 worker，执行最终增量迁移并启用新队列单一生产者
 - [ ] 8.4 完成生产观察与回滚门槛检查；仅在另行确认后下线 Python/PostgreSQL/Redis/Nginx 路径
 

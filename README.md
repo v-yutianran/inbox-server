@@ -35,6 +35,14 @@ npm run console:deploy:preview -- --api-url https://<worker>.workers.dev
 
 Console 部署脚本只允许在干净的非 `main` 分支执行，并把当前提交与功能分支写入 Pages 预览部署元数据。首次部署前需创建 `inbox-server-console` Pages 项目；API 管理密钥通过 Wrangler Secret `ADMIN_API_KEY` 配置，不写入仓库。
 
+### 手工验收清单
+
+- [ ] 打开 Pages 预览 URL，确认标题、解锁表单与响应式布局正常，无资源加载失败
+- [ ] 分别访问 Worker `/healthz` 与 `/readyz`，确认返回 200
+- [ ] 使用真实 `ADMIN_API_KEY` 解锁 Console，确认请求只发往预览部署指定的 HTTPS Worker
+- [ ] 完成 OpenSpec 3.5 的业务端点迁移后，验证概览加载、手动同步、错误 Key 提示与刷新恢复；迁移前 `/api/operations/overview` 返回 404 是预期边界，不得据此切换生产
+- [ ] 生产切换前完成 D1、Queues、Cron、回滚和旧服务下线门禁
+
 ## 配置
 
 ### `.env`（`INBOX_` 前缀，见 `.env.example`）

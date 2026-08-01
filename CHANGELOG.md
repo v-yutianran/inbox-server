@@ -13,7 +13,10 @@
 - npm workspace：33 tests passed，strict typecheck 与 production build passed
 - `wrangler deploy --dry-run`、Console 静态构建、`npm audit --omit=dev` 与 `docker compose config --quiet` passed
 - Python 基线：ruff passed、pytest 258 passed（9 个既有 warning）、mypy 103 source files passed
-- 未运行自动化浏览器 E2E：当前任务未授权；Cloudflare 真实 URL 与手工 UI 验收将在预览部署后核验
+- Cloudflare Worker `/healthz`、`/readyz` 实测 200；真实 Pages Origin 与预检通过，非白名单 Origin 不返回 CORS 许可
+- Pages 预览 HTML、JS、CSS 实测 200，产物包含真实 Worker 地址；`ADMIN_API_KEY` Secret 已存在且未回显
+- `/api/operations/overview` 当前实测 404，符合尚未完成 OpenSpec 3.5 的迁移边界；未切换生产，旧 Docker 五个服务继续 healthy
+- 未运行自动化浏览器 E2E：当前任务未授权；已提供手工 UI 与真实凭据验收清单
 
 ## 2026-07-31
 
