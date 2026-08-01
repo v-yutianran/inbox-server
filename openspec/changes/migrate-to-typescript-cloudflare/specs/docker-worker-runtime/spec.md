@@ -76,3 +76,22 @@ worker SHALL 部署到 `sealos.run` 北京区 `bja`、工作区 `ns-tbs948af`，
 #### Scenario: 首次启用已有账号
 - **WHEN** 已有账号首次切换到新 worker
 - **THEN** 系统先导入或建立基线，再允许增量任务产生外部分发
+
+### Requirement: 受控出站代理
+Sealos worker MUST 使用固定版本的官方 Cloudflare WARP sidecar 提供受控出站网络，SHALL 以非 root 且无额外 Linux capability 的本地代理模式运行，并 MUST 将注册状态保存到独立持久卷。经验证与 WARP CONNECT 不兼容的 Git smart-HTTP pack 操作 MUST 仅在 Git 子进程内清空代理环境后通过 HTTPS 直连仓库，其他 Node HTTP 与 headed Chromium 流量 MUST 继续经过 WARP。
+
+#### Scenario: 代理就绪
+- **WHEN** WARP 已连接、DoH 解析可用且经代理访问 Cloudflare trace 返回 `warp=on`
+- **THEN** worker 可以进入 ready 并通过 Pod loopback 代理访问配置的外部来源与目标
+
+#### Scenario: 代理未就绪
+- **WHEN** WARP 注册、隧道、DoH 或 CONNECT 适配器任一环节不可用
+- **THEN** worker 不进入 ready、不领取新任务，并输出不含代理凭据或注册材料的结构化错误
+
+#### Scenario: Pod 重建
+- **WHEN** WARP sidecar 被重建并重新挂载原持久卷
+- **THEN** sidecar 复用已有注册状态恢复连接，不依赖本机 Docker、ClashX 配置或容器可写层
+
+#### Scenario: Git pack 分流
+- **WHEN** 文章归档执行仓库浅克隆、拉取或推送
+- **THEN** 只有 Git 子进程绕过 WARP 直连 GitHub，正文抓取与浏览器流量仍通过返回 `warp=on` 的 Pod loopback 代理

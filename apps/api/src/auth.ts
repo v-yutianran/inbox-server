@@ -8,6 +8,7 @@ export interface ApiBindings {
   readonly DB: D1Database;
   readonly JOBS: Queue<QueueJob>;
   readonly SCHEDULE_ENABLED?: string;
+  readonly STATE_ENCRYPTION_KEY?: string;
   readonly SYNC_PUBLISH_ENABLED?: string;
   readonly WORKER_SERVICE_TOKEN?: string;
 }

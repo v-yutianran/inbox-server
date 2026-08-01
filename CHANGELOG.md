@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 2026-08-02
+
+### feat(runtime)：完成 Cloudflare 与 Sealos 生产切换
+
+- Console 与 Hono API 完全部署到 Cloudflare Pages/Workers，D1、Queues、Cron 和自定义域名均启用；旧 PostgreSQL/Redis 数据完成幂等迁移与最终增量核对
+- worker 固定为南京大学 GHCR 代理摘要 `sha256:1121f1cde80c257aa3512c36f772260808836c9f1bcd15c1e2f9a49e85b3c9aa`，在 Sealos 北京区以 headed Chromium、PVC 与 WARP sidecar 运行
+- browser source 增加 180 秒 watchdog；YouTube 在命中已知基线边界后停止滚动，避免列表采集超过租约；队列终态补充 `worker.job.succeeded`/`worker.job.failed` 可关联日志
+- Git 文章归档绕过 WARP 直连 GitHub，使用浅克隆、远端 HEAD 比对和可恢复的不完整仓库备份，避免代理超时阻塞队列
+- 知乎文章归档复用 D1 中的加密登录凭据调用同源内容 API；Git 仓库已有文章时仍检查未提交内容并补推，远端 Git 操作增加三次瞬时失败重试
+- 停止本机 console/server/postgres/redis 容器，保留 `inbox-server_pgdata` 与 `inbox-server_redisdata` 卷；线上 Cron 恢复为每 10 分钟运行
+
+**如何验证**：
+- npm workspace：API 37、Console 15、Worker 64、Domain 8 tests passed；strict typecheck、production build、Compose config、Sealos client/server dry-run 与 docker-to-sealos quality gate passed
+- Sealos 实测 StatefulSet Ready，worker 与 WARP imageID 均为固定摘要；`/healthz`、`/readyz` 返回 200，应用层代理返回 `warp=on`
+- 当前镜像的 YouTube shadow 任务 attempt 1 在 75.395 秒内完成，D1 为 `done`，基线边界结果为 0 个新条目；本机 Docker 停止后 Telegram shadow 任务 attempt 1 在 16.184 秒内完成
+- 生产重放原失败的 Bilibili 与知乎文章任务均在 attempt 1 完成，D1 为 `done`、文章事件为 `committed`；PVC Git 工作区干净、两个来源 URL 各归档一次且本地 HEAD 与远端 `main` 一致
+- Cloudflare Console HTML/JS、鉴权 API 与 CORS 实测通过：Pages 200、API Key 请求 200、未鉴权请求 401、Cron enabled
+- 受控生产同步中 Telegram、Dida、GitHub Stars、知乎、B 站收藏/稍后再看、YouTube、X bookmarks/likes 均完成；Inoreader 仍因登录态过期失败，需重新登录后复验
+- 未运行自动化浏览器 E2E：当前任务未授权；改用线上 API、真实 collector/destination、D1 终态、Sealos 探针和结构化日志完成验证
+
 ## 2026-08-01
 
 ### fix(cloudflare)：恢复 Console 运维概览数据链

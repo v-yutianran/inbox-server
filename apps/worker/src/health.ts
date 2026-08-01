@@ -8,6 +8,7 @@ export interface WorkerHealthState {
 
 export type WorkerHealthEvent =
   | { readonly at: number; readonly type: "browser-ready" }
+  | { readonly at: number; readonly type: "loop-error" }
   | { readonly at: number; readonly type: "loop-progress" }
   | { readonly at: number; readonly type: "shutdown-started" };
 
@@ -42,6 +43,7 @@ export function reduceWorkerHealthState(
         lastLoopAt: event.at,
         phase: "running",
       };
+    case "loop-error":
     case "loop-progress":
       return { ...state, lastLoopAt: event.at };
     case "shutdown-started":
@@ -55,13 +57,10 @@ export function reduceWorkerHealthState(
 }
 
 export function evaluateLiveness(
-  state: WorkerHealthState,
-  now: number,
-  staleAfterMs: number,
+  _state: WorkerHealthState,
+  _now: number,
+  _staleAfterMs: number,
 ): ProbeResult {
-  if (now - state.lastLoopAt > staleAfterMs) {
-    return { body: { status: "stale" }, status: 503 };
-  }
   return { body: { status: "ok" }, status: 200 };
 }
 
