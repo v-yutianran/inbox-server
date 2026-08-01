@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "npm run build --workspace @inbox/domain && wrangler deploy --dry-run --outdir dist",
+    "deploy": "wrangler deploy",
     "deploy:dry-run": "wrangler deploy --dry-run",
     "dev": "wrangler dev",
     "test": "vitest run",

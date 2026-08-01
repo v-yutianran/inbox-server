@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono";
 
 export interface ApiBindings {
   readonly ADMIN_API_KEY?: string;
+  readonly CONSOLE_ORIGINS?: string;
   readonly WORKER_SERVICE_TOKEN?: string;
 }
 

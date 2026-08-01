@@ -4,16 +4,16 @@
 
 ## 架构
 
-四个服务（`docker-compose.yml`）：
+当前按 OpenSpec 分阶段迁移，Cloudflare 预览与旧生产链路并行：
 
-| 服务 | 职责 |
-|------|------|
-| **postgres** | 持久化（凭据加密 / 登录态 / 增量基线 / sync job） |
-| **redis** | 队列 + 限速令牌 + 去重指纹 |
-| **server** | FastAPI：API 源收集（telegram/dida）+ 管理端点；启动 `alembic upgrade head` 建表 |
-| **worker** | 消费循环（限速/去重/重试/DLQ）+ browser 源收集（headed chromium + Xvfb：知乎/inoreader/B站/油管） |
+| 服务 | 部署 | 职责 |
+|------|------|------|
+| **console** | Cloudflare Pages（`apps/console`） | Vite / React 运维控制台 |
+| **server** | Cloudflare Workers（`apps/api`） | Hono API；当前预览阶段提供 `/healthz` 与 `/readyz` |
+| **worker** | Docker（`apps/worker`） | headed Chromium / Xvfb 浏览器采集与队列消费 |
+| **legacy** | Docker Compose | FastAPI / PostgreSQL / Redis 生产链路，在数据与接口迁移完成前继续运行 |
 
-数据流：`Sources(telegram/dida/知乎/...) → server.collect → Redis 队列 → worker.consume → Destinations(Cubox/flomo/坚果云)`；browser 源由 worker 定时 collect（server 无 DISPLAY）。
+Cloudflare API 的业务端点、D1 与 Queues 仍按 `openspec/changes/migrate-to-typescript-cloudflare/tasks.md` 逐项迁移；预览环境不会替代或停止旧生产服务。
 
 ## 快速启动
 
@@ -22,6 +22,18 @@ cp .env.example .env                      # 填部署密钥 + 业务凭据
 cp channels.yaml.example channels.yaml    # 启用 source/destination
 docker compose up -d                       # server 启动自动 alembic 建表
 ```
+
+## Cloudflare 预览部署
+
+```bash
+npm ci
+npm run api:deploy:dry-run
+npm run api:deploy
+npm run console:deploy:preview -- --api-url https://<worker>.workers.dev --dry-run
+npm run console:deploy:preview -- --api-url https://<worker>.workers.dev
+```
+
+Console 部署脚本只允许在干净的非 `main` 分支执行，并把当前提交与功能分支写入 Pages 预览部署元数据。首次部署前需创建 `inbox-server-console` Pages 项目；API 管理密钥通过 Wrangler Secret `ADMIN_API_KEY` 配置，不写入仓库。
 
 ## 配置
 
@@ -81,6 +93,7 @@ uv run mypy src/inboxserver --ignore-missing-imports   # 类型检查
 ## 开发
 
 - Python ≥3.12，uv 管理依赖（`uv sync --dev`）
+- TypeScript ≥5.9，npm workspace 管理 `apps/console`、`apps/api` 与 `apps/worker`
 - DDD 分层：`domain/policy`（纯函数）/ `infrastructure` / `api` / `workers` / `plugins`
 - spec-driven：`openspec/`（proposal/design/tasks → archive）
 - 进度路线：`roadmap.md`；协作规范：`CLAUDE.md`

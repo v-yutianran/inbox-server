@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 2026-08-01
+
+### feat(cloudflare)：接入 Console Pages 与 Server Workers 预览部署
+
+- 将 Vite/React Console 从 `web` 迁入独立 npm workspace `apps/console`，构建时注入 HTTPS Worker API 地址
+- 新增受保护的 Cloudflare Pages 功能分支部署脚本，拒绝 `main`、detached HEAD、脏工作区和非 HTTPS API 地址
+- 为 Hono Server 增加 Pages 预览域名与显式自定义域名 CORS 白名单，并保留现有健康检查契约
+- 旧 FastAPI 生产服务与 Docker Worker 保持运行，本阶段不执行生产切换
+
+**如何验证**：
+- npm workspace：33 tests passed，strict typecheck 与 production build passed
+- `wrangler deploy --dry-run`、Console 静态构建、`npm audit --omit=dev` 与 `docker compose config --quiet` passed
+- Python 基线：ruff passed、pytest 258 passed（9 个既有 warning）、mypy 103 source files passed
+- 未运行自动化浏览器 E2E：当前任务未授权；Cloudflare 真实 URL 与手工 UI 验收将在预览部署后核验
+
 ## 2026-07-31
 
 ### feat(runtime)：建立 TypeScript、Cloudflare 与 Docker Worker 迁移基线

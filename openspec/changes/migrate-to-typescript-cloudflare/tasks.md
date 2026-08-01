@@ -10,7 +10,7 @@
 - [x] 2.1 备份现有 Node 清单并把根项目迁为 npm workspace，生成并校验 `package-lock.json`
 - [x] 2.2 建立 strict 共享 tsconfig、Vitest 15 秒全局超时和各 workspace 的独立 typecheck/test/build 命令
 - [x] 2.3 在 `packages/domain` 先写失败测试，再实现版本化任务联合类型、运行时解析和稳定幂等键
-- [ ] 2.4 将现有 `web` console 迁入 `apps/console`，保持组件化 UI、现有测试与 Cloudflare 静态构建通过
+- [x] 2.4 将现有 `web` console 迁入 `apps/console`，保持组件化 UI、现有测试与 Cloudflare 静态构建通过
 
 ## 3. Cloudflare API 与持久化
 

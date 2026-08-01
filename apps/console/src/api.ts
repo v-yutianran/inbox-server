@@ -32,8 +32,23 @@ export class ApiError extends Error {
   }
 }
 
+export function createApiUrl(path: string, configuredBase = import.meta.env.VITE_INBOX_API_URL): string {
+  const base = configuredBase?.trim();
+  if (!base) return path;
+
+  const parsed = new URL(base);
+  if (parsed.protocol !== "https:") {
+    throw new Error("Cloudflare API 基址必须使用 HTTPS");
+  }
+  if (parsed.pathname !== "/" || parsed.search || parsed.hash) {
+    throw new Error("Cloudflare API 基址不能包含路径、查询参数或片段");
+  }
+
+  return `${parsed.origin}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function request<T>(path: string, apiKey: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(createApiUrl(path), {
     ...init,
     headers: {
       "X-API-Key": apiKey,

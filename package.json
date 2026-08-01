@@ -12,14 +12,17 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run typecheck && npm run build:web && npm run build:workspaces",
+    "build": "npm run typecheck && npm run build:workspaces",
     "build:workspaces": "npm run build --workspaces --if-present",
-    "build:web": "vite build --config web/vite.config.ts",
-    "test": "npm run test:web && npm run test:workspaces",
+    "build:web": "npm run build --workspace @inbox/console",
+    "console:deploy:preview": "npm run pages:deploy:preview --workspace @inbox/console --",
+    "api:deploy": "npm run deploy --workspace @inbox/api",
+    "api:deploy:dry-run": "npm run deploy:dry-run --workspace @inbox/api",
+    "test": "npm run test:workspaces",
     "test:workspaces": "npm run test --workspaces --if-present",
-    "test:web": "vitest run --config web/vitest.config.ts",
-    "typecheck": "npm run typecheck:web && npm run typecheck:workspaces",
-    "typecheck:web": "tsc --noEmit -p web/tsconfig.json",
+    "test:web": "npm run test --workspace @inbox/console",
+    "typecheck": "npm run typecheck:workspaces",
+    "typecheck:web": "npm run typecheck --workspace @inbox/console",
     "typecheck:workspaces": "npm run typecheck --workspaces --if-present"
   },
   "dependencies": {
