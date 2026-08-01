@@ -16,8 +16,8 @@
 
 - [x] 3.1 建立 `apps/api` Hono Worker、环境绑定类型、健康端点和本地 Wrangler 配置
 - [x] 3.2 先写认证契约测试，再实现兼容 `X-API-Key` 的外部认证与独立 worker service token
-- [ ] 3.3 建立 Drizzle D1 schema、版本化 migration 与空库/重复应用测试
-- [ ] 3.4 实现 Queue producer 适配器与 Cron Trigger 到期任务发布，验证未知消息在发布前被拒绝
+- [x] 3.3 建立 Drizzle D1 schema、版本化 migration 与空库/重复应用测试
+- [x] 3.4 实现 Queue producer 适配器与 Cron Trigger 到期任务发布，验证未知消息在发布前被拒绝
 - [ ] 3.5 按 API 影响分析逐个迁移现有运维端点，并为响应 shape 与状态码补充兼容测试
 
 ## 4. Docker worker 核心

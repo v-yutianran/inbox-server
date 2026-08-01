@@ -2,6 +2,20 @@
 
 ## 2026-08-01
 
+### fix(cloudflare)：恢复 Console 运维概览数据链
+
+- 为 Hono Worker 补齐 Console 使用的运维概览、同步记录、归档事件、手动同步和内部快照端点，修复线上 `/api/operations/overview` 返回 404
+- 建立 Drizzle D1 schema 与幂等 migration，创建远端 D1 和 Queue，并提供通过内部认证端点写入 D1 的旧 FastAPI 运维快照校验导入脚本
+- Cron 与手动同步使用版本化 Queue 消息；Docker Worker 消费链就绪前由显式开关保持关闭，避免产生无人消费任务或假成功
+- 独立 worker service token 存入 Cloudflare Secret，本机副本保存在 macOS 钥匙串，不写入仓库或日志
+
+**如何验证**：
+- API 单测 16 passed，strict typecheck passed；旧 overview 契约校验通过（10 个来源、3 个目标）
+- D1 migration 首次远端应用成功，重复应用返回 `No migrations to apply`
+- Worker dry-run 与真实部署成功；线上 `/healthz` 和 `/api/operations/overview` 返回 200，错误 Key 返回 401，Pages Origin CORS 通过
+- 旧服务快照已导入远端 D1；线上读取 10 条同步记录与 10 条归档事件，Cron/同步安全闸门均处于关闭状态
+- 未运行自动化浏览器 E2E：当前任务未授权；旧 Docker 服务保持运行，未执行生产切换
+
 ### feat(cloudflare)：接入 Console Pages 与 Server Workers 预览部署
 
 - 将 Vite/React Console 从 `web` 迁入独立 npm workspace `apps/console`，构建时注入 HTTPS Worker API 地址

@@ -9,11 +9,11 @@
 | 服务 | 部署 | 职责 |
 |------|------|------|
 | **console** | Cloudflare Pages（`apps/console`） | Vite / React 运维控制台 |
-| **server** | Cloudflare Workers（`apps/api`） | Hono API；当前预览阶段提供 `/healthz` 与 `/readyz` |
+| **server** | Cloudflare Workers（`apps/api`） | Hono API、D1 运维快照与 Cloudflare Queues 任务发布 |
 | **worker** | Docker（`apps/worker`） | headed Chromium / Xvfb 浏览器采集与队列消费 |
 | **legacy** | Docker Compose | FastAPI / PostgreSQL / Redis 生产链路，在数据与接口迁移完成前继续运行 |
 
-Cloudflare API 的业务端点、D1 与 Queues 仍按 `openspec/changes/migrate-to-typescript-cloudflare/tasks.md` 逐项迁移；预览环境不会替代或停止旧生产服务。
+Cloudflare API 已承载 Console 使用的运维概览、同步记录、归档事件和手动同步入口；其余业务端点仍按 `openspec/changes/migrate-to-typescript-cloudflare/tasks.md` 逐项迁移。预览环境不会替代或停止旧生产服务。
 
 ## 快速启动
 
@@ -28,19 +28,25 @@ docker compose up -d                       # server 启动自动 alembic 建表
 ```bash
 npm ci
 npm run api:deploy:dry-run
+npm run db:migrate:remote --workspace @inbox/api
 npm run api:deploy
+npm run snapshot:import --workspace @inbox/api
+npm run verify:live --workspace @inbox/api
 npm run console:deploy:preview -- --api-url https://<worker>.workers.dev --dry-run
 npm run console:deploy:preview -- --api-url https://<worker>.workers.dev
 ```
 
-Console 部署脚本只允许在干净的非 `main` 分支执行，并把当前提交与功能分支写入 Pages 预览部署元数据。首次部署前需创建 `inbox-server-console` Pages 项目；API 管理密钥通过 Wrangler Secret `ADMIN_API_KEY` 配置，不写入仓库。
+Console 部署脚本只允许在干净的非 `main` 分支执行，并把当前提交与功能分支写入 Pages 预览部署元数据。首次部署前需创建 `inbox-server-console` Pages 项目；API 管理密钥通过 Wrangler Secret `ADMIN_API_KEY` 配置，不写入仓库。导入旧运维快照前需在环境中提供 `INBOX_ADMIN_API_KEY` 与独立的 `WORKER_SERVICE_TOKEN`，导入脚本会校验旧 API 响应后通过内部认证端点写入远端 D1。
+
+预览环境的 `SCHEDULE_ENABLED` 与 `SYNC_PUBLISH_ENABLED` 默认均为 `false`。只有 Docker Worker 已接通 Queue pull consumer 并完成端到端验证后才可启用，避免 Cron 或手动同步产生无人消费的任务。
 
 ### 手工验收清单
 
 - [ ] 打开 Pages 预览 URL，确认标题、解锁表单与响应式布局正常，无资源加载失败
 - [ ] 分别访问 Worker `/healthz` 与 `/readyz`，确认返回 200
 - [ ] 使用真实 `ADMIN_API_KEY` 解锁 Console，确认请求只发往预览部署指定的 HTTPS Worker
-- [ ] 完成 OpenSpec 3.5 的业务端点迁移后，验证概览加载、手动同步、错误 Key 提示与刷新恢复；迁移前 `/api/operations/overview` 返回 404 是预期边界，不得据此切换生产
+- [ ] 确认 `/api/operations/overview` 返回 200，错误 Key 返回 401，概览与旧服务快照一致
+- [ ] Queue 消费者启用前确认手动同步返回 503；启用后再验证任务发布、消费、ack 与刷新恢复
 - [ ] 生产切换前完成 D1、Queues、Cron、回滚和旧服务下线门禁
 
 ## 配置

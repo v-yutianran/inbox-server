@@ -1,8 +1,14 @@
 import type { MiddlewareHandler } from "hono";
 
+import type { QueueJob } from "@inbox/domain";
+
 export interface ApiBindings {
   readonly ADMIN_API_KEY?: string;
   readonly CONSOLE_ORIGINS?: string;
+  readonly DB: D1Database;
+  readonly JOBS: Queue<QueueJob>;
+  readonly SCHEDULE_ENABLED?: string;
+  readonly SYNC_PUBLISH_ENABLED?: string;
   readonly WORKER_SERVICE_TOKEN?: string;
 }
 
