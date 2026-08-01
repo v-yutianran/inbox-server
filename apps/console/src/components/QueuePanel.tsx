@@ -18,7 +18,7 @@ export function QueuePanel({ queues }: Pick<OperationsOverview, "queues">) {
           return (
             <Card className="queue-card" key={name} padding={0} role="article">
               <div className="queue-card__header">
-                <h3>{name[0].toUpperCase() + name.slice(1)} 队列</h3>
+                <h3>{name.charAt(0).toUpperCase() + name.slice(1)} 队列</h3>
                 <Badge variant={stats.dlq > 0 ? "error" : "neutral"} label={stats.dlq > 0 ? `${stats.dlq} 异常` : "正常"} />
               </div>
               <strong>{stats.pending.toString().padStart(2, "0")}</strong>

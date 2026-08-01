@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## 2026-08-01
+
+### fix(cloudflare)：恢复 Console 运维概览数据链
+
+- 为 Hono Worker 补齐 Console 使用的运维概览、同步记录、归档事件、手动同步和内部快照端点，修复线上 `/api/operations/overview` 返回 404
+- 建立 Drizzle D1 schema 与幂等 migration，创建远端 D1 和 Queue，并提供通过内部认证端点写入 D1 的旧 FastAPI 运维快照校验导入脚本
+- Cron 与手动同步使用版本化 Queue 消息；Docker Worker 消费链就绪前由显式开关保持关闭，避免产生无人消费任务或假成功
+- 独立 worker service token 存入 Cloudflare Secret，本机副本保存在 macOS 钥匙串，不写入仓库或日志
+
+**如何验证**：
+- API 单测 16 passed，strict typecheck passed；旧 overview 契约校验通过（10 个来源、3 个目标）
+- D1 migration 首次远端应用成功，重复应用返回 `No migrations to apply`
+- Worker dry-run 与真实部署成功；线上 `/healthz` 和 `/api/operations/overview` 返回 200，错误 Key 返回 401，Pages Origin CORS 通过
+- 旧服务快照已导入远端 D1；线上读取 10 条同步记录与 10 条归档事件，Cron/同步安全闸门均处于关闭状态
+- 未运行自动化浏览器 E2E：当前任务未授权；旧 Docker 服务保持运行，未执行生产切换
+
+### feat(cloudflare)：接入 Console Pages 与 Server Workers 预览部署
+
+- 将 Vite/React Console 从 `web` 迁入独立 npm workspace `apps/console`，构建时注入 HTTPS Worker API 地址
+- 新增受保护的 Cloudflare Pages 功能分支部署脚本，拒绝 `main`、detached HEAD、脏工作区和非 HTTPS API 地址
+- 为 Hono Server 增加 Pages 预览域名与显式自定义域名 CORS 白名单，并保留现有健康检查契约
+- 旧 FastAPI 生产服务与 Docker Worker 保持运行，本阶段不执行生产切换
+
+**如何验证**：
+- npm workspace：33 tests passed，strict typecheck 与 production build passed
+- `wrangler deploy --dry-run`、Console 静态构建、`npm audit --omit=dev` 与 `docker compose config --quiet` passed
+- Python 基线：ruff passed、pytest 258 passed（9 个既有 warning）、mypy 103 source files passed
+- Cloudflare Worker `/healthz`、`/readyz` 实测 200；真实 Pages Origin 与预检通过，非白名单 Origin 不返回 CORS 许可
+- Pages 预览 HTML、JS、CSS 实测 200，产物包含真实 Worker 地址；`ADMIN_API_KEY` Secret 已存在且未回显
+- `/api/operations/overview` 当前实测 404，符合尚未完成 OpenSpec 3.5 的迁移边界；未切换生产，旧 Docker 五个服务继续 healthy
+- 未运行自动化浏览器 E2E：当前任务未授权；已提供手工 UI 与真实凭据验收清单
+
 ## 2026-07-31
 
 ### feat(runtime)：建立 TypeScript、Cloudflare 与 Docker Worker 迁移基线

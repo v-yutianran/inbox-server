@@ -4,6 +4,29 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-31",
   "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "inbox-server",
+      "database_id": "8654ef2f-4f7b-4f9e-837a-7aeb4388fd64",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "JOBS",
+        "queue": "inbox-server-jobs"
+      }
+    ]
+  },
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  },
+  "vars": {
+    "SCHEDULE_ENABLED": "false",
+    "SYNC_PUBLISH_ENABLED": "false"
+  },
   "observability": {
     "enabled": true
   }

@@ -10,14 +10,14 @@
 - [x] 2.1 备份现有 Node 清单并把根项目迁为 npm workspace，生成并校验 `package-lock.json`
 - [x] 2.2 建立 strict 共享 tsconfig、Vitest 15 秒全局超时和各 workspace 的独立 typecheck/test/build 命令
 - [x] 2.3 在 `packages/domain` 先写失败测试，再实现版本化任务联合类型、运行时解析和稳定幂等键
-- [ ] 2.4 将现有 `web` console 迁入 `apps/console`，保持组件化 UI、现有测试与 Cloudflare 静态构建通过
+- [x] 2.4 将现有 `web` console 迁入 `apps/console`，保持组件化 UI、现有测试与 Cloudflare 静态构建通过
 
 ## 3. Cloudflare API 与持久化
 
 - [x] 3.1 建立 `apps/api` Hono Worker、环境绑定类型、健康端点和本地 Wrangler 配置
 - [x] 3.2 先写认证契约测试，再实现兼容 `X-API-Key` 的外部认证与独立 worker service token
-- [ ] 3.3 建立 Drizzle D1 schema、版本化 migration 与空库/重复应用测试
-- [ ] 3.4 实现 Queue producer 适配器与 Cron Trigger 到期任务发布，验证未知消息在发布前被拒绝
+- [x] 3.3 建立 Drizzle D1 schema、版本化 migration 与空库/重复应用测试
+- [x] 3.4 实现 Queue producer 适配器与 Cron Trigger 到期任务发布，验证未知消息在发布前被拒绝
 - [ ] 3.5 按 API 影响分析逐个迁移现有运维端点，并为响应 shape 与状态码补充兼容测试
 
 ## 4. Docker worker 核心
@@ -54,7 +54,7 @@
 ## 8. Cloudflare 与生产切换
 
 - [ ] 8.1 在本地/预览环境应用 D1 migration、Queues 与 Cron 配置并验证 API/worker 端到端契约
-- [ ] 8.2 部署 console/API 预览环境，完成非 E2E 自动检查并提供手工 UI 与真实凭据验收清单
+- [x] 8.2 部署 console/API 预览环境，完成非 E2E 自动检查并提供手工 UI 与真实凭据验收清单
 - [ ] 8.3 经用户确认生产迁移窗口后停止旧 worker，执行最终增量迁移并启用新队列单一生产者
 - [ ] 8.4 完成生产观察与回滚门槛检查；仅在另行确认后下线 Python/PostgreSQL/Redis/Nginx 路径
 
