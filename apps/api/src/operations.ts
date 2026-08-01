@@ -206,11 +206,27 @@ export function createD1OperationsService({
     const mergedJobs = [...currentJobs, ...snapshot.sync_jobs]
       .filter((job, index, jobs) => jobs.findIndex(({ id }) => id === job.id) === index)
       .slice(0, 10);
-    return normalizeOverviewStatus(
-      { ...snapshot, sync_jobs: mergedJobs },
+    const heartbeat = await database
+      .prepare(
+        "SELECT last_seen_at FROM worker_heartbeats ORDER BY last_seen_at DESC LIMIT 1",
+      )
+      .first<{ last_seen_at: string }>();
+    const normalized = normalizeOverviewStatus(
+      {
+        ...snapshot,
+        sync_jobs: mergedJobs,
+        worker: resolveWorkerHeartbeat(snapshot.worker, heartbeat?.last_seen_at ?? null),
+      },
       now(),
       schedulerEnabled,
     );
+    console.log(JSON.stringify({
+      description: "已基于 D1 最新心跳解析 worker 状态",
+      event: "operations.worker_status.resolved",
+      lastHeartbeatAt: normalized.worker.last_heartbeat_at,
+      online: normalized.worker.online,
+    }));
+    return normalized;
   }
 
   async function listSyncJobs(limit: number): Promise<readonly SyncJob[]> {
@@ -317,12 +333,29 @@ export function normalizeOverviewStatus(
   const heartbeatAge = now.getTime() - heartbeatAt;
   const workerOnline =
     overview.worker.online && heartbeatAge >= -30_000 && heartbeatAge <= 90_000;
+  const intervalMs = overview.scheduler.interval_seconds * 1_000;
+  const nextRunAt = schedulerEnabled
+    ? new Date((Math.floor(now.getTime() / intervalMs) + 1) * intervalMs).toISOString()
+    : null;
   return {
     ...overview,
     generated_at: now.toISOString(),
-    scheduler: { ...overview.scheduler, enabled: schedulerEnabled },
+    scheduler: {
+      ...overview.scheduler,
+      enabled: schedulerEnabled,
+      next_run_at: nextRunAt,
+    },
     worker: { ...overview.worker, online: workerOnline },
   };
+}
+
+export function resolveWorkerHeartbeat(
+  snapshot: OperationsOverview["worker"],
+  lastHeartbeatAt: string | null,
+): OperationsOverview["worker"] {
+  return lastHeartbeatAt === null
+    ? snapshot
+    : { last_heartbeat_at: lastHeartbeatAt, online: true };
 }
 
 function emptyOverview(now: Date, schedulerEnabled: boolean): OperationsOverview {

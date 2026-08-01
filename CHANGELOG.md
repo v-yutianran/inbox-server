@@ -9,10 +9,11 @@
 - browser source 增加 180 秒 watchdog；YouTube 在命中已知基线边界后停止滚动，避免列表采集超过租约；队列终态补充 `worker.job.succeeded`/`worker.job.failed` 可关联日志
 - Git 文章归档绕过 WARP 直连 GitHub，使用浅克隆、远端 HEAD 比对和可恢复的不完整仓库备份，避免代理超时阻塞队列
 - 知乎文章归档复用 D1 中的加密登录凭据调用同源内容 API；Git 仓库已有文章时仍检查未提交内容并补推，远端 Git 操作增加三次瞬时失败重试
+- 运维概览改为读取 D1 最新 worker 心跳并按 Cron 间隔生成未来的下次运行时间；Console 技术栈文案同步为 Cloudflare Workers / D1 / Queues
 - 停止本机 console/server/postgres/redis 容器，保留 `inbox-server_pgdata` 与 `inbox-server_redisdata` 卷；线上 Cron 恢复为每 10 分钟运行
 
 **如何验证**：
-- npm workspace：API 37、Console 15、Worker 64、Domain 8 tests passed；strict typecheck、production build、Compose config、Sealos client/server dry-run 与 docker-to-sealos quality gate passed
+- npm workspace：API 39、Console 15、Worker 64、Domain 8 tests passed；strict typecheck、production build、Compose config、Sealos client/server dry-run 与 docker-to-sealos quality gate passed
 - Sealos 实测 StatefulSet Ready，worker 与 WARP imageID 均为固定摘要；`/healthz`、`/readyz` 返回 200，应用层代理返回 `warp=on`
 - 当前镜像的 YouTube shadow 任务 attempt 1 在 75.395 秒内完成，D1 为 `done`，基线边界结果为 0 个新条目；本机 Docker 停止后 Telegram shadow 任务 attempt 1 在 16.184 秒内完成
 - 生产重放原失败的 Bilibili 与知乎文章任务均在 attempt 1 完成，D1 为 `done`、文章事件为 `committed`；PVC Git 工作区干净、两个来源 URL 各归档一次且本地 HEAD 与远端 `main` 一致

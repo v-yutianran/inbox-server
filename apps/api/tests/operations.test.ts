@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   advanceSyncJob,
+  resolveWorkerHeartbeat,
   normalizeOverviewStatus,
   resolveCollectionShadowMode,
   type OperationsOverview,
@@ -25,6 +26,18 @@ const overview: OperationsOverview = {
 };
 
 describe("normalizeOverviewStatus", () => {
+  it("使用 D1 最新 heartbeat 覆盖迁移快照中的旧状态", () => {
+    const resolved = resolveWorkerHeartbeat(
+      overview.worker,
+      "2026-08-01T18:29:20.000Z",
+    );
+
+    expect(resolved).toEqual({
+      last_heartbeat_at: "2026-08-01T18:29:20.000Z",
+      online: true,
+    });
+  });
+
   it("旧服务快照的 heartbeat 超时后不继续显示在线", () => {
     const normalized = normalizeOverviewStatus(
       overview,
@@ -46,6 +59,16 @@ describe("normalizeOverviewStatus", () => {
 
     expect(normalized.worker.online).toBe(true);
     expect(normalized.scheduler.enabled).toBe(true);
+  });
+
+  it("按调度间隔生成未来的下一次执行时间", () => {
+    const normalized = normalizeOverviewStatus(
+      overview,
+      new Date("2026-08-01T18:29:29.386Z"),
+      true,
+    );
+
+    expect(normalized.scheduler.next_run_at).toBe("2026-08-01T18:30:00.000Z");
   });
 });
 

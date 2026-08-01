@@ -112,6 +112,7 @@ test("控制台展示服务、队列、渠道和两类历史", async () => {
 
   expect(await screen.findByText("运行总览")).toBeInTheDocument();
   expect(screen.getByText("服务在线")).toBeInTheDocument();
+  expect(screen.getByText("Cloudflare Workers / D1 / Queues")).toBeInTheDocument();
   expect(screen.getByText("Worker 在线")).toBeInTheDocument();
   expect(screen.getByText("每 10 分钟")).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Link 队列" })).toBeInTheDocument();
