@@ -2,6 +2,16 @@
 
 ## 2026-08-03
 
+### fix(ci)：恢复 npm 质量门禁
+
+- 两条 GitHub Actions 质量流水线统一使用仓库锁定的 npm 工具链，移除与 `package-lock.json` 不匹配且未声明版本的 pnpm 初始化
+- git-manager 质量任务按实际主栈改为 Python，并继续安装 Defuddle / Eta 所需的 Node workspace 依赖
+
+**如何验证**：
+- git-manager workflow 重新生成后再次 dry-run 无差异，YAML 解析与 `git diff --check` 通过
+- npm workspace 150 tests、strict typecheck 与 production build 通过
+- Python ruff、258 tests（9 个既有 warning）与 mypy 103 source files 通过
+
 ### fix(worker)：区分文章无损延期、真实失败与受控恢复
 
 - 文章归档改为一次原子检查日限额与窗口限额，任一窗口拒绝时不部分扣减，并在领取外部副作用前返回带 `retryAt` 的类型化延期
