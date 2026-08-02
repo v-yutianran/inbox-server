@@ -12,7 +12,9 @@
 - 新增微信直取、异常页浏览器回退及二次异常页拒绝回归测试，Worker 16 files / 69 tests passed
 - npm workspace 共 131 tests passed，strict typecheck 与 production build passed
 - Python 兼容基线 ruff passed、pytest 258 passed（9 个既有 warning）、mypy 103 source files passed
-- 尚未部署 Sealos 或重放生产任务；线上验证结果将在部署完成后补充
+- 固定生产 Worker 镜像为 `sha256:0d34bea391a75c734c231eadbcd72ec116d552d6f2e9d7d6e347b1bc545a1e48`，经南京大学 GHCR 代理部署到 Sealos 北京区；线上 Pod 的源码修订为 `05cf4b8b2bedcabfad8be392bee6544a2557753f`
+- 线上重放 37 条唯一历史微信文章后，28 条已记录 `committed/exists`，9 条在两轮提取后仍稳定命中微信验证页或 150 字占位正文并安全跳过；用户反馈的两条目标链接均已归档且远端 Git 可见
+- 重放压力暴露既有文章限速与 effect 租约重试竞态，新增 DLQ 保留用于后续恢复，未直接删除生产记录
 
 ### fix(runtime)：恢复 Inoreader 线上采集与 Worker 在线状态
 
