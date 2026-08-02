@@ -37,4 +37,4 @@
 - [x] 6.1 更新 `CHANGELOG.md`，记录行为、迁移、安全边界和验证命令
 - [x] 6.2 运行 `npm test`、`npm run typecheck`、`npm run build` 及 Python 自验四件套中适用的非 E2E 门禁
 - [x] 6.3 运行 OpenSpec strict validate、`git diff --check` 与 GitNexus `detect_changes`，确认变更范围
-- [ ] 6.4 使用 `git-manager` 精确提交、普通 push 并创建或复用 PR；禁止自动 merge
+- [x] 6.4 使用 `git-manager` 精确提交、普通 push 并创建或复用 PR；禁止自动 merge
