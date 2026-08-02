@@ -13,6 +13,10 @@ function controlPlane(): WorkerControlPlane {
     claimEffect: vi.fn().mockResolvedValue({ attempts: 1, state: "claimed" }),
     claimJob: vi.fn(),
     consumeRateLimit: vi.fn().mockResolvedValue({ allowed: true, count: 1 }),
+    consumeRateLimits: vi.fn().mockResolvedValue({
+      allowed: true,
+      counts: { "article:daily": 1, "article:window": 1 },
+    }),
     finishEffect: vi.fn().mockResolvedValue(undefined),
     finishJob: vi.fn(),
     getCredential: vi.fn(),
@@ -60,6 +64,138 @@ const channels = {
 } as unknown as Channels;
 
 describe("job handler", () => {
+  it("文章限速先于 effect claim 并返回无损延期", async () => {
+    const cp = controlPlane();
+    vi.mocked(cp.consumeRateLimits).mockResolvedValue({
+      allowed: false,
+      counts: { "article:daily": 500 },
+      retryAt: "2030-01-02T00:00:00.000Z",
+    });
+    const archive = vi.fn();
+    const handle = createJobHandler({
+      archive,
+      browser: {} as Browser,
+      channels: {
+        article_archive: {
+          daily_limit: 500,
+          enabled: true,
+          rate_window_count: 120,
+          rate_window_seconds: 21_600,
+        },
+        destinations: {},
+        sources: {},
+      } as unknown as Channels,
+      controlPlane: cp,
+      now: () => new Date("2030-01-01T00:00:00.000Z"),
+      stagingDir: "/tmp/inbox",
+    });
+    const article: QueueJob = {
+      createdAt: "2030-01-01T00:00:00.000Z",
+      dedupeKey: "dispatch:article:test",
+      jobId: "657cb0ad-169b-4cce-92c1-1a6fe47107aa",
+      kind: "dispatch-item",
+      payload: {
+        itemKind: "article",
+        requestedAt: "2030-01-01T00:00:00.000Z",
+        url: "https://example.invalid/article/1",
+      },
+      schemaVersion: 1,
+    };
+
+    await expect(handle(article)).resolves.toEqual({
+      outcome: "deferred",
+      reason: "rate_limit",
+      retryAt: "2030-01-02T00:00:00.000Z",
+    });
+    expect(cp.claimEffect).not.toHaveBeenCalled();
+    expect(archive).not.toHaveBeenCalled();
+  });
+
+  it("effect busy 形成无损延期而不是抛出失败", async () => {
+    const cp = controlPlane();
+    vi.mocked(cp.claimEffect).mockResolvedValue({
+      retryAt: "2030-01-01T00:10:00.000Z",
+      state: "busy",
+    });
+    const handle = createJobHandler({
+      archive: vi.fn(),
+      browser: {} as Browser,
+      channels: {
+        article_archive: {
+          daily_limit: 500,
+          enabled: true,
+          rate_window_count: 120,
+          rate_window_seconds: 21_600,
+        },
+        destinations: {},
+        sources: {},
+      } as unknown as Channels,
+      controlPlane: cp,
+      now: () => new Date("2030-01-01T00:00:00.000Z"),
+      stagingDir: "/tmp/inbox",
+    });
+    const article = {
+      createdAt: "2030-01-01T00:00:00.000Z",
+      dedupeKey: "dispatch:article:test",
+      jobId: "657cb0ad-169b-4cce-92c1-1a6fe47107aa",
+      kind: "dispatch-item",
+      payload: {
+        itemKind: "article",
+        requestedAt: "2030-01-01T00:00:00.000Z",
+        url: "https://example.invalid/article/1",
+      },
+      schemaVersion: 1,
+    } as QueueJob;
+
+    await expect(handle(article)).resolves.toEqual({
+      outcome: "deferred",
+      reason: "effect_busy",
+      retryAt: "2030-01-01T00:10:00.000Z",
+    });
+  });
+
+  it("外部归档结果不确定时冻结任务而不是自动重试", async () => {
+    const cp = controlPlane();
+    const handle = createJobHandler({
+      archive: vi.fn().mockRejectedValue(new Error("connection closed")),
+      browser: {} as Browser,
+      channels: {
+        article_archive: {
+          daily_limit: 500,
+          enabled: true,
+          rate_window_count: 120,
+          rate_window_seconds: 21_600,
+        },
+        destinations: {},
+        sources: {},
+      } as unknown as Channels,
+      controlPlane: cp,
+      now: () => new Date("2030-01-01T00:00:00.000Z"),
+      stagingDir: "/tmp/inbox",
+    });
+    const article = {
+      createdAt: "2030-01-01T00:00:00.000Z",
+      dedupeKey: "dispatch:article:uncertain",
+      jobId: "f38536fd-791f-42ee-b6db-979b51a7b2bb",
+      kind: "dispatch-item",
+      payload: {
+        itemKind: "article",
+        requestedAt: "2030-01-01T00:00:00.000Z",
+        url: "https://example.invalid/article/uncertain",
+      },
+      schemaVersion: 1,
+    } as QueueJob;
+
+    await expect(handle(article)).resolves.toEqual({
+      outcome: "uncertain",
+      reason: "external_delivery_uncertain",
+    });
+    expect(cp.finishEffect).toHaveBeenCalledWith(
+      "dispatch:article:uncertain:article_archive",
+      expect.objectContaining({ status: "uncertain" }),
+    );
+  });
+
   it("shadow 只写对比摘要，不发布、不推进 baseline、不执行来源外部副作用", async () => {
     const cp = controlPlane();
     const afterCommit = vi.fn();
@@ -73,7 +209,10 @@ describe("job handler", () => {
     });
 
     await expect(handle(collectJob(true))).resolves.toEqual(
-      expect.objectContaining({ collected: 1, shadow: true }),
+      {
+        outcome: "completed",
+        summary: expect.objectContaining({ collected: 1, shadow: true }),
+      },
     );
     expect(cp.publishJobs).not.toHaveBeenCalled();
     expect(cp.putState).toHaveBeenCalledOnce();
@@ -162,7 +301,10 @@ describe("job handler", () => {
       schemaVersion: 1,
     };
 
-    await expect(handle(job)).resolves.toEqual({ destinations: { cubox: "done" } });
+    await expect(handle(job)).resolves.toEqual({
+      outcome: "completed",
+      summary: { destinations: { cubox: "done" } },
+    });
     expect(deliver).not.toHaveBeenCalled();
   });
 });

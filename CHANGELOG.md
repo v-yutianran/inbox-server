@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2026-08-03
+
+### fix(worker)：区分文章无损延期、真实失败与受控恢复
+
+- 文章归档改为一次原子检查日限额与窗口限额，任一窗口拒绝时不部分扣减，并在领取外部副作用前返回带 `retryAt` 的类型化延期
+- D1 job 新增独立 `failure_attempts`、延期状态和分段重投；限速与 effect busy 不消耗三次真实失败预算，`done` 与 `uncertain` 终态禁止自动重放
+- 新文章任务在首次领取时以 AES-GCM 保存可恢复信封；完成后删除，进入 DLQ 时保留，外部结果不确定时冻结；历史 DLQ 保持原样且不可自动恢复
+- 新增 worker token 保护的 dead-letter `dryRun`/幂等重放端点，响应、公开队列快照和稳定结构化日志均不包含业务 payload 或密文
+
+**如何验证**：
+- npm workspace 31 files / 150 tests passed，strict typecheck 与 production build passed；Cloudflare Worker dry-run 构建通过
+- 文章重试聚焦验证覆盖批量限速原子性、早到重投、effect busy、三次真实失败、信封生命周期、认证、幂等和敏感信息禁漏
+- 隔离 SQLite D1 演练确认 0004 保留历史 DLQ 全部原字段，旧版 Worker 写入契约在新 schema 上仍可用于代码回滚
+- Python 兼容基线 ruff passed、pytest 258 passed（9 个既有 warning）、mypy 103 source files passed
+- 未运行浏览器自动化 E2E，未连接或写入生产 D1，未重放任何线上历史 DLQ
+
 ## 2026-08-02
 
 ### fix(worker)：恢复微信文章双阶段正文提取

@@ -9,6 +9,7 @@ function createService(): ControlPlaneService {
     claimEffect: vi.fn().mockResolvedValue({ state: "claimed" }),
     claimJob: vi.fn().mockResolvedValue({ attempts: 1, state: "claimed" }),
     consumeRateLimit: vi.fn().mockResolvedValue({ allowed: true, count: 1 }),
+    consumeRateLimits: vi.fn().mockResolvedValue({ allowed: true, counts: {} }),
     finishEffect: vi.fn().mockResolvedValue(undefined),
     finishJob: vi.fn().mockResolvedValue({ settlement: "ack" }),
     getChannels: vi.fn().mockResolvedValue({
@@ -44,6 +45,12 @@ function createService(): ControlPlaneService {
     recordArticleEvent: vi.fn().mockResolvedValue(undefined),
     recordHeartbeat: vi.fn().mockResolvedValue(undefined),
     rejectInvalidJob: vi.fn().mockResolvedValue(undefined),
+    replayDeadLetter: vi.fn().mockResolvedValue({
+      published: false,
+      reason: "replayable",
+      replayable: true,
+      status: "validated",
+    }),
     writeCookie: vi.fn().mockResolvedValue({
       note: "凭据已存，登录态将在下次同步时由 worker 建立",
       platform: "zhihu",
@@ -128,6 +135,44 @@ describe("management compatibility routes", () => {
 });
 
 describe("worker control-plane routes", () => {
+  it("dead-letter 重放仅允许 worker token 且 dry-run 不回显 payload", async () => {
+    const service = createService();
+    const app = createApp({ createControlPlaneService: () => service });
+    const bindings = { ADMIN_API_KEY: "admin", WORKER_SERVICE_TOKEN: "worker" };
+    const body = JSON.stringify({ dryRun: true, idempotencyKey: "operation-1" });
+
+    const denied = await app.request(
+      "/internal/dead-letters/job-1/replay",
+      { body, headers: { "Content-Type": "application/json" }, method: "POST" },
+      bindings,
+    );
+    const allowed = await app.request(
+      "/internal/dead-letters/job-1/replay",
+      {
+        body,
+        headers: {
+          Authorization: "Bearer worker",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+      bindings,
+    );
+
+    expect(denied.status).toBe(401);
+    expect(allowed.status).toBe(200);
+    expect(await allowed.json()).toEqual({
+      published: false,
+      reason: "replayable",
+      replayable: true,
+      status: "validated",
+    });
+    expect(service.replayDeadLetter).toHaveBeenCalledWith("job-1", {
+      dryRun: true,
+      idempotencyKey: "operation-1",
+    });
+  });
+
   it("worker 通过服务令牌领取并结算 D1 lease", async () => {
     const inbox = queueInbox();
     const app = createApp({ createQueueInboxService: () => inbox });

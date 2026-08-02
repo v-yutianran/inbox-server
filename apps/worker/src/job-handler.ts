@@ -29,6 +29,15 @@ type DeliverFunction = (
   item: DispatchItem,
 ) => Promise<DeliveryResult>;
 
+export type JobHandlerResult =
+  | { readonly outcome: "completed"; readonly summary: JsonRecord }
+  | {
+      readonly outcome: "deferred";
+      readonly reason: "effect_busy" | "rate_limit";
+      readonly retryAt: string;
+    }
+  | { readonly outcome: "uncertain"; readonly reason: string };
+
 interface JobHandlerOptions {
   readonly archive?: (item: Extract<DispatchItem, { itemKind: "article" }>) => Promise<DeliveryResult>;
   readonly browser: Browser;
@@ -43,7 +52,9 @@ interface JobHandlerOptions {
   readonly stagingDir: string;
 }
 
-export function createJobHandler(options: JobHandlerOptions): (job: QueueJob) => Promise<JsonRecord> {
+export function createJobHandler(
+  options: JobHandlerOptions,
+): (job: QueueJob) => Promise<JobHandlerResult> {
   const collect = options.collect ?? collectSource;
   const deliver = options.deliver ?? createConfiguredDeliverer(options);
   const now = options.now ?? (() => new Date());
@@ -79,15 +90,26 @@ export function createJobHandler(options: JobHandlerOptions): (job: QueueJob) =>
         await options.controlPlane.putLoginSession(platform, session);
       }
       return {
-        collected: result.items.length,
-        published: job.payload.shadow ? 0 : dispatchJobs.length,
-        shadow: job.payload.shadow,
-        source: job.payload.source,
+        outcome: "completed",
+        summary: {
+          collected: result.items.length,
+          published: job.payload.shadow ? 0 : dispatchJobs.length,
+          shadow: job.payload.shadow,
+          source: job.payload.source,
+        },
       };
     }
 
     const destinations = matchingDestinations(options.channels, job.payload);
     const states: Record<string, string> = {};
+    if (job.payload.itemKind === "article" && destinations.length > 0) {
+      const rateLimit = await options.controlPlane.consumeRateLimits(
+        rateLimitInputs(options.channels, job.payload, now()),
+      );
+      if (!rateLimit.allowed) {
+        return { outcome: "deferred", reason: "rate_limit", retryAt: rateLimit.retryAt };
+      }
+    }
     for (const destination of destinations) {
       const effectKey = `${job.dedupeKey}:${destination}`;
       const claim = await options.controlPlane.claimEffect({
@@ -95,13 +117,20 @@ export function createJobHandler(options: JobHandlerOptions): (job: QueueJob) =>
         effectKey,
         jobId: job.jobId,
       });
-      if (claim.state === "done" || claim.state === "uncertain") {
-        states[destination] = claim.state;
+      if (claim.state === "done") {
+        states[destination] = "done";
         continue;
       }
-      if (claim.state === "busy") throw new TypeError("effect temporarily busy");
+      if (claim.state === "uncertain") {
+        return { outcome: "uncertain", reason: "effect_uncertain" };
+      }
+      if (claim.state === "busy") {
+        return { outcome: "deferred", reason: "effect_busy", retryAt: claim.retryAt };
+      }
 
-      await enforceRateLimit(options.controlPlane, options.channels, job.payload, now());
+      if (job.payload.itemKind !== "article") {
+        await enforceRateLimit(options.controlPlane, options.channels, job.payload, now());
+      }
       let result: DeliveryResult;
       try {
         result = await deliver(destination, job.payload);
@@ -111,7 +140,7 @@ export function createJobHandler(options: JobHandlerOptions): (job: QueueJob) =>
           errorMessage: "external delivery outcome uncertain",
           status: "uncertain",
         });
-        throw new Error("external delivery outcome uncertain");
+        return { outcome: "uncertain", reason: "external_delivery_uncertain" };
       }
       if (result.outcome === "ok") {
         await options.controlPlane.finishEffect(effectKey, { status: "done" });
@@ -134,10 +163,11 @@ export function createJobHandler(options: JobHandlerOptions): (job: QueueJob) =>
           : `destination rejected request: ${result.status}`,
         status: uncertain ? "uncertain" : "failed",
       });
+      if (uncertain) {
+        return { outcome: "uncertain", reason: "external_delivery_uncertain" };
+      }
       throw new Error(
-        uncertain
-          ? "external delivery outcome uncertain"
-          : `destination rejected request: ${result.status}`,
+        `destination rejected request: ${result.status}`,
       );
     }
 
@@ -151,7 +181,7 @@ export function createJobHandler(options: JobHandlerOptions): (job: QueueJob) =>
       };
       await options.controlPlane.publishJobs(await toDispatchJobs([article], now, randomUuid));
     }
-    return { destinations: states };
+    return { outcome: "completed", summary: { destinations: states } };
   };
 }
 
@@ -259,6 +289,22 @@ async function enforceRateLimit(
   item: DispatchItem,
   current: Date,
 ): Promise<void> {
+  for (const input of rateLimitInputs(channels, item, current)) {
+    const result = await controlPlane.consumeRateLimit(input);
+    if (!result.allowed) throw new TypeError(`429 ${input.scope} rate limit unavailable`);
+  }
+}
+
+function rateLimitInputs(
+  channels: Channels,
+  item: DispatchItem,
+  current: Date,
+): readonly {
+  bucketKey: string;
+  limit: number;
+  scope: string;
+  windowSeconds: number;
+}[] {
   const policy = ratePolicy(channels, item.itemKind);
   const date = new Intl.DateTimeFormat("en-CA", {
     day: "2-digit",
@@ -266,25 +312,30 @@ async function enforceRateLimit(
     timeZone: "Asia/Shanghai",
     year: "numeric",
   }).format(current);
+  const inputs: Array<{
+    bucketKey: string;
+    limit: number;
+    scope: string;
+    windowSeconds: number;
+  }> = [];
   if (policy.dailyLimit !== null) {
-    const result = await controlPlane.consumeRateLimit({
+    inputs.push({
       bucketKey: date,
       limit: policy.dailyLimit,
       scope: `${item.itemKind}:daily`,
       windowSeconds: 86_400,
     });
-    if (!result.allowed) throw new TypeError("429 daily rate limit unavailable");
   }
   if (policy.windowCount > 0) {
     const bucket = String(Math.floor(current.getTime() / (policy.windowSeconds * 1_000)));
-    const result = await controlPlane.consumeRateLimit({
+    inputs.push({
       bucketKey: bucket,
       limit: policy.windowCount,
       scope: `${item.itemKind}:window`,
       windowSeconds: policy.windowSeconds,
     });
-    if (!result.allowed) throw new TypeError("429 window rate limit unavailable");
   }
+  return inputs;
 }
 
 function ratePolicy(channels: Channels, itemKind: DispatchItem["itemKind"]): {

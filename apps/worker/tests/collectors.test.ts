@@ -11,6 +11,7 @@ function controlPlane(state: unknown): WorkerControlPlane {
     claimEffect: vi.fn(),
     claimJob: vi.fn(),
     consumeRateLimit: vi.fn(),
+    consumeRateLimits: vi.fn(),
     finishEffect: vi.fn(),
     finishJob: vi.fn(),
     getCredential: vi.fn(),

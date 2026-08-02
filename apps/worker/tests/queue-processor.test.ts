@@ -45,6 +45,7 @@ function createControlPlane(): WorkerControlPlane {
     claimEffect: vi.fn(),
     claimJob: vi.fn().mockResolvedValue({ attempts: 1, state: "claimed" }),
     consumeRateLimit: vi.fn(),
+    consumeRateLimits: vi.fn(),
     finishEffect: vi.fn(),
     finishJob: vi.fn().mockResolvedValue({ settlement: "ack" }),
     getCredential: vi.fn(),
@@ -59,6 +60,73 @@ function createControlPlane(): WorkerControlPlane {
 }
 
 describe("queue processor", () => {
+  it("类型化延期不进入失败分类并按控制面 retryAt 结算", async () => {
+    const queue = createQueue();
+    const controlPlane = createControlPlane();
+    const log = vi.fn();
+    vi.mocked(controlPlane.finishJob).mockResolvedValue({
+      delaySeconds: 300,
+      settlement: "retry",
+    });
+
+    await processQueueBatch({
+      batch: createBatch(),
+      controlPlane,
+      handle: vi.fn().mockResolvedValue({
+        outcome: "deferred",
+        reason: "rate_limit",
+        retryAt: "2030-01-01T00:15:01.000Z",
+      }),
+      log,
+      queue,
+    });
+
+    expect(controlPlane.finishJob).toHaveBeenCalledWith(job.jobId, {
+      reason: "rate_limit",
+      retryAt: "2030-01-01T00:15:01.000Z",
+      status: "deferred",
+    });
+    expect(queue.settle).toHaveBeenCalledWith({
+      acks: [],
+      retries: [{ delaySeconds: 300, leaseId: "lease-1" }],
+    });
+    expect(log).toHaveBeenCalledWith(
+      "worker.job.deferred",
+      expect.not.objectContaining({ body: expect.anything(), payload: expect.anything() }),
+    );
+  });
+
+  it("effect busy 记录专用无损延期事件且不记录真实失败", async () => {
+    const queue = createQueue();
+    const controlPlane = createControlPlane();
+    const log = vi.fn();
+    vi.mocked(controlPlane.finishJob).mockResolvedValue({
+      delaySeconds: 300,
+      settlement: "retry",
+    });
+
+    await processQueueBatch({
+      batch: createBatch(),
+      controlPlane,
+      handle: vi.fn().mockResolvedValue({
+        outcome: "deferred",
+        reason: "effect_busy",
+        retryAt: "2030-01-01T00:15:01.000Z",
+      }),
+      log,
+      queue,
+    });
+
+    expect(log).toHaveBeenCalledWith(
+      "worker.effect.busy.deferred",
+      expect.objectContaining({ jobId: job.jobId, reason: "effect_busy" }),
+    );
+    expect(log).not.toHaveBeenCalledWith(
+      "worker.job.retryable_failed",
+      expect.anything(),
+    );
+  });
+
   it("只有 D1 完成状态持久化成功后才 ack", async () => {
     const queue = createQueue();
     const controlPlane = createControlPlane();
@@ -68,7 +136,10 @@ describe("queue processor", () => {
       processQueueBatch({
         batch: createBatch(),
         controlPlane,
-        handle: vi.fn().mockResolvedValue({ collected: 0 }),
+        handle: vi.fn().mockResolvedValue({
+          outcome: "completed",
+          summary: { collected: 0 },
+        }),
         queue,
       }),
     ).rejects.toThrow("D1 unavailable");
@@ -103,7 +174,10 @@ describe("queue processor", () => {
         ],
       },
       controlPlane,
-      handle: vi.fn().mockResolvedValue({ collected: 0 }),
+      handle: vi.fn().mockResolvedValue({
+        outcome: "completed",
+        summary: { collected: 0 },
+      }),
       onProgress,
       queue,
     });
@@ -119,7 +193,10 @@ describe("queue processor", () => {
     await processQueueBatch({
       batch: createBatch(),
       controlPlane,
-      handle: vi.fn().mockResolvedValue({ collected: 0 }),
+      handle: vi.fn().mockResolvedValue({
+        outcome: "completed",
+        summary: { collected: 0 },
+      }),
       log,
       queue,
     });
@@ -135,6 +212,10 @@ describe("queue processor", () => {
     );
 
     vi.mocked(controlPlane.claimJob).mockResolvedValue({ attempts: 2, state: "claimed" });
+    vi.mocked(controlPlane.finishJob).mockResolvedValue({
+      delaySeconds: 30,
+      settlement: "retry",
+    });
     await processQueueBatch({
       batch: createBatch(job, 2),
       controlPlane,
@@ -144,9 +225,9 @@ describe("queue processor", () => {
     });
 
     expect(log).toHaveBeenCalledWith(
-      "worker.job.failed",
+      "worker.job.retryable_failed",
       expect.objectContaining({
-        description: "队列任务处理失败",
+        description: "队列任务真实失败，等待重试",
         errorMessage: "browser source timeout",
         jobId: job.jobId,
         kind: job.kind,
