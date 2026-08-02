@@ -19,8 +19,9 @@ metadata:
   name: inbox-server-worker-staging
   namespace: ns-tbs948af
   annotations:
-    originImageName: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:1121f1cde80c257aa3512c36f772260808836c9f1bcd15c1e2f9a49e85b3c9aa
+    originImageName: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:a2e4a06e8d0eb10af2e93b1d85501a7ed1e20142bff24f8880544910978cdec5
     inbox.yutianran.cn/warp-image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:04ba57c848686946be667f730e912090eddffa3f003e932ea20acfa440eb36d6
+    inbox.yutianran.cn/mihomo-image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:9b5e5ee79f68dc33e99273b01d2ff4a416a2ce91ff19f1fadc101f58250c2ceb
     deploy.cloud.sealos.io/minReplicas: "1"
     deploy.cloud.sealos.io/maxReplicas: "1"
   labels:
@@ -50,7 +51,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: inbox-server-worker-staging
-          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:1121f1cde80c257aa3512c36f772260808836c9f1bcd15c1e2f9a49e85b3c9aa
+          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:a2e4a06e8d0eb10af2e93b1d85501a7ed1e20142bff24f8880544910978cdec5
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -60,6 +61,8 @@ spec:
           env:
             - name: ARTICLE_REPOSITORY_URL
               value: https://github.com/v-yutianran/.agents.git
+            - name: BROWSER_PROXY_URL
+              value: http://127.0.0.1:7897
             - name: CHANNELS_PATH
               value: /app/channels.yaml
             - name: CONTROL_PLANE_URL
@@ -123,6 +126,68 @@ spec:
           volumeMounts:
             - name: vn-data
               mountPath: /data
+        - name: mihomo-egress
+          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:9b5e5ee79f68dc33e99273b01d2ff4a416a2ce91ff19f1fadc101f58250c2ceb
+          imagePullPolicy: IfNotPresent
+          args:
+            - -d
+            - /data/mihomo
+            - -f
+            - /etc/mihomo/config.yaml
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - grep -q ':1ED9 ' /proc/net/tcp /proc/net/tcp6
+            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - grep -q ':1ED9 ' /proc/net/tcp /proc/net/tcp6
+            failureThreshold: 3
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - grep -q ':1ED9 ' /proc/net/tcp /proc/net/tcp6
+            failureThreshold: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+          ports:
+            - name: proxy
+              containerPort: 7897
+              protocol: TCP
+            - name: socks
+              containerPort: 7898
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 20m
+              memory: 25Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - name: vn-data
+              mountPath: /data
+            - name: clash-config
+              mountPath: /etc/mihomo/config.yaml
+              subPath: config.yaml
+              readOnly: true
         - name: warp-egress
           image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:04ba57c848686946be667f730e912090eddffa3f003e932ea20acfa440eb36d6
           imagePullPolicy: IfNotPresent
@@ -177,6 +242,10 @@ spec:
             - name: warp-logs
               mountPath: /var/log/cloudflare-warp
       volumes:
+        - name: clash-config
+          secret:
+            secretName: inbox-server-clash-config
+            defaultMode: 0440
         - name: warp-state
           persistentVolumeClaim:
             claimName: inbox-server-warp-state

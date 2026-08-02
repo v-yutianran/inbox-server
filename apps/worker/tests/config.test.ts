@@ -20,6 +20,7 @@ describe("worker config", () => {
 
   it("完整生产配置解析为固定批量和可见性超时", () => {
     const config = parseWorkerConfig({
+      BROWSER_PROXY_URL: "http://127.0.0.1:7897",
       CONTROL_PLANE_URL: "https://api.example.com",
       DISPLAY: ":99",
       WORKER_PROCESSING_ENABLED: "true",
@@ -28,6 +29,7 @@ describe("worker config", () => {
     });
 
     expect(config.processingEnabled).toBe(true);
+    expect(config.browserProxyUrl).toBe("http://127.0.0.1:7897");
     expect(config.queueBatchSize).toBe(10);
     expect(config.visibilityTimeoutMs).toBe(300_000);
     expect(config.warpSocksProxyUrl).toBe("socks5://127.0.0.1:40000");

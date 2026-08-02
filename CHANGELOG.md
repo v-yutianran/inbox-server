@@ -2,6 +2,20 @@
 
 ## 2026-08-02
 
+### fix(runtime)：恢复 Inoreader 线上采集与 Worker 在线状态
+
+- Worker 心跳改为独立异步循环，不再被串行浏览器任务阻塞而让 Console 误判离线；失败日志使用稳定事件 `worker.heartbeat.failed`
+- 增加独立的浏览器代理配置；Sealos 注入本机 Clash 规则的加密 Secret，并以固定 Mihomo `v1.19.29` 镜像为 Chromium 提供出口，API 与分发请求继续使用 WARP
+- 重新登录 Inoreader 并把加密 storage state 写入 Cloudflare D1；代理节点凭据不进入仓库、镜像和运行日志
+
+**如何验证**：
+- Worker 16 files / 66 tests passed，strict typecheck 与 production build passed；Mihomo 配置通过官方二进制 `-t` 校验
+- Worker 与 Mihomo 的源站 GHCR、南京大学代理镜像摘要分别一致；Sealos StatefulSet 滚动更新完成，三个容器全部 Ready，稳定观察期间未新增重启
+- 生产 Inoreader shadow 任务 attempt 1 完成，D1 终态为 `done`、0 个新条目；登录状态为 `ok`、`last_error=null`
+- 随后的生产定时同步 10 个来源全部 `done`，Inoreader 采集并发布 14 条；link/text/file/article 待处理数均归零
+- Inoreader 任务执行期间控制面继续收到独立心跳，线上运维概览返回 `worker.online=true`
+- 未运行自动化浏览器 E2E；使用 headed persistent Chromium 完成真实登录，并用线上 API、D1 终态、Sealos 探针和结构化日志闭环验证
+
 ### feat(runtime)：完成 Cloudflare 与 Sealos 生产切换
 
 - Console 与 Hono API 完全部署到 Cloudflare Pages/Workers，D1、Queues、Cron 和自定义域名均启用；旧 PostgreSQL/Redis 数据完成幂等迁移与最终增量核对
@@ -18,7 +32,7 @@
 - 当前镜像的 YouTube shadow 任务 attempt 1 在 75.395 秒内完成，D1 为 `done`，基线边界结果为 0 个新条目；本机 Docker 停止后 Telegram shadow 任务 attempt 1 在 16.184 秒内完成
 - 生产重放原失败的 Bilibili 与知乎文章任务均在 attempt 1 完成，D1 为 `done`、文章事件为 `committed`；PVC Git 工作区干净、两个来源 URL 各归档一次且本地 HEAD 与远端 `main` 一致
 - Cloudflare Console HTML/JS、鉴权 API 与 CORS 实测通过：Pages 200、API Key 请求 200、未鉴权请求 401、Cron enabled
-- 受控生产同步中 Telegram、Dida、GitHub Stars、知乎、B 站收藏/稍后再看、YouTube、X bookmarks/likes 均完成；Inoreader 仍因登录态过期失败，需重新登录后复验
+- 首次受控生产同步中 Telegram、Dida、GitHub Stars、知乎、B 站收藏/稍后再看、YouTube、X bookmarks/likes 均完成；当时 Inoreader 因登录态过期失败，后续已由上方修复恢复
 - 未运行自动化浏览器 E2E：当前任务未授权；改用线上 API、真实 collector/destination、D1 终态、Sealos 探针和结构化日志完成验证
 
 ## 2026-08-01

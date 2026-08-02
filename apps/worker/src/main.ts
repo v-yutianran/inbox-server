@@ -15,6 +15,7 @@ import {
   reduceWorkerHealthState,
   type WorkerHealthState,
 } from "./health.js";
+import { abortableDelay, runHeartbeatLoop } from "./heartbeat.js";
 import { closeHealthServer, startHealthServer } from "./health-server.js";
 import { createJobHandler } from "./job-handler.js";
 import { createNotifier } from "./notifications.js";
@@ -34,6 +35,7 @@ async function run(): Promise<void> {
 
   let state: WorkerHealthState = createWorkerHealthState(Date.now());
   let browser: Browser | undefined;
+  let heartbeatTask: Promise<void> | undefined;
   let healthServer: Server | undefined;
   let outboundProxy: WarpOutboundProxy | undefined;
 
@@ -51,13 +53,17 @@ async function run(): Promise<void> {
         })
       : undefined;
     const externalFetch = outboundProxy?.fetcher ?? fetch;
-    browser = await launchHeadedBrowser(config.display, outboundProxy?.url);
+    browser = await launchHeadedBrowser(
+      config.display,
+      config.browserProxyUrl ?? outboundProxy?.url,
+    );
     state = reduceWorkerHealthState(state, {
       at: Date.now(),
       type: "browser-ready",
     });
     log("worker_ready", {
       display: config.display,
+      browserProxyEnabled: Boolean(config.browserProxyUrl ?? outboundProxy),
       healthPort: config.healthPort,
       outboundProxyEnabled: Boolean(outboundProxy),
       processingEnabled: config.processingEnabled,
@@ -68,6 +74,21 @@ async function run(): Promise<void> {
       const controlPlaneUrl = required(config.controlPlaneUrl, "CONTROL_PLANE_URL");
       const serviceToken = required(config.workerServiceToken, "WORKER_SERVICE_TOKEN");
       const controlPlane = createWorkerControlPlane(controlPlaneUrl, serviceToken);
+      let latestBacklogCount = 0;
+      heartbeatTask = runHeartbeatLoop({
+        controlPlane,
+        details: () => ({
+          backlogCount: latestBacklogCount,
+          browserReady: true,
+          processingEnabled: true,
+        }),
+        intervalMs: config.heartbeatIntervalMs,
+        onError: (error) => {
+          log("worker.heartbeat.failed", { error: safeErrorMessage(error) });
+        },
+        signal: abortController.signal,
+        workerId: config.workerId,
+      });
       const queue = createControlPlaneQueueClient({
         batchSize: config.queueBatchSize,
         controlPlaneUrl,
@@ -105,10 +126,10 @@ async function run(): Promise<void> {
         notify: createNotifier({ channels, fetcher: externalFetch }),
         stagingDir: config.stagingDir,
       });
-      let lastHeartbeatAt = 0;
       while (!abortController.signal.aborted) {
         try {
           const batch = await queue.pull();
+          latestBacklogCount = batch.backlogCount;
           await processQueueBatch({
             batch,
             controlPlane,
@@ -122,19 +143,10 @@ async function run(): Promise<void> {
             },
             queue,
           });
-          const currentTime = Date.now();
           state = reduceWorkerHealthState(state, {
-            at: currentTime,
+            at: Date.now(),
             type: "loop-progress",
           });
-          if (currentTime - lastHeartbeatAt >= config.heartbeatIntervalMs) {
-            await controlPlane.heartbeat(config.workerId, {
-              backlogCount: batch.backlogCount,
-              browserReady: true,
-              processingEnabled: true,
-            });
-            lastHeartbeatAt = currentTime;
-          }
           if (batch.messages.length === 0) {
             await abortableDelay(config.queuePollIntervalMs, abortController.signal);
           }
@@ -151,6 +163,8 @@ async function run(): Promise<void> {
       }
     }
   } finally {
+    abortController.abort();
+    await heartbeatTask;
     state = reduceWorkerHealthState(state, {
       at: Date.now(),
       type: "shutdown-started",
@@ -174,21 +188,6 @@ function safeErrorMessage(error: unknown): string {
   return message
     .replace(/((?:authorization|cookie|password|secret|token)\s*[=:]\s*)([^\s,;]+)/gi, "$1[redacted]")
     .slice(0, 500);
-}
-
-function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const timeout = setTimeout(resolve, milliseconds);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timeout);
-        resolve();
-      },
-      { once: true },
-    );
-  });
 }
 
 function waitForAbort(signal: AbortSignal): Promise<void> {
