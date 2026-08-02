@@ -25,7 +25,6 @@ jobs:
       - run: uv sync --dev
 
       # 安装 Defuddle / Eta，供 Node 桥接集成测试使用
-      - run: npm install --global npm@11.17.0
       - run: npm ci
 
       # lint

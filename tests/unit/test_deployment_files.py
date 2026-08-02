@@ -22,7 +22,6 @@ def test_git_manager_config_enables_quality_gate_and_automatic_cd() -> None:
     quality_job = config["ci"]["jobs"][0]
     install_command = quality_job["installCommand"]
     assert quality_job["stack"] == "python"
-    assert "npm install --global npm@11.17.0" in install_command
     assert "npm ci" in install_command
     assert "pnpm" not in install_command
     assert quality_job["checkCommands"] == [
@@ -38,12 +37,10 @@ def test_git_manager_config_enables_quality_gate_and_automatic_cd() -> None:
         "autoDeploy": True,
     }
     assert "actions/setup-python@" in generated_ci
-    assert "npm install --global npm@11.17.0" in generated_ci
     assert "npm ci" in generated_ci
     assert "pnpm" not in generated_ci
     assert "actions/setup-node@" in legacy_ci
     assert "cache: npm" in legacy_ci
-    assert "npm install --global npm@11.17.0" in legacy_ci
     assert "npm ci" in legacy_ci
     assert "pnpm" not in legacy_ci
 

@@ -4,7 +4,7 @@
 
 ### fix(ci)：恢复 npm 质量门禁
 
-- 两条 GitHub Actions 质量流水线统一使用仓库锁定的 npm 工具链，移除与 `package-lock.json` 不匹配且未声明版本的 pnpm 初始化
+- 两条 GitHub Actions 质量流水线统一使用与 `package-lock.json` 一致的 npm 工具链，移除未声明版本的 pnpm 初始化
 - git-manager 质量任务按实际主栈改为 Python，并继续安装 Defuddle / Eta 所需的 Node workspace 依赖
 
 **如何验证**：
