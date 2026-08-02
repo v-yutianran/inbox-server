@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## 2026-08-02
+
+### fix(runtime)：恢复 Inoreader 线上采集与 Worker 在线状态
+
+- Worker 心跳改为独立异步循环，不再被串行浏览器任务阻塞而让 Console 误判离线；失败日志使用稳定事件 `worker.heartbeat.failed`
+- 增加独立的浏览器代理配置；Sealos 注入本机 Clash 规则的加密 Secret，并以固定 Mihomo `v1.19.29` 镜像为 Chromium 提供出口，API 与分发请求继续使用 WARP
+- 重新登录 Inoreader 并把加密 storage state 写入 Cloudflare D1；代理节点凭据不进入仓库、镜像和运行日志
+
+**如何验证**：
+- Worker 16 files / 66 tests passed，strict typecheck 与 production build passed；Mihomo 配置通过官方二进制 `-t` 校验
+- Worker 与 Mihomo 的源站 GHCR、南京大学代理镜像摘要分别一致；Sealos StatefulSet 滚动更新完成，三个容器全部 Ready，稳定观察期间未新增重启
+- 生产 Inoreader shadow 任务 attempt 1 完成，D1 终态为 `done`、0 个新条目；登录状态为 `ok`、`last_error=null`
+- 随后的生产定时同步 10 个来源全部 `done`，Inoreader 采集并发布 14 条；link/text/file/article 待处理数均归零
+- Inoreader 任务执行期间控制面继续收到独立心跳，线上运维概览返回 `worker.online=true`
+- 未运行自动化浏览器 E2E；使用 headed persistent Chromium 完成真实登录，并用线上 API、D1 终态、Sealos 探针和结构化日志闭环验证
+
+### feat(runtime)：完成 Cloudflare 与 Sealos 生产切换
+
+- Console 与 Hono API 完全部署到 Cloudflare Pages/Workers，D1、Queues、Cron 和自定义域名均启用；旧 PostgreSQL/Redis 数据完成幂等迁移与最终增量核对
+- worker 固定为南京大学 GHCR 代理摘要 `sha256:1121f1cde80c257aa3512c36f772260808836c9f1bcd15c1e2f9a49e85b3c9aa`，在 Sealos 北京区以 headed Chromium、PVC 与 WARP sidecar 运行
+- browser source 增加 180 秒 watchdog；YouTube 在命中已知基线边界后停止滚动，避免列表采集超过租约；队列终态补充 `worker.job.succeeded`/`worker.job.failed` 可关联日志
+- Git 文章归档绕过 WARP 直连 GitHub，使用浅克隆、远端 HEAD 比对和可恢复的不完整仓库备份，避免代理超时阻塞队列
+- 知乎文章归档复用 D1 中的加密登录凭据调用同源内容 API；Git 仓库已有文章时仍检查未提交内容并补推，远端 Git 操作增加三次瞬时失败重试
+- 运维概览改为读取 D1 最新 worker 心跳并按 Cron 间隔生成未来的下次运行时间；Console 技术栈文案同步为 Cloudflare Workers / D1 / Queues
+- 停止本机 console/server/postgres/redis 容器，保留 `inbox-server_pgdata` 与 `inbox-server_redisdata` 卷；线上 Cron 恢复为每 10 分钟运行
+
+**如何验证**：
+- npm workspace：API 39、Console 15、Worker 64、Domain 8 tests passed；strict typecheck、production build、Compose config、Sealos client/server dry-run 与 docker-to-sealos quality gate passed
+- Sealos 实测 StatefulSet Ready，worker 与 WARP imageID 均为固定摘要；`/healthz`、`/readyz` 返回 200，应用层代理返回 `warp=on`
+- 当前镜像的 YouTube shadow 任务 attempt 1 在 75.395 秒内完成，D1 为 `done`，基线边界结果为 0 个新条目；本机 Docker 停止后 Telegram shadow 任务 attempt 1 在 16.184 秒内完成
+- 生产重放原失败的 Bilibili 与知乎文章任务均在 attempt 1 完成，D1 为 `done`、文章事件为 `committed`；PVC Git 工作区干净、两个来源 URL 各归档一次且本地 HEAD 与远端 `main` 一致
+- Cloudflare Console HTML/JS、鉴权 API 与 CORS 实测通过：Pages 200、API Key 请求 200、未鉴权请求 401、Cron enabled
+- 首次受控生产同步中 Telegram、Dida、GitHub Stars、知乎、B 站收藏/稍后再看、YouTube、X bookmarks/likes 均完成；当时 Inoreader 因登录态过期失败，后续已由上方修复恢复
+- 未运行自动化浏览器 E2E：当前任务未授权；改用线上 API、真实 collector/destination、D1 终态、Sealos 探针和结构化日志完成验证
+
 ## 2026-08-01
 
 ### fix(cloudflare)：恢复 Console 运维概览数据链

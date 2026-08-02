@@ -1,30 +1,17 @@
 import { z } from "zod";
 
-const pullResponseSchema = z.object({
-  result: z.object({
-    message_backlog_count: z.number().int().nonnegative(),
-    messages: z.array(
-      z.object({
-        attempts: z.number().int().nonnegative(),
-        body: z.unknown(),
-        id: z.string().min(1),
-        lease_id: z.string().min(1),
-        timestamp_ms: z.number().int().nonnegative(),
-      }),
-    ),
-  }),
-  success: z.literal(true),
+const queueBatchSchema = z.object({
+  backlogCount: z.number().int().nonnegative(),
+  messages: z.array(
+    z.object({
+      attempts: z.number().int().positive(),
+      body: z.unknown(),
+      id: z.string().min(1),
+      leaseId: z.string().min(1),
+      timestampMs: z.number().int().nonnegative(),
+    }),
+  ),
 });
-
-const successResponseSchema = z.object({ success: z.literal(true) });
-
-export interface CloudflareQueueConfig {
-  readonly accountId: string;
-  readonly apiToken: string;
-  readonly batchSize: number;
-  readonly queueId: string;
-  readonly visibilityTimeoutMs: number;
-}
 
 export interface QueueLease {
   readonly attempts: number;
@@ -52,77 +39,56 @@ export interface CloudflareQueueClient {
   settle(settlement: QueueSettlement): Promise<void>;
 }
 
-/** 将 Cloudflare HTTP pull 协议限制在基础设施边界，避免 token 进入业务错误。 */
-export function createCloudflareQueueClient(
-  config: CloudflareQueueConfig,
+/** Sealos 只持有最小 service token；Cloudflare Queue 凭据留在 Worker binding 内。 */
+export function createControlPlaneQueueClient(
+  config: {
+    readonly batchSize: number;
+    readonly controlPlaneUrl: string;
+    readonly serviceToken: string;
+    readonly visibilityTimeoutMs: number;
+  },
   fetcher: typeof fetch = fetch,
 ): CloudflareQueueClient {
-  const queueUrl = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(config.accountId)}/queues/${encodeURIComponent(config.queueId)}/messages`;
+  const baseUrl = config.controlPlaneUrl.replace(/\/$/, "");
   const headers = {
-    authorization: `Bearer ${config.apiToken}`,
+    authorization: `Bearer ${config.serviceToken}`,
     "content-type": "application/json",
   } as const;
 
   return {
-    async pull(): Promise<QueueBatch> {
-      const payload = await requestJson(fetcher, `${queueUrl}/pull`, {
+    async pull() {
+      const response = await fetcher(`${baseUrl}/internal/queue/pull`, {
         body: JSON.stringify({
-          batch_size: config.batchSize,
-          visibility_timeout_ms: config.visibilityTimeoutMs,
+          batchSize: config.batchSize,
+          visibilityTimeoutMs: config.visibilityTimeoutMs,
         }),
         headers,
         method: "POST",
       });
-      const parsed = pullResponseSchema.safeParse(payload);
-      if (!parsed.success) throw new Error("Cloudflare Queues response is invalid");
-      return {
-        backlogCount: parsed.data.result.message_backlog_count,
-        messages: parsed.data.result.messages.map((message) => ({
-          attempts: message.attempts,
-          body: message.body,
-          id: message.id,
-          leaseId: message.lease_id,
-          timestampMs: message.timestamp_ms,
-        })),
-      };
+      if (!response.ok) throw new Error(`queue pull failed: ${response.status}`);
+      const parsed = queueBatchSchema.safeParse(await readJson(response));
+      if (!parsed.success) throw new Error("queue pull response is invalid");
+      return parsed.data;
     },
 
-    async settle(settlement: QueueSettlement): Promise<void> {
+    async settle(settlement) {
       assertDistinctLeases(settlement);
       if (settlement.acks.length === 0 && settlement.retries.length === 0) return;
-      const payload = await requestJson(fetcher, `${queueUrl}/ack`, {
-        body: JSON.stringify({
-          acks: settlement.acks.map((leaseId) => ({ lease_id: leaseId })),
-          retries: settlement.retries.map((retry) => ({
-            ...(retry.delaySeconds === undefined
-              ? {}
-              : { delay_seconds: retry.delaySeconds }),
-            lease_id: retry.leaseId,
-          })),
-        }),
+      const response = await fetcher(`${baseUrl}/internal/queue/settle`, {
+        body: JSON.stringify(settlement),
         headers,
         method: "POST",
       });
-      if (!successResponseSchema.safeParse(payload).success) {
-        throw new Error("Cloudflare Queues response is invalid");
-      }
+      if (!response.ok) throw new Error(`queue settlement failed: ${response.status}`);
     },
   };
 }
 
-async function requestJson(
-  fetcher: typeof fetch,
-  url: string,
-  init: RequestInit,
-): Promise<unknown> {
-  const response = await fetcher(url, init);
-  if (!response.ok) {
-    throw new Error(`Cloudflare Queues request failed: ${response.status}`);
-  }
+async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
   } catch {
-    throw new Error("Cloudflare Queues response is invalid");
+    throw new Error("queue pull response is invalid");
   }
 }
 

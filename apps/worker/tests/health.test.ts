@@ -31,12 +31,24 @@ describe("worker health state", () => {
     });
   });
 
-  it("事件循环超过阈值时 liveness 失败", () => {
+  it("长任务超过进度阈值时 liveness 仍表示进程存活", () => {
     const state = createWorkerHealthState(startedAt);
 
     expect(evaluateLiveness(state, startedAt + 90_001, 90_000)).toEqual({
-      body: { status: "stale" },
-      status: 503,
+      body: { status: "ok" },
+      status: 200,
+    });
+  });
+
+  it("控制面暂时失败时仍刷新事件循环存活时间", () => {
+    const state = reduceWorkerHealthState(createWorkerHealthState(startedAt), {
+      type: "loop-error",
+      at: startedAt + 80_000,
+    });
+
+    expect(evaluateLiveness(state, startedAt + 100_000, 90_000)).toEqual({
+      body: { status: "ok" },
+      status: 200,
     });
   });
 

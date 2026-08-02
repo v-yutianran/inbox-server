@@ -1,0 +1,32 @@
+FROM debian:12.11-slim@sha256:b1a741487078b369e78119849663d7f1a5341ef2768798f7b7406c4240f86aef AS downloader
+
+ARG MIHOMO_VERSION=v1.19.29
+ARG MIHOMO_SHA256=5612e698e96c8b8ad15abc4c0a4f098eba9234354b4f248cb97f2528e215b094
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates curl gzip \
+    && curl -fsSL \
+      "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/mihomo-linux-amd64-compatible-${MIHOMO_VERSION}.gz" \
+      -o /tmp/mihomo.gz \
+    && echo "${MIHOMO_SHA256}  /tmp/mihomo.gz" | sha256sum --check --strict \
+    && gzip -dc /tmp/mihomo.gz > /usr/local/bin/mihomo \
+    && chmod 0755 /usr/local/bin/mihomo \
+    && /usr/local/bin/mihomo -v
+
+FROM debian:12.11-slim@sha256:b1a741487078b369e78119849663d7f1a5341ef2768798f7b7406c4240f86aef
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates tini \
+    && useradd --create-home --home-dir /home/mihomo --shell /usr/sbin/nologin --uid 1001 mihomo \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=downloader /usr/local/bin/mihomo /usr/local/bin/mihomo
+
+USER 1001:1001
+
+EXPOSE 7897 7898
+
+STOPSIGNAL SIGTERM
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/mihomo"]
+CMD ["-d", "/tmp/mihomo", "-f", "/etc/mihomo/config.yaml"]

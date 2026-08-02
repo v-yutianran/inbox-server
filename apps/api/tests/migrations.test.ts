@@ -13,18 +13,37 @@ const expectedTables = [
   "subscriptions",
   "sync_jobs",
   "telegram_offsets",
+  "worker_dead_letters",
+  "worker_effects",
+  "worker_heartbeats",
+  "worker_inbox",
+  "worker_jobs",
+  "worker_rate_limits",
+  "worker_state",
 ] as const;
 
 describe("D1 migrations", () => {
   it("空数据库可重复应用版本化 migration", () => {
     const database = new DatabaseSync(":memory:");
-    const migration = readFileSync(
+    const initialMigration = readFileSync(
       new URL("../migrations/0001_initial.sql", import.meta.url),
       "utf8",
     );
+    const runtimeMigration = readFileSync(
+      new URL("../migrations/0002_worker_runtime.sql", import.meta.url),
+      "utf8",
+    );
+    const inboxMigration = readFileSync(
+      new URL("../migrations/0003_queue_inbox.sql", import.meta.url),
+      "utf8",
+    );
 
-    database.exec(migration);
-    database.exec(migration);
+    database.exec(initialMigration);
+    database.exec(runtimeMigration);
+    database.exec(inboxMigration);
+    database.exec(initialMigration);
+    database.exec(runtimeMigration);
+    database.exec(inboxMigration);
 
     const rows = database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
