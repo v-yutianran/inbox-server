@@ -1,14 +1,22 @@
 import type { JobErrorClass, QueueJob } from "@inbox/domain";
 import { z } from "zod";
 
-const claimJobResponseSchema = z.object({
-  attempts: z.number().int().positive().optional(),
-  state: z.enum(["busy", "claimed", "duplicate"]),
-});
-const claimEffectResponseSchema = z.object({
-  attempts: z.number().int().positive().optional(),
-  state: z.enum(["busy", "claimed", "done", "uncertain"]),
-});
+const claimJobResponseSchema = z.discriminatedUnion("state", [
+  z.object({ attempts: z.number().int().positive(), state: z.literal("claimed") }),
+  z.object({ state: z.literal("busy") }),
+  z.object({ state: z.literal("duplicate") }),
+  z.object({
+    reason: z.string(),
+    retryAt: z.string(),
+    state: z.literal("deferred"),
+  }),
+]);
+const claimEffectResponseSchema = z.discriminatedUnion("state", [
+  z.object({ attempts: z.number().int().positive(), state: z.literal("claimed") }),
+  z.object({ retryAt: z.string(), state: z.literal("busy") }),
+  z.object({ state: z.literal("done") }),
+  z.object({ state: z.literal("uncertain") }),
+]);
 const settlementSchema = z.object({
   delaySeconds: z.number().int().nonnegative().optional(),
   settlement: z.enum(["ack", "retry"]),
@@ -18,6 +26,24 @@ const rateLimitSchema = z.object({
   count: z.number().int().nonnegative(),
   retryAt: z.string().optional(),
 });
+const rateLimitBatchSchema = z.discriminatedUnion("allowed", [
+  z.object({
+    allowed: z.literal(false),
+    counts: z.record(z.string(), z.number().int().nonnegative()),
+    retryAt: z.string(),
+  }),
+  z.object({
+    allowed: z.literal(true),
+    counts: z.record(z.string(), z.number().int().nonnegative()),
+  }),
+]);
+
+interface RateLimitInput {
+  readonly bucketKey: string;
+  readonly limit: number;
+  readonly scope: string;
+  readonly windowSeconds: number;
+}
 
 type JsonRecord = Readonly<Record<string, unknown>>;
 
@@ -28,12 +54,10 @@ export interface WorkerControlPlane {
     readonly jobId: string;
   }): Promise<z.infer<typeof claimEffectResponseSchema>>;
   claimJob(job: QueueJob): Promise<z.infer<typeof claimJobResponseSchema>>;
-  consumeRateLimit(input: {
-    readonly bucketKey: string;
-    readonly limit: number;
-    readonly scope: string;
-    readonly windowSeconds: number;
-  }): Promise<z.infer<typeof rateLimitSchema>>;
+  consumeRateLimit(input: RateLimitInput): Promise<z.infer<typeof rateLimitSchema>>;
+  consumeRateLimits(
+    inputs: readonly RateLimitInput[],
+  ): Promise<z.infer<typeof rateLimitBatchSchema>>;
   finishEffect(
     effectKey: string,
     input: {
@@ -51,7 +75,13 @@ export interface WorkerControlPlane {
           readonly errorMessage: string;
           readonly payloadDigest: string;
           readonly status: "failed";
-        },
+        }
+      | {
+          readonly reason: "effect_busy" | "rate_limit";
+          readonly retryAt: string;
+          readonly status: "deferred";
+        }
+      | { readonly reason: string; readonly status: "uncertain" },
   ): Promise<z.infer<typeof settlementSchema>>;
   getCredential(name: string): Promise<unknown | null>;
   getState(key: string): Promise<unknown | null>;
@@ -127,6 +157,12 @@ export function createWorkerControlPlane(
         "/internal/rate-limits/consume",
         { body: JSON.stringify(input), method: "POST" },
         rateLimitSchema,
+      ),
+    consumeRateLimits: (inputs) =>
+      request(
+        "/internal/rate-limits/consume-batch",
+        { body: JSON.stringify({ inputs }), method: "POST" },
+        rateLimitBatchSchema,
       ),
     finishEffect: (effectKey, input) =>
       request(`/internal/effects/${encodeURIComponent(effectKey)}/result`, {

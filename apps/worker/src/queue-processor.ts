@@ -9,6 +9,7 @@ import type {
   QueueBatch,
   QueueSettlement,
 } from "./cloudflare-queue-client.js";
+import type { JobHandlerResult } from "./job-handler.js";
 import type { WorkerControlPlane } from "./worker-control-plane.js";
 
 type JsonRecord = Readonly<Record<string, unknown>>;
@@ -16,7 +17,7 @@ type JsonRecord = Readonly<Record<string, unknown>>;
 interface ProcessQueueBatchOptions {
   readonly batch: QueueBatch;
   readonly controlPlane: WorkerControlPlane;
-  readonly handle: (job: QueueJob) => Promise<JsonRecord>;
+  readonly handle: (job: QueueJob) => Promise<JobHandlerResult>;
   readonly log?: (event: string, context: JsonRecord) => void;
   readonly onProgress?: () => void;
   readonly queue: CloudflareQueueClient;
@@ -62,11 +63,71 @@ export async function processQueueBatch({
         settlement.retries.push({ delaySeconds: 30, leaseId: lease.leaseId });
         continue;
       }
+      if (claim.state === "deferred") {
+        const delaySeconds = retryDelaySeconds(claim.retryAt, new Date());
+        settlement.retries.push({ delaySeconds, leaseId: lease.leaseId });
+        log?.("worker.job.deferred", {
+          attempts: lease.attempts,
+          description: "队列任务仍在延期窗口内",
+          jobId: job.jobId,
+          kind: job.kind,
+          reason: claim.reason,
+          retryAt: claim.retryAt,
+        });
+        continue;
+      }
 
       const startedAt = Date.now();
       try {
-        const summary = await handle(job);
-        const result = await controlPlane.finishJob(job.jobId, { status: "done", summary });
+        const handled = await handle(job);
+        if (handled.outcome === "deferred") {
+          const result = await controlPlane.finishJob(job.jobId, {
+            reason: handled.reason,
+            retryAt: handled.retryAt,
+            status: "deferred",
+          });
+          appendSettlement(settlement, lease.leaseId, result);
+          log?.(
+            handled.reason === "effect_busy"
+              ? "worker.effect.busy.deferred"
+              : "worker.job.deferred",
+            {
+              attempts: lease.attempts,
+              description:
+                handled.reason === "effect_busy"
+                  ? "外部副作用正在处理中，任务无损延期"
+                  : "文章限速窗口未开放，任务无损延期",
+              durationMs: Date.now() - startedAt,
+              jobId: job.jobId,
+              kind: job.kind,
+              reason: handled.reason,
+              retryAt: handled.retryAt,
+              settlement: result.settlement,
+            },
+          );
+          continue;
+        }
+        if (handled.outcome === "uncertain") {
+          const result = await controlPlane.finishJob(job.jobId, {
+            reason: handled.reason,
+            status: "uncertain",
+          });
+          appendSettlement(settlement, lease.leaseId, result);
+          log?.("worker.job.uncertain", {
+            attempts: lease.attempts,
+            description: "外部副作用结果不确定，任务冻结等待人工处理",
+            durationMs: Date.now() - startedAt,
+            jobId: job.jobId,
+            kind: job.kind,
+            reason: handled.reason,
+            settlement: result.settlement,
+          });
+          continue;
+        }
+        const result = await controlPlane.finishJob(job.jobId, {
+          status: "done",
+          summary: handled.summary,
+        });
         appendSettlement(settlement, lease.leaseId, result);
         log?.("worker.job.succeeded", {
           attempts: lease.attempts,
@@ -86,9 +147,16 @@ export async function processQueueBatch({
           status: "failed",
         });
         appendSettlement(settlement, lease.leaseId, result);
-        log?.("worker.job.failed", {
+        log?.(
+          result.settlement === "retry"
+            ? "worker.job.retryable_failed"
+            : "worker.job.dead_lettered",
+          {
           attempts: lease.attempts,
-          description: "队列任务处理失败",
+          description:
+            result.settlement === "retry"
+              ? "队列任务真实失败，等待重试"
+              : "队列任务真实失败并进入死信",
           durationMs: Date.now() - startedAt,
           errorClass: failure.errorClass,
           errorMessage: failure.safeMessage,
@@ -96,7 +164,8 @@ export async function processQueueBatch({
           kind: job.kind,
           settlement: result.settlement,
           ...(job.kind === "collect-source" ? { source: job.payload.source } : {}),
-        });
+          },
+        );
       }
     } finally {
       onProgress?.();
@@ -125,4 +194,11 @@ async function digestPayload(payload: unknown): Promise<string> {
   const serialized = JSON.stringify(payload) ?? String(payload);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(serialized));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function retryDelaySeconds(retryAt: string, current: Date): number {
+  return Math.max(
+    1,
+    Math.min(300, Math.ceil((Date.parse(retryAt) - current.getTime()) / 1_000)),
+  );
 }

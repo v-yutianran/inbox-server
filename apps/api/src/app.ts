@@ -37,6 +37,23 @@ const inboxSettlementSchema = z.object({
     }),
   ),
 });
+const rateLimitBatchSchema = z.object({
+  inputs: z
+    .array(
+      z.object({
+        bucketKey: z.string().min(1),
+        limit: z.number().int().positive(),
+        scope: z.string().min(1),
+        windowSeconds: z.number().int().positive(),
+      }),
+    )
+    .min(1)
+    .max(8),
+});
+const replayDeadLetterSchema = z.object({
+  dryRun: z.boolean(),
+  idempotencyKey: z.string().min(1).max(128),
+});
 
 interface AppOptions {
   readonly createControlPlaneService?: (bindings: ApiBindings) => ControlPlaneService;
@@ -184,6 +201,16 @@ export function createApp({
       ),
     ),
   );
+  app.post("/internal/dead-letters/:jobId/replay", async (context) => {
+    const parsed = replayDeadLetterSchema.safeParse(await context.req.json());
+    if (!parsed.success) return context.json({ detail: "invalid replay request" }, 400);
+    return context.json(
+      await createControlPlaneService(context.env).replayDeadLetter(
+        context.req.param("jobId"),
+        parsed.data,
+      ),
+    );
+  });
   app.post("/internal/jobs/publish", async (context) => {
     const body = await context.req.json<{ jobs: Parameters<ControlPlaneService["publishJobs"]>[0] }>();
     return context.json(await createControlPlaneService(context.env).publishJobs(body.jobs));
@@ -213,6 +240,13 @@ export function createApp({
       ),
     ),
   );
+  app.post("/internal/rate-limits/consume-batch", async (context) => {
+    const parsed = rateLimitBatchSchema.safeParse(await context.req.json());
+    if (!parsed.success) return context.json({ detail: "invalid rate limit batch" }, 400);
+    return context.json(
+      await createControlPlaneService(context.env).consumeRateLimits(parsed.data.inputs),
+    );
+  });
   app.post("/internal/state/read", async (context) => {
     const { key } = await context.req.json<{ key: string }>();
     return context.json({ value: await createControlPlaneService(context.env).getState(key) });
