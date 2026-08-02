@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildArchiveFilename,
   buildInitialCloneArgs,
+  createArticleArchiver,
   directGitProxyEnvironment,
   extractArticle,
   fetchZhihuArticle,
@@ -16,6 +17,7 @@ import {
   GitArticleRepository,
   renderArticleMarkdown,
 } from "../src/article-archive";
+import type { Channels } from "../src/channels";
 
 const template = `---
 title: <%~ it.title_yaml %>
@@ -28,6 +30,48 @@ tags: <%~ it.tags_yaml %>
 
 <%~ it.markdown %>
 `;
+
+const articleChannels: Channels = {
+  article_archive: {
+    articles_dir: "references/article",
+    browser_timeout_seconds: 45,
+    daily_limit: 10_000,
+    defuddle_timeout_seconds: 30,
+    enabled: true,
+    http_timeout_seconds: 30,
+    interval_seconds: 5,
+    max_html_bytes: 8_000_000,
+    max_output_bytes: 10_000_000,
+    min_visible_characters: 200,
+    rate_window_count: 60,
+    rate_window_seconds: 3_600,
+    repository_dir: "/data/archive/repository",
+  },
+  credentials: {},
+  destinations: {},
+  llm: {},
+  notification: {},
+  sources: {},
+};
+
+function createArticleBrowser(html: string) {
+  const page = {
+    content: vi.fn().mockResolvedValue(html),
+    evaluate: vi.fn().mockResolvedValue(undefined),
+    goto: vi.fn().mockResolvedValue(undefined),
+    waitForLoadState: vi.fn().mockResolvedValue(undefined),
+    waitForSelector: vi.fn().mockResolvedValue(undefined),
+    waitForTimeout: vi.fn().mockResolvedValue(undefined),
+  };
+  const context = {
+    close: vi.fn().mockResolvedValue(undefined),
+    newPage: vi.fn().mockResolvedValue(page),
+  };
+  const browser = {
+    newContext: vi.fn().mockResolvedValue(context),
+  } as unknown as Browser;
+  return { browser, context, page };
+}
 
 describe("article archive", () => {
   it("使用 Defuddle 提取正文并由 Eta 渲染稳定 frontmatter", async () => {
@@ -46,6 +90,164 @@ describe("article archive", () => {
     expect(markdown).toContain('source_url: "https://example.com/article"');
     expect(markdown).toContain('tags: ["阅读"]');
     expect(markdown).toContain("正文内容");
+  });
+
+  it("优先使用带桌面请求头的 HTTP HTML 交给 Defuddle", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "inbox-article-direct-"));
+    const templatePath = join(directory, "article.md.eta");
+    const html = `<html><head><title>微信直取文章</title></head><body><article id="js_content"><p>${"这是完整的微信文章正文。".repeat(80)}</p></article></body></html>`;
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } }),
+    );
+    const repository = {
+      save: vi.fn().mockResolvedValue({ created: true, filename: "20260802-wechat.md" }),
+    };
+    const log = vi.fn();
+    const browser = { newContext: vi.fn() } as unknown as Browser;
+    await writeFile(templatePath, template);
+
+    try {
+      const archive = createArticleArchiver({
+        browser,
+        channels: articleChannels,
+        fetcher,
+        log,
+        now: () => new Date("2026-08-02T04:00:00.000Z"),
+        repository,
+        templatePath,
+      });
+
+      await expect(
+        archive({
+          itemKind: "article",
+          requestedAt: "2026-08-02T04:00:00.000Z",
+          url: "https://mp.weixin.qq.com/s/direct",
+        }),
+      ).resolves.toEqual({ outcome: "ok" });
+
+      expect(fetcher).toHaveBeenCalledWith(
+        "https://mp.weixin.qq.com/s/direct",
+        expect.objectContaining({
+          headers: {
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "User-Agent": expect.stringContaining("Chrome/"),
+          },
+          redirect: "follow",
+        }),
+      );
+      expect(browser.newContext).not.toHaveBeenCalled();
+      expect(repository.save).toHaveBeenCalledOnce();
+      expect(log).toHaveBeenCalledWith(
+        "article.extract.direct.succeeded",
+        expect.objectContaining({ description: "文章直接提取成功" }),
+      );
+      expect(log).not.toHaveBeenCalledWith(
+        "article.extract.browser.succeeded",
+        expect.anything(),
+      );
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("微信异常页经 Defuddle 判定后使用 headed Playwright 再次提取", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "inbox-article-browser-"));
+    const templatePath = join(directory, "article.md.eta");
+    const errorHtml = `<html><head><title>环境异常</title></head><body><article>${"当前环境异常，请完成验证后重试。".repeat(40)}</article></body></html>`;
+    const renderedHtml = `<html><head><title>微信渲染文章</title></head><body><article id="js_content"><p>${"这是通过浏览器渲染得到的微信正文。".repeat(80)}</p></article></body></html>`;
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(errorHtml, { headers: { "Content-Type": "text/html" } }),
+    );
+    const repository = {
+      save: vi.fn().mockResolvedValue({ created: true, filename: "20260802-rendered.md" }),
+    };
+    const log = vi.fn();
+    const { browser, context, page } = createArticleBrowser(renderedHtml);
+    await writeFile(templatePath, template);
+
+    try {
+      const archive = createArticleArchiver({
+        browser,
+        channels: articleChannels,
+        fetcher,
+        log,
+        now: () => new Date("2026-08-02T04:00:00.000Z"),
+        repository,
+        templatePath,
+      });
+
+      await expect(
+        archive({
+          itemKind: "article",
+          requestedAt: "2026-08-02T04:00:00.000Z",
+          url: "https://mp.weixin.qq.com/s/rendered",
+        }),
+      ).resolves.toEqual({ outcome: "ok" });
+
+      expect(browser.newContext).toHaveBeenCalledWith({
+        extraHTTPHeaders: { "Accept-Language": "zh-CN,zh;q=0.9" },
+        locale: "zh-CN",
+        userAgent: expect.stringContaining("Chrome/"),
+      });
+      expect(page.goto).toHaveBeenCalledWith("https://mp.weixin.qq.com/s/rendered", {
+        timeout: 45_000,
+        waitUntil: "domcontentloaded",
+      });
+      expect(page.waitForSelector).toHaveBeenCalledWith("#js_content", {
+        state: "attached",
+        timeout: 15_000,
+      });
+      expect(page.waitForLoadState).toHaveBeenCalledWith("networkidle", { timeout: 10_000 });
+      expect(page.evaluate).toHaveBeenCalledOnce();
+      expect(page.waitForTimeout).toHaveBeenCalledWith(1_000);
+      expect(repository.save).toHaveBeenCalledOnce();
+      expect(context.close).toHaveBeenCalledOnce();
+      expect(log).toHaveBeenCalledWith(
+        "article.extract.browser.succeeded",
+        expect.objectContaining({ description: "浏览器渲染后的文章提取成功" }),
+      );
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("浏览器二次提取仍是微信异常页时记录明确原因且不保存", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "inbox-article-error-page-"));
+    const templatePath = join(directory, "article.md.eta");
+    const errorHtml = `<html><head><title>环境异常</title></head><body><article>${"当前请求存在异常，请完成验证。".repeat(40)}</article></body></html>`;
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(errorHtml, { headers: { "Content-Type": "text/html" } }),
+    );
+    const repository = { save: vi.fn() };
+    const recordEvent = vi.fn().mockResolvedValue(undefined);
+    const { browser } = createArticleBrowser(errorHtml);
+    await writeFile(templatePath, template);
+
+    try {
+      const archive = createArticleArchiver({
+        browser,
+        channels: articleChannels,
+        fetcher,
+        recordEvent,
+        repository,
+        templatePath,
+      });
+
+      await expect(
+        archive({
+          itemKind: "article",
+          requestedAt: "2026-08-02T04:00:00.000Z",
+          url: "https://mp.weixin.qq.com/s/blocked",
+        }),
+      ).resolves.toEqual({ outcome: "ok" });
+
+      expect(repository.save).not.toHaveBeenCalled();
+      expect(recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "error_marker", status: "skipped" }),
+      );
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 
   it("知乎回答通过登录态上下文调用内容 API", async () => {

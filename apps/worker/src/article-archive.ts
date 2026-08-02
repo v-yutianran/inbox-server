@@ -13,7 +13,7 @@ import { promisify } from "node:util";
 
 import { Defuddle } from "defuddle/node";
 import { Eta } from "eta";
-import type { Browser } from "playwright";
+import { errors, type Browser } from "playwright";
 
 import type { DispatchItem } from "@inbox/domain";
 
@@ -22,6 +22,19 @@ import { readOptionalString, type Channels } from "./channels.js";
 import type { DeliveryResult } from "./destinations.js";
 
 const execFileAsync = promisify(execFile);
+const ARTICLE_ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9";
+const ARTICLE_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
+const ARTICLE_ERROR_MARKERS = [
+  "访问过于频繁",
+  "当前请求存在异常",
+  "环境异常",
+  "请完成验证",
+  "unable to access",
+  "access denied",
+  "this content is not available",
+] as const;
 
 export interface ExtractedArticle {
   readonly author: string;
@@ -36,6 +49,12 @@ export interface ArticleRepository {
     readonly filename: string;
     readonly sourceUrl: string;
   }): Promise<{ readonly created: boolean; readonly filename: string }>;
+}
+
+interface ArticleAssessment {
+  readonly reason: "error_marker" | "missing_title" | "short_content" | null;
+  readonly valid: boolean;
+  readonly visibleCharacters: number;
 }
 
 interface ZhihuArticleRequest {
@@ -99,6 +118,7 @@ export function createArticleArchiver(options: {
   readonly channels: Channels;
   readonly fetcher?: typeof fetch;
   readonly getCredential?: (name: string) => Promise<unknown | null>;
+  readonly log?: (event: string, context: Readonly<Record<string, unknown>>) => void;
   readonly now?: () => Date;
   readonly recordEvent?: (event: {
     readonly filename: string | null;
@@ -115,6 +135,7 @@ export function createArticleArchiver(options: {
   const now = options.now ?? (() => new Date());
   return async (item) => {
     const fingerprint = await urlFingerprint(item.url);
+    let usedBrowser = false;
     let article: ExtractedArticle;
     try {
       const zhihuRequest = resolveZhihuArticleRequest(item.url);
@@ -135,29 +156,83 @@ export function createArticleArchiver(options: {
           options.channels.article_archive.max_html_bytes,
         );
       } else {
-        article = await fetchAndExtract(
-          fetcher,
-          item.url,
-          options.channels.article_archive.http_timeout_seconds,
-          options.channels.article_archive.max_html_bytes,
-        );
-        if (visibleCharacters(article.markdown) < options.channels.article_archive.min_visible_characters) {
-          article = await browserExtract(options.browser, item.url);
+        let directArticle: ExtractedArticle | null = null;
+        let directAssessment: ArticleAssessment | null = null;
+        try {
+          directArticle = withFallbackTitle(
+            await fetchAndExtract(
+              fetcher,
+              item.url,
+              options.channels.article_archive.http_timeout_seconds,
+              options.channels.article_archive.max_html_bytes,
+            ),
+            item.title ?? "",
+          );
+          directAssessment = assessArticle(
+            directArticle,
+            options.channels.article_archive.min_visible_characters,
+          );
+        } catch (error: unknown) {
+          options.log?.("article.extract.direct.rejected", {
+            description: "文章直接提取失败，准备使用浏览器渲染",
+            reason: safeErrorCode(error),
+            urlFingerprint: fingerprint,
+          });
+        }
+        if (directArticle && directAssessment?.valid) {
+          article = directArticle;
+          options.log?.("article.extract.direct.succeeded", {
+            description: "文章直接提取成功",
+            urlFingerprint: fingerprint,
+            visibleCharacters: directAssessment.visibleCharacters,
+          });
+        } else {
+          usedBrowser = true;
+          if (directAssessment) {
+            options.log?.("article.extract.direct.rejected", {
+              description: "文章直接提取未通过正文验收，准备使用浏览器渲染",
+              reason: directAssessment.reason,
+              urlFingerprint: fingerprint,
+              visibleCharacters: directAssessment.visibleCharacters,
+            });
+          }
+          article = withFallbackTitle(
+            await browserExtract(
+              options.browser,
+              item.url,
+              options.channels.article_archive.browser_timeout_seconds,
+              options.channels.article_archive.max_html_bytes,
+            ),
+            item.title ?? "",
+          );
         }
       }
-      if (
-        !zhihuRequest &&
-        visibleCharacters(article.markdown) < options.channels.article_archive.min_visible_characters
-      ) {
+      const assessment = zhihuRequest
+        ? null
+        : assessArticle(article, options.channels.article_archive.min_visible_characters);
+      if (assessment && !assessment.valid) {
+        options.log?.("article.extract.failed", {
+          description: "浏览器渲染后的文章仍未通过正文验收",
+          reason: assessment.reason,
+          urlFingerprint: fingerprint,
+          visibleCharacters: assessment.visibleCharacters,
+        });
         await options.recordEvent?.({
           filename: null,
-          reason: "content_too_short",
+          reason: assessment.reason,
           sourceUrl: item.url,
           status: "skipped",
           title: article.title || item.title || "",
           urlFingerprint: fingerprint,
         });
         return { outcome: "ok" };
+      }
+      if (assessment && usedBrowser) {
+        options.log?.("article.extract.browser.succeeded", {
+          description: "浏览器渲染后的文章提取成功",
+          urlFingerprint: fingerprint,
+          visibleCharacters: assessment.visibleCharacters,
+        });
       }
       const archivedAt = now();
       const normalized = {
@@ -188,6 +263,11 @@ export function createArticleArchiver(options: {
       });
       return { outcome: "ok" };
     } catch (error: unknown) {
+      options.log?.("article.archive.failed", {
+        description: "文章归档失败",
+        errorCode: safeErrorCode(error),
+        urlFingerprint: fingerprint,
+      });
       await options.recordEvent?.({
         filename: null,
         reason: safeErrorCode(error),
@@ -425,10 +505,22 @@ async function fetchAndExtract(
   timeoutSeconds: number,
   maxBytes: number,
 ): Promise<ExtractedArticle> {
-  const response = await fetcher(url, { signal: AbortSignal.timeout(timeoutSeconds * 1_000) });
+  const response = await fetcher(url, {
+    headers: {
+      "Accept-Language": ARTICLE_ACCEPT_LANGUAGE,
+      "User-Agent": ARTICLE_USER_AGENT,
+    },
+    redirect: "follow",
+    signal: AbortSignal.timeout(timeoutSeconds * 1_000),
+  });
   if (!response.ok) throw new Error(`article_http_${response.status}`);
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
+    throw new Error("article_unsupported_content_type");
+  }
   const html = await response.text();
   if (Buffer.byteLength(html) > maxBytes) throw new Error("article_html_too_large");
+  if (html.trim().length < 100) throw new Error("article_html_empty");
   return extractArticle(url, html);
 }
 
@@ -462,12 +554,38 @@ export async function fetchZhihuArticle(
   }
 }
 
-async function browserExtract(browser: Browser, url: string): Promise<ExtractedArticle> {
-  const context = await browser.newContext();
+async function browserExtract(
+  browser: Browser,
+  url: string,
+  timeoutSeconds: number,
+  maxBytes: number,
+): Promise<ExtractedArticle> {
+  const timeoutMs = timeoutSeconds * 1_000;
+  const context = await browser.newContext({
+    extraHTTPHeaders: { "Accept-Language": ARTICLE_ACCEPT_LANGUAGE },
+    locale: "zh-CN",
+    userAgent: ARTICLE_USER_AGENT,
+  });
   const page = await context.newPage();
   try {
-    await page.goto(url, { waitUntil: "networkidle" });
-    return extractArticle(url, await page.content());
+    await page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" });
+    if (isWeChatArticleUrl(url)) {
+      await ignorePlaywrightTimeout(
+        page.waitForSelector("#js_content", {
+          state: "attached",
+          timeout: Math.min(timeoutMs, 15_000),
+        }),
+      );
+    }
+    await ignorePlaywrightTimeout(
+      page.waitForLoadState("networkidle", { timeout: Math.min(timeoutMs, 10_000) }),
+    );
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(1_000);
+    const html = await page.content();
+    if (Buffer.byteLength(html) > maxBytes) throw new Error("article_html_too_large");
+    if (html.trim().length < 100) throw new Error("article_html_empty");
+    return extractArticle(url, html);
   } finally {
     await context.close();
   }
@@ -555,6 +673,40 @@ async function withTimeout<T>(
 
 function visibleCharacters(markdown: string): number {
   return markdown.replace(/\s+/g, "").length;
+}
+
+function assessArticle(article: ExtractedArticle, minVisibleCharacters: number): ArticleAssessment {
+  const markdown = article.markdown.trim();
+  const visible = visibleCharacters(markdown);
+  const normalized = markdown.toLocaleLowerCase("en-US");
+  if (ARTICLE_ERROR_MARKERS.some((marker) => normalized.includes(marker))) {
+    return { reason: "error_marker", valid: false, visibleCharacters: visible };
+  }
+  if (!article.title.trim()) {
+    return { reason: "missing_title", valid: false, visibleCharacters: visible };
+  }
+  if (visible < minVisibleCharacters) {
+    return { reason: "short_content", valid: false, visibleCharacters: visible };
+  }
+  return { reason: null, valid: true, visibleCharacters: visible };
+}
+
+function withFallbackTitle(article: ExtractedArticle, fallbackTitle: string): ExtractedArticle {
+  return article.title.trim() || !fallbackTitle.trim()
+    ? article
+    : { ...article, title: fallbackTitle.trim() };
+}
+
+function isWeChatArticleUrl(url: string): boolean {
+  return new URL(url).hostname.toLowerCase() === "mp.weixin.qq.com";
+}
+
+async function ignorePlaywrightTimeout(operation: Promise<unknown>): Promise<void> {
+  try {
+    await operation;
+  } catch (error: unknown) {
+    if (!(error instanceof errors.TimeoutError)) throw error;
+  }
 }
 
 async function urlFingerprint(url: string): Promise<string> {
