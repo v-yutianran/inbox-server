@@ -19,7 +19,7 @@ metadata:
   name: inbox-server-worker-staging
   namespace: ns-tbs948af
   annotations:
-    originImageName: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:a2e4a06e8d0eb10af2e93b1d85501a7ed1e20142bff24f8880544910978cdec5
+    originImageName: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:0d34bea391a75c734c231eadbcd72ec116d552d6f2e9d7d6e347b1bc545a1e48
     inbox.yutianran.cn/warp-image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:04ba57c848686946be667f730e912090eddffa3f003e932ea20acfa440eb36d6
     inbox.yutianran.cn/mihomo-image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:9b5e5ee79f68dc33e99273b01d2ff4a416a2ce91ff19f1fadc101f58250c2ceb
     deploy.cloud.sealos.io/minReplicas: "1"
@@ -36,6 +36,8 @@ spec:
       app: inbox-server-worker-staging
   template:
     metadata:
+      annotations:
+        inbox.yutianran.cn/source-revision: 05cf4b8b2bedcabfad8be392bee6544a2557753f
       labels:
         app: inbox-server-worker-staging
         cloud.sealos.io/app-deploy-manager: inbox-server-worker-staging
@@ -51,7 +53,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: inbox-server-worker-staging
-          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:a2e4a06e8d0eb10af2e93b1d85501a7ed1e20142bff24f8880544910978cdec5
+          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:0d34bea391a75c734c231eadbcd72ec116d552d6f2e9d7d6e347b1bc545a1e48
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
