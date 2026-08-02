@@ -103,6 +103,7 @@ async function run(): Promise<void> {
             channels,
             fetcher: externalFetch,
             getCredential: (name) => controlPlane.getCredential(name),
+            log,
             recordEvent: (event) => controlPlane.recordArticleEvent(event),
             repository: new GitArticleRepository({
               articlesDir: channels.article_archive.articles_dir,
