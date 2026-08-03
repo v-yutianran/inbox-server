@@ -1,0 +1,10 @@
+{
+  "checkedAt": "2026-08-03T12:44:59.757Z",
+  "event": "operations.state_restore_rehearsal.sensitive_scan_completed",
+  "runId": "sr-20260803-124424",
+  "schemaVersion": 1,
+  "sensitiveMatches": 0,
+  "target": "state-restore-rehearsal.json",
+  "targetSha256": "65aab965b728b9180632ea19330b0ca5fa566fbb4382a2969abb470ac8c9d54e",
+  "traceId": "TC-002"
+}

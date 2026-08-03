@@ -1,0 +1,11 @@
+{
+  "records": [
+    {
+      "authenticated": false,
+      "profile": "synthetic-browser"
+    }
+  ],
+  "schemaVersion": 1,
+  "stableId": "synthetic-browser-v1",
+  "stateKind": "browser"
+}

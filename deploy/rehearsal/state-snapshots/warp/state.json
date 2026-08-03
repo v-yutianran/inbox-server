@@ -1,0 +1,11 @@
+{
+  "records": [
+    {
+      "registrationId": "synthetic-warp",
+      "status": "registered"
+    }
+  ],
+  "schemaVersion": 1,
+  "stableId": "synthetic-warp-v1",
+  "stateKind": "warp"
+}

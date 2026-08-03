@@ -2,6 +2,17 @@
 
 ## 2026-08-03
 
+### feat(operations)：完成三类持久状态隔离恢复演练
+
+- 新增 `rehearse-state-restore`，使用固定合成快照验证 Worker、浏览器状态与 WARP 状态的完整性、0600 恢复权限、启动门禁、摘要对账和失败清理
+- dry-run 不访问快照或临时目录，实际演练必须确认同一 `planHash`；执行器不调用 shell、网络、Cloudflare、Sealos、真实 Worker、Chromium 或 WARP
+- `TC-002` 最终 run `sr-20260803-124424` 的 RTO 为 4 毫秒，候选 RPO 为 35.751 秒，外部调用、命令、生产变更、敏感命中和临时目录残留均为 0；生产 RPO 仍为 `unapproved`
+
+**如何验证**：
+- `npm --workspace @inbox/release-operations run typecheck`
+- `npm --workspace @inbox/release-operations test`（30 tests）
+- `state-restore-rehearsal.json` 语义读回、SHA-256 与 0600 权限检查通过
+
 ### feat(operations)：完成强隔离旧 Docker Compose 回滚演练
 
 - 发布 CAC CLI 新增独立 `rehearse-legacy` 动作，对合成 manifest、固定资产路径、GHCR 不可变 digest、`planHash`、明确确认和仓库内证据路径实施 fail-closed 校验
