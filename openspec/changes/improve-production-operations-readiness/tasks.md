@@ -13,8 +13,10 @@
 - [x] 2.2 GREEN：实现 Worker、浏览器、Mihomo、WARP 的分层状态快照，并让健康服务不等待工作负载 IO
 - [x] 2.3 GREEN：调整 Sealos startup/liveness/readiness probes 和 shutdown grace period，保持单副本与现有 PVC 不变
 - [x] 2.4 REFACTOR：把状态转换和任务领取决策收敛为纯函数，IO 边界只负责记录稳定事件
-- [ ] 2.5 在隔离环境完成迁移任务 6.4 的旧 Docker Compose 回滚演练，验证备份、Cloudflare 版本、Worker digest 和 D1 兼容性
-- [ ] 2.6 验证连续 24 小时无探针超时，WARP 冷启动与 Worker 停止/恢复事件符合预期
+- [x] 2.5 RED：为隔离 rehearsal manifest、稳定 planHash、dry-run 零执行、D1 向前兼容和失败清理补测试
+- [x] 2.6 GREEN：实现独立 `rehearse-legacy` CAC CLI、强隔离执行器与固定合成 Compose 资产
+- [x] 2.7 REFACTOR：在唯一临时 project/network/volume 完成迁移任务 6.4 的旧 Docker Compose 回滚演练，读回备份、Cloudflare 版本、三容器 digest、D1 兼容性、RTO 和零残留证据
+- [ ] 2.8 验证连续 24 小时无探针超时，WARP 冷启动与 Worker 停止/恢复事件符合预期
 
 ## 3. P0 队列、DLQ 与隔离 canary
 

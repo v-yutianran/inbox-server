@@ -1,0 +1,12 @@
+sources: {}
+destinations:
+  cubox:
+    enabled: true
+    item_kind: link
+    config:
+      api_url: http://synthetic-sink:8080/cubox
+credentials: {}
+llm: {}
+notification: {}
+article_archive:
+  enabled: false

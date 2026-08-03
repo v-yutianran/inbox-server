@@ -5,13 +5,17 @@
 | 项目 | 内容 |
 | --- | --- |
 | 状态 | 待验收设计 |
-| 版本 | 1.0 |
+| 版本 | 1.1 |
 | 日期 | 2026-08-03 |
 | 读者 | 开发、验收、发布与生产运维人员 |
 | 范围 | OpenSpec change `improve-production-operations-readiness` |
-| 唯一需求输入 | `requirements.md` 1.0 |
+| 唯一需求输入 | `requirements.md` 1.1 |
 | 维护入口 | 本文件；需求变化先更新 `requirements.md` 并重新完成设计门禁 |
 | 关联决定 | ADR-0004 混合运行时、ADR-0005 D1 暂存 Cloudflare Queues、ADR-0006 WARP 出站 sidecar |
+
+## 关联需求
+
+本轮隔离回滚设计直接关联 `REQ-018`、`REQ-P0-009`、`REQ-P1-005`～`REQ-P1-007`、`NFR-002`、`NFR-005`、`NFR-006` 与 `AC-007`；其它需求继续沿用本文既有追踪矩阵。
 
 ## 背景、目标与非目标
 
@@ -19,7 +23,7 @@
 
 本设计把当前“可访问”提升为可分域诊断、可度量、可安全恢复、可重复发布，并为单副本建立容量和恢复边界。设计不改变公开 API、采集源、分发目标、限速、文章提取顺序、归档格式或去重结果；不增加 Worker 副本，不引入外部 APM、Cloudflare Access 或服务网格，不执行生产删除、重放、部署或回滚。
 
-## 当前事实与约束
+## 当前架构与约束
 
 - Cloudflare API 是控制面和唯一公网服务端入口；Console 不直接访问 D1、Queues 或 Sealos。
 - D1 持有任务、租约、幂等 effect、恢复信封、DLQ、重放审计、心跳及运维聚合数据；Cloudflare Queues 只负责至少一次投递，不是真实状态源。
@@ -61,6 +65,10 @@ flowchart LR
 | Worker | 能力探测、领取决策、任务执行、结算、心跳 | SLO 审批、自动扩容 |
 | Browser | DOM/登录态相关采集与回退 | Worker 进程健康 |
 | Mihomo/WARP | 路由与出站能力 | 任务状态和业务重试策略 |
+
+## 详细设计
+
+以下状态机、接口、数据、发布、隔离演练、迁移和可观测性章节共同构成本 change 的详细设计；本轮实现仅进入 `DES-018` 明确的隔离回滚范围。
 
 ## 健康状态机
 
@@ -157,6 +165,30 @@ CLI 提供 `plan`、`apply`、`rollback` 三类动作，`apply` 与 `rollback` �
 
 执行顺序固定为：全部预检 → 备份证据 → expand migration → API → Console → Worker → 隔离 canary → 稳定窗口。任何预检失败时线上版本和数据零变化；执行中失败则停止后续单元，根据步骤日志恢复已改变单元到上一版本，并验证 D1 双版本兼容、健康、错误率、积压和合成关键流程。证据记录每步 `planned | started | succeeded | failed | compensated`、开始/结束时间、版本摘要和脱敏验证结果，支持中断后从最近已确认步骤恢复，不重复成功步骤。
 
+## 隔离旧 Docker Compose 回滚演练
+
+### DES-018：独立 rehearsal 动作与强隔离执行器
+
+为满足 `REQ-018`，在既有 `@inbox/release-operations` CAC CLI 中新增独立 `rehearse-legacy` 动作，不复用会调用生产 `wrangler`、`kubectl` 的 `rollback` 执行路径。该动作消费单独的 rehearsal manifest；manifest 只包含 `schemaVersion`、唯一 `runId`、源码提交、合成备份标识及摘要、上一 Cloudflare API version、上一 Console commit、Worker/Mihomo/WARP 三个不可变镜像摘要、D1 migration 清单和固定演练资产路径，不接受任意命令、生产 Secret、生产 context、远端数据库名或外部目标。
+
+计划生成器是纯函数，规范化 manifest 后输出稳定 `planHash` 与以下固定阶段：
+
+1. `isolation-preflight`：拒绝非 `inbox-rehearsal-*` 项目名、仓库外路径、host bind、host port、外部网络、启用的 source/destination、可变镜像标签及敏感原值。
+2. `identity-evidence`：核对源码提交、合成备份摘要、上一 Cloudflare 版本和三个上一镜像摘要，仅生成证据，不调用 Cloudflare、Sealos 或 registry 写接口。
+3. `d1-compatibility`：在临时 SQLite/D1 目录依序应用完整 migration，执行旧 Worker 写入/读取契约并重复应用最新 expand migration；禁止 `--remote`。
+4. `substitute-worker-stop`：只停止同一临时 Compose project 内的替身新 Worker，记录停止开始时间；不得解析或接受生产 workload 名。
+5. `legacy-compose-restore`：使用固定 `deploy/rehearsal/compose.yml`、内部网络、临时命名卷和全禁用 `channels.yaml` 构建并启动旧 server/worker 路径，等待既有容器 healthcheck。
+6. `reconciliation`：核对 server、worker、PostgreSQL、Redis 健康，旧 Worker 心跳、合成记录数/稳定标识和真实外部调用计数 0，并计算从替身停止到旧 Worker 健康的 RTO。
+7. `cleanup`：无论前序成功或失败，均执行同一项目的 `down --volumes --remove-orphans`，并确认同名前缀容器、网络和卷残留数为 0。
+
+dry-run 只解析并输出计划证据，命令执行数必须为 0；实际演练必须显式提供同一 `planHash`。执行器只允许参数化进程调用，不经 shell 拼接；任何阶段失败立即停止业务阶段，在 `finally` 中执行精确 cleanup，并以 `operations.rollback_rehearsal.step_failed` 或 `operations.rollback_rehearsal.completed` 记录脱敏结果。证据包含 `runId`、阶段、时间、不可变版本摘要、健康、对账、RTO、清理结果和敏感扫描结论，不包含命令环境、Secret、用户数据或业务内容。
+
+固定演练 Compose 复用仓库 Dockerfile 和旧进程入口，但不复用生产 `.env`、`channels.yaml`、`${HOME}/.agents`、命名卷、网络或端口：所有 source、destination、通知和文章归档均禁用；运行时网络为 `internal: true`，不发布 host port，不挂载用户目录。替身新 Worker 只用于验证停止边界，不连接 D1、Cloudflare Queues 或真实目标。
+
+D1 双版本兼容以迁移契约测试为事实源：完整 migration 后旧 Worker 仍能按既有字段写入，新增 expand 表不要求旧版本提供字段；演练不执行 down migration。Cloudflare version、Console commit 和镜像摘要只验证格式、固定性及证据一致性，不执行真实回退。
+
+该设计不改变生产发布 manifest、`rollback` 命令、公开 API、D1 schema 或 Sealos 资源，属于可删除的隔离验证能力，无需新增 ADR。代价是不能证明真实平台控制面权限和网络恢复，只证明恢复材料、旧运行路径、跨版本数据契约与编排顺序；真实生产回滚仍需单独授权。
+
 ## 数据保留、备份与恢复
 
 - 保留报告覆盖心跳、完成任务、任务信封、DLQ、重放审计和幂等 effect；初始 7/30/90 天仅为候选。
@@ -195,6 +227,7 @@ canary 使用固定合成 fixture、显式 canary 标识、隔离存储和无副
 | --- | --- |
 | 单元 | 状态转换、领取决策、SLI 聚合、候选阈值四态转换、每日样本唯一键/截止时间、planHash、保留选择、发布/回滚计划纯函数 |
 | 集成 | D1 expand-only migration、旧版本读取兼容、每日样本同键 upsert、重复/并发 Cron、部分写入中断后重跑、采集失败不影响主采集/任务处理、冻结一致性查询、唯一操作键、queue inbox、指标窗口 |
+| 隔离回滚 | rehearsal manifest fail-closed、dry-run 零命令、同一 planHash 确认、临时 Compose 停替身/起旧路径、D1 双版本契约、RTO、真实外部调用为 0、失败后资源残留为 0 |
 | 契约 | 运维 API 鉴权、错误语义、过期状态、候选期外部通知调用为 0、同参数 dry-run/execute、旧公开 API 不变 |
 | 组件 | 独立健康服务在长浏览器任务下响应；Mihomo/WARP 故障时领取隔离 |
 | 端到端 | 本 change 不运行自动化 E2E；隔离 canary、外部告警/恢复、真实发布失败停止、生产版本回退和备份恢复均须另行授权 |
@@ -202,7 +235,9 @@ canary 使用固定合成 fixture、显式 canary 标识、隔离存储和无副
 
 当前不运行浏览器自动化 E2E，也不执行生产重放、清理、发布、回滚或删除。验收设计应以替身依赖和隔离环境覆盖自动化，并把需要单独授权的线上步骤列为人工门禁。
 
-## 关键决定与权衡
+## 备选方案与权衡
+
+本轮没有选择复用生产 `rollback` 执行器，因为即使使用合成 manifest，也会保留误调用 `wrangler`/`kubectl` 的风险；没有选择仓库外一次性 shell 脚本，因为它会复制 manifest 校验、planHash、证据和脱敏规则；没有选择真实生产回滚演练，因为当前任务没有生产部署或回滚授权。选择独立 `rehearse-legacy` 动作的代价是新增少量隔离编排代码和固定 Compose 资产，收益是生产控制面调用在类型和执行路径上不可达。
 
 1. **D1 为运维事实源，Queues 仅传输**：避免双写后无法判断发布结果；代价是增加 inbox 发布延迟与补偿状态。该决定延续 ADR-0005，无需新 ADR。
 2. **健康快照与工作负载 IO 分离**：保证探针预算；代价是 liveness 不能单独证明业务进展，必须结合 readiness、心跳和 SLI。
@@ -227,7 +262,7 @@ canary 使用固定合成 fixture、显式 canary 标识、隔离存储和无副
 | REQ-P0-004 | 运维接口、指标数据模型 |
 | REQ-P0-005～007、REQ-P1-010 | DLQ 一致性与安全重放、权限边界 |
 | REQ-P0-008、NFR-005 | 隔离 canary、验证策略 |
-| REQ-P0-009、REQ-P1-005～007、NFR-002/006 | 发布与回滚 CLI、迁移与兼容回滚 |
+| REQ-P0-009、REQ-018、REQ-P1-005～007、NFR-002/005/006 | 发布与回滚 CLI、隔离旧 Docker Compose 回滚演练、迁移与兼容回滚 |
 | REQ-P1-001～004、NFR-004/007 | 指标、SLI/SLO、可观测性 |
 | REQ-P1-008 | 数据保留、备份与恢复 |
 | REQ-P1-009、NFR-003 | 启动门禁、Secret 与敏感字段边界 |
