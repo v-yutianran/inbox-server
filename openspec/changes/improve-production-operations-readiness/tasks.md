@@ -4,6 +4,7 @@
 - [x] 1.2 串行调用 `technical_designer`，基于已确认需求产出技术设计并读回确认接口、数据、迁移、回滚和质量属性
 - [x] 1.3 串行调用 `acceptance_designer`，产出追踪矩阵与验收用例并读回确认无阻塞项
 - [ ] 1.4 采集连续 14 天 API、Worker、队列、浏览器、Mihomo、WARP、D1 大小和 Sealos 资源基线，脱敏保存聚合证据
+  - 已实现按自然日幂等聚合并持久化 7/30/90 天 retention 样本；生产 migration 尚未部署，连续 14 天观察窗口尚未开始
 - [x] 1.5 对将修改的函数、路由和部署流程逐项运行 GitNexus upstream/API impact analysis，HIGH/CRITICAL 结果先报告
 
 ## 2. P0 健康状态与回滚闭环
@@ -31,6 +32,7 @@
 - [x] 4.2 GREEN：在 API 与 Worker IO 边界生成低基数指标，覆盖可用性、心跳、积压年龄、处理结果、提取路径和依赖状态
 - [x] 4.3 GREEN：扩展运维 API 与组件化 Console，展示当前值、趋势、阈值、采集时间和部署版本
 - [ ] 4.4 GREEN：配置 P0 告警及恢复通知，完成一次不触发真实副作用的告警演练
+  - 已实现候选阈值的 `pending` / `firing` / `recovered` 状态持久化、审计事件和脱敏日志；外部告警通道仍受 `OPEN-001` 约束，本任务保持未完成
 - [x] 4.5 REFACTOR：建立事件与指标目录，删除本次新增的重复计算，不把副作用引入领域纯函数
 - [ ] 4.6 根据 14 天基线确认最终 SLO、错误预算和告警窗口，记录调整依据
 
@@ -47,6 +49,7 @@
 
 - [x] 6.1 RED：为心跳、完成任务、envelope、DLQ、重放审计和 effect 的保留条件补 migration/查询测试
 - [ ] 6.2 GREEN：实现只读 retention report 和 14 天 dry-run，输出候选数量、最老/最新时间和幂等风险
+  - 只读 report 与每日 7/30/90 天聚合已实现并覆盖同日并发幂等测试；实际 14 天 dry-run 仍待生产观察窗口
 - [ ] 6.3 GREEN：经保留期限确认后实现分批、可中断、带审计的清理任务，并避免长事务和全表扫描
 - [x] 6.4 REFACTOR：基于 D1 查询计划补必要索引，删除重复扫描并验证 migration 前后数据契约
 - [ ] 6.5 验证备份、清理、恢复和记录数对账，不使用真实数据做试验性恢复，除非另获明确授权
@@ -67,4 +70,4 @@
 - [x] 8.3 运行 Docker 构建/健康检查、D1 migration dry-run、Sealos manifest 静态检查和脱敏日志断言
 - [x] 8.4 运行 `/Users/xinwu/Library/pnpm/bin/openspec validate improve-production-operations-readiness --strict --no-interactive` 与 docs-manager audit
 - [x] 8.5 运行 GitNexus `detect-changes --scope compare --base-ref main`，确认只影响预期符号、路由和执行流
-- [ ] 8.6 按 git-manager 精确路径 dry-run 后原子提交并推送功能分支；没有开放 PR 时创建 PR，不自动合并
+- [x] 8.6 按 git-manager 精确路径 dry-run 后原子提交并推送功能分支；没有开放 PR 时创建 PR，不自动合并

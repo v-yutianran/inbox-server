@@ -2,6 +2,17 @@
 
 ## 2026-08-03
 
+### feat(operations)：持续采集候选运维基线与告警审计
+
+- 新增 expand-only D1 migration，持久化每日 7/30/90 天 retention 聚合、候选告警实例和状态迁移审计
+- 定时采集按自然日幂等写入，候选告警采用 `pending` / `firing` / `recovered` 状态机；并发采集不会重复样本或审计事件
+- 运维指标采集失败记录稳定脱敏事件但不阻塞主定时同步；未接入外部告警通知、未部署生产 migration，也未执行真实数据清理
+
+**如何验证**：
+- npm workspace strict typecheck、production build 和 39 files / 187 tests 通过；同一观察时刻重复采集不会提前推进候选告警
+- Python ruff 通过、pytest 258 passed（9 个既有 warning）、mypy 103 source files 通过；OpenSpec strict validate 与 GitNexus low-risk 变更门禁通过
+- 未运行需要真实凭据和显式授权的浏览器 E2E；未部署或改写生产 D1/Sealos
+
 ### feat(operations)：建立生产健康、治理与可重复发布门禁
 
 - Worker 新增五态组件健康模型、独立 browser/mihomo/WARP 探测、业务依赖延期、优雅停止和带部署版本的运行指标；Sealos 探针与终止宽限期同步收紧

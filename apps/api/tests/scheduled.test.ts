@@ -51,4 +51,25 @@ describe("Cron Trigger", () => {
     expect(service.requestScheduledSync).toHaveBeenCalledOnce();
     expect(readiness.captureMetrics).toHaveBeenCalledOnce();
   });
+
+  it("运维样本采集失败时留下稳定事件但不阻断主收集计划", async () => {
+    const service = createService();
+    const readiness = createReadinessService();
+    vi.mocked(readiness.captureMetrics).mockRejectedValue(new Error("synthetic failure"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await publishScheduledCollection(
+      { SCHEDULE_ENABLED: "true" } as ApiBindings,
+      () => service,
+      () => readiness,
+    );
+
+    expect(service.requestScheduledSync).toHaveBeenCalledOnce();
+    expect(error).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({
+      event: "operations.metrics.capture_failed",
+      service: "api",
+    });
+    error.mockRestore();
+  });
 });
