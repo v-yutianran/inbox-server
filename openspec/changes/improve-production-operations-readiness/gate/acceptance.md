@@ -10,8 +10,8 @@
 | 日期 | 2026-08-03 |
 | 状态 | 验收设计已完成；实现与验收尚未执行 |
 | 责任人 | 实现：开发人员；执行：独立验收人员；线上动作：获授权运维/发布人员 |
-| 需求基线 | `requirements.md` 1.0 |
-| 设计基线 | `technical-design.md` 1.0 |
+| 需求基线 | `requirements.md` 1.1 |
+| 设计基线 | `technical-design.md` 1.1 |
 | 关联资料 | `../specs/production-operations-readiness/spec.md`、`../tasks.md`、`../proposal.md`、`../design.md` |
 
 ## 验收范围与排除项
@@ -72,7 +72,8 @@
 | REQ-P0-006 | AC-005 | 安全重放 | AT-P0-005 | `replay-plan.json` | 未执行 |
 | REQ-P0-007 | AC-005 | 重放状态机、queue inbox | AT-P0-005 | `replay-audit.json` | 未执行 |
 | REQ-P0-008 | AC-006 | 隔离 canary | AT-P0-006 | `canary-report.json` | 未执行 |
-| REQ-P0-009 | AC-007 | 发布回滚 CLI、expand-only migration 与兼容回滚 | AT-P0-007、AT-P1-003 | `isolated-rollback.md`、`migration-compatibility.json` | 未执行 |
+| REQ-P0-009 | AC-007 | 发布回滚 CLI、expand-only migration 与兼容回滚 | AT-P0-007、AT-P1-003、AT-RB-001～AT-RB-006 | `isolated-rollback.md`、`migration-compatibility.json`、`rollback-rehearsal.json` | AT-RB-001～AT-RB-006 通过；其余未执行 |
+| REQ-018 | AC-007 | DES-018 独立 rehearsal 动作与强隔离执行器 | AT-RB-001～AT-RB-006 | `rollback-rehearsal.json`、`rollback-rehearsal-events.jsonl`、`rollback-rehearsal-residuals.json` | 通过 |
 | REQ-P1-001 | AC-003/008 | 指标、SLI/SLO、候选告警状态 | AT-P0-003、AT-P1-001 | `metrics.json`、`baseline-14d.csv`、`alert-candidate-audit.json` | 未执行 |
 | REQ-P1-002 | AC-008 | SLO policy、14 天窗口 | AT-P1-001 | `baseline-14d.csv`、`slo-approval.md` | 未执行 |
 | REQ-P1-003 | AC-008 | 候选告警状态机、可观测性 | AT-P1-001 | `alert-candidate-audit.json`、`alert-recovery.json` | 未执行 |
@@ -96,6 +97,8 @@
 | NFR-007 | AC-013 | 容量/成本指标 | AT-P2-001 | `cost-trend.json` | 未执行 |
 
 所有证据统一放入 `evidence/acceptance/<run-id>/`；实际路径、哈希、生成命令、时间和执行人写入执行记录，未生成文件不得视为证据。
+
+`TC-001` 是 REQ-018→DES-018→AC-007→AT-RB-001～AT-RB-006 的稳定追踪 ID，实际执行记录必须使用该 ID 关联计划、事件和证据。
 
 ## P0 验收用例
 
@@ -142,11 +145,22 @@
 - 自动化层级：集成+隔离 E2E；当前 AUTH-001 未授权，E2E 结果为未执行。
 
 ### AT-P0-007 隔离回滚与 RTO
-- 前置/数据：可恢复隔离备份、上一 Cloudflare version/Worker digest、双版本兼容合成数据。
-- 步骤：制造退出门槛失败，执行隔离回滚并验证健康、积压、数据兼容和关键流程。
-- 预期：15 分钟内恢复，记录数/稳定摘要一致，生产数据与旧资产零变化。
-- 证据：时间线、manifest/planHash、版本读回、兼容查询和对账摘要。
+- 前置/数据：可恢复的合成备份、上一 Cloudflare API version、Console commit、Worker/Mihomo/WARP 不可变 digest、D1 migration 列表与双版本兼容合成数据；所有资产使用唯一 run ID。
+- 步骤：先验证 manifest 隔离约束与 dry-run，再执行本地 D1 兼容契约、停止替身新 Worker、启动旧 Docker Compose 路径、健康/数据对账与 finally 清理；另注入一次中途失败验证清理。
+- 预期：15 分钟内恢复旧 server/worker 关键路径，最新 migration 后仍可读取旧 Worker 写入，真实外部调用为 0，生产 Cloudflare、Sealos、数据与旧资产变化数为 0，成功或失败后隔离残留为 0。
+- 证据：时间线、manifest/planHash、身份读回、migration 兼容查询、Compose 健康、稳定事件、外部调用计数、残留资源和敏感哨兵扫描。
 - 自动化层级：组件+隔离 E2E；生产回滚另受 AUTH-005 限制。
+
+### 隔离回滚演练用例
+
+| 用例 | 优先级 | 前置与测试数据 | 步骤 | 可判定预期 | 证据 | 当前结果 |
+| --- | --- | --- | --- | --- | --- | --- |
+| AT-RB-001 manifest 强隔离 | P0 | 有效合成 manifest，以及分别含生产 Secret/context、远程数据库、任意命令、外部目标的无效 manifest | 生成计划并逐个解析无效输入 | 有效输入得到稳定 `planHash`；无效输入全部拒绝；计划不含 `wrangler`、`kubectl`、远程 URL 或生产上下文 | `manifest-validation.json`、`plan.json` | 通过 |
+| AT-RB-002 dry-run 零执行 | P0 | AT-RB-001 的有效 manifest | 以 dry-run 生成计划，再以相同输入和 planHash 进入实际执行前置校验 | dry-run 调用执行器次数为 0；两次 planHash 一致；篡改哈希被拒绝 | `dry-run.json`、`plan-hash-check.json` | 通过 |
+| AT-RB-003 D1 向前兼容 | P0 | 空的本地 D1 数据库与固定合成记录 | 应用全部 migration，用旧 Worker 契约写入，再用最新契约查询并重复应用 migration | migration 无 down/破坏性动作；旧写入可由最新版本读取；重复应用后摘要不变 | `migration-compatibility.json`、本地数据库摘要 | 通过 |
+| AT-RB-004 旧 Compose 路径恢复 | P0 | 唯一 Compose project/network/volume，内部网络，无宿主端口，合成配置/备份，替身新 Worker | 停止替身 Worker，启动旧 server/worker，轮询健康并对账，最后清理 | 15 分钟内 server/worker 健康；记录数与稳定摘要一致；外部调用、主机端口、用户目录挂载均为 0 | `rollback-rehearsal.json`、`compose-health.json`、`external-call-audit.json` | 通过 |
+| AT-RB-005 失败后强制清理 | P0 | 与 AT-RB-004 相同，在旧 Compose 启动后注入可预期失败 | 执行失败路径并核对 finally 清理和失败事件 | 命令失败非零；`operations.rollback_rehearsal.step_failed` 含 runId/阶段/错误摘要且无敏感值；容器、网络、卷与临时文件残留数全部为 0 | `failure-events.jsonl`、`rollback-rehearsal-residuals.json` | 通过 |
+| AT-RB-006 回滚身份证据 | P1 | 有效合成 manifest 及不含凭据的固定版本元数据 | 生成并扫描最终证据 | 证据包含合成备份 ID/摘要、上一 Cloudflare API version、Console commit、Worker/Mihomo/WARP digest、D1 migration 列表和源提交；敏感哨兵命中为 0 | `rollback-identity.json`、`sensitive-scan.json` | 通过 |
 
 ## P1 验收用例
 
@@ -224,7 +238,8 @@
 
 ## 执行记录、未执行项与残余风险
 
-- 本文是验收设计，不是验收执行报告；以上用例当前均为“未执行”，不存在“通过”事实。
+- 本文仍以验收设计为主；仅 `TC-001` 对应的 AT-RB-001～AT-RB-006 已有执行事实，其余用例仍为“未执行”。
+- `TC-001` 已于 2026-08-03 使用最终 run `rb-20260803-183521` 执行：`planHash=d637b23df6a2771d5fd6443151b081f8517cb46f32047dd31ed84228a40aa58f`，RTO 39.788 秒，7 个 D1 migration 兼容校验通过，容器/网络/卷/临时文件残留均为 0，证据为 `evidence/acceptance/rb-20260803-183521/rollback-rehearsal.json`。
 - 24 小时探针窗口、14 天 SLI/SLO 基线、14 天 retention dry-run 均未在本文中宣告完成。
 - 告警渠道/责任人、最终 SLO、保留期、生产 RPO 和多副本路线只阻塞对应最终判定，不阻塞实现。
 - 单副本仍有可用性上限；在容量、备份恢复和多副本 ADR 完成前保持已知残余风险。
@@ -233,14 +248,14 @@
 ## 覆盖统计
 
 - 需求覆盖：REQ-P0 9/9、REQ-P1 10/10、REQ-P2 5/5、NFR 7/7 均映射设计章节、AC、用例和计划证据。
-- 验收标准覆盖：AC-001～AC-017 共 17/17；用例 17 个，其中 P0 7、P1 6、P2 4。
-- 已执行通过：0；未执行：17；敏感信息允许命中：0；真实外部副作用允许次数：0。
+- 验收标准覆盖：AC-001～AC-017 共 17/17；用例 23 个，其中 P0 12、P1 7、P2 4。
+- 已执行通过：6；未执行：17；敏感信息允许命中：0；真实外部副作用允许次数：0。
 
 ## 阻塞项
 
 - 实现阻塞项：无。
 - 当前执行阻塞：AUTH-001～AUTH-007 未授权；24 小时与14 天观察窗尚无完整执行证据；最终告警渠道、SLO、保留期和 RPO 待相应阶段批准。
 
-## 最终结论
+## 验收结论
 
-**验收设计门禁通过，可进入实现；验收执行结论为阻塞。** 阻塞仅来自尚未实现、未授权及观察窗未完成，不得推定任何运行时用例已通过。
+**验收设计门禁通过，TC-001 隔离回滚子范围通过；整体验收执行结论仍为阻塞。** 其余阻塞来自未授权生产动作、尚未实现项及观察窗未完成，不得将 TC-001 结论外推到其他用例。
