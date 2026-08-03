@@ -3,8 +3,9 @@ import userEvent from "@testing-library/user-event";
 
 import { API_KEY_STORAGE } from "./api";
 import { App } from "./App";
+import type { OperationsOverview } from "./types";
 
-const overview = {
+const overview: OperationsOverview = {
   status: "ok",
   generated_at: "2026-07-19T06:30:00+00:00",
   server: { online: true },
@@ -21,6 +22,52 @@ const overview = {
   article_events: [],
 };
 
+const health = {
+  generatedAt: "2026-07-19T06:30:00+00:00",
+  components: [
+    { component: "console", state: "ready", reasonCode: "external_probe_ok", canAcceptWork: true, observedAt: "2026-07-19T06:30:00+00:00", deploymentVersion: "console-v1" },
+    { component: "api", state: "ready", reasonCode: "request_served", canAcceptWork: true, observedAt: "2026-07-19T06:30:00+00:00", deploymentVersion: "api-v1" },
+    { component: "worker", state: "ready", reasonCode: "heartbeat_fresh", canAcceptWork: true, observedAt: "2026-07-19T06:29:50+00:00", deploymentVersion: "worker-v1" },
+    { component: "browser", state: "ready", reasonCode: "browser_ready", canAcceptWork: true, observedAt: "2026-07-19T06:29:50+00:00", deploymentVersion: "worker-v1" },
+    { component: "mihomo", state: "degraded", reasonCode: "proxy_optional", canAcceptWork: true, observedAt: "2026-07-19T06:29:50+00:00", deploymentVersion: "worker-v1" },
+    { component: "warp", state: "ready", reasonCode: "warp_ready", canAcceptWork: true, observedAt: "2026-07-19T06:29:50+00:00", deploymentVersion: "worker-v1" },
+  ],
+};
+
+const queueReadiness = {
+  categories: { executable: 3, processing: 1, deferred: 2, nonExecutable: 8 },
+  deploymentVersion: "api-v1",
+  earliestDeferredAt: "2026-07-19T06:40:00+00:00",
+  freezeAt: "2026-07-19T06:30:00+00:00",
+  jobStatusCounts: { pending: 5 },
+  oldestExecutableAgeSeconds: 120,
+};
+
+const metrics = {
+  deploymentVersion: "api-v1",
+  generatedAt: "2026-07-19T06:30:00+00:00",
+  windowHours: 24,
+  metrics: [
+    { key: "api.availability", current: 1, threshold: { comparison: "lt", state: "candidate", value: 0.99 }, trend: [{ at: "2026-07-19T06:30:00+00:00", value: 1 }] },
+    { key: "worker.heartbeat_age_seconds", current: 10, threshold: { comparison: "gt", state: "candidate", value: 900 }, trend: [{ at: "2026-07-19T06:30:00+00:00", value: 10 }] },
+  ],
+};
+
+function jsonResponse(input: RequestInfo | URL, overviewValue = overview): Response {
+  const path = String(input);
+  const body = path.includes("/api/operations/health/components")
+    ? health
+    : path.includes("/api/operations/queue/summary")
+      ? queueReadiness
+      : path.includes("/api/operations/metrics")
+        ? metrics
+        : overviewValue;
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 test("没有会话 API Key 时只显示解锁界面", () => {
   const fetchMock = vi.spyOn(globalThis, "fetch");
 
@@ -33,25 +80,24 @@ test("没有会话 API Key 时只显示解锁界面", () => {
 });
 
 test("有效 API Key 仅写入 sessionStorage 并加载汇总", async () => {
-  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(JSON.stringify(overview), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
-  );
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => jsonResponse(input));
   const user = userEvent.setup();
   render(<App />);
 
   await user.type(screen.getByLabelText("管理 API Key"), "secret-key");
   await user.click(screen.getByRole("button", { name: "进入控制台" }));
 
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
   expect(fetchMock).toHaveBeenCalledWith(
     "/api/operations/overview",
     expect.objectContaining({ headers: { "X-API-Key": "secret-key" } }),
   );
   expect(sessionStorage.getItem(API_KEY_STORAGE)).toBe("secret-key");
   expect(screen.getByText("运行总览")).toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/operations/health/components",
+    expect.objectContaining({ headers: { "X-API-Key": "secret-key" } }),
+  );
 });
 
 test("错误 API Key 返回解锁界面并显示原因", async () => {
@@ -68,9 +114,7 @@ test("错误 API Key 返回解锁界面并显示原因", async () => {
 
 test("控制台展示服务、队列、渠道和两类历史", async () => {
   sessionStorage.setItem(API_KEY_STORAGE, "secret-key");
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(
-      JSON.stringify({
+  const detailedOverview = {
         ...overview,
         channels: {
           sources: { telegram: { enabled: true, kind: "api" } },
@@ -103,15 +147,14 @@ test("控制台展示服务、队列、渠道和两类历史", async () => {
             occurred_at: "2026-07-19T06:21:00+00:00",
           },
         ],
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    ),
-  );
+      };
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => jsonResponse(input, detailedOverview));
 
   render(<App />);
 
   expect(await screen.findByText("运行总览")).toBeInTheDocument();
   expect(screen.getByText("服务在线")).toBeInTheDocument();
+  expect(screen.getByText("Cloudflare Workers / D1 / Queues")).toBeInTheDocument();
   expect(screen.getByText("Worker 在线")).toBeInTheDocument();
   expect(screen.getByText("每 10 分钟")).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Link 队列" })).toBeInTheDocument();
@@ -120,6 +163,11 @@ test("控制台展示服务、队列、渠道和两类历史", async () => {
   expect(screen.getByText("手动触发")).toBeInTheDocument();
   expect(screen.getByText("一篇示例文章")).toBeInTheDocument();
   expect(screen.getByText("已归档并推送")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "依赖与积压" })).toBeInTheDocument();
+  expect(screen.getByText("Mihomo")).toBeInTheDocument();
+  expect(screen.getByText("降级")).toBeInTheDocument();
+  expect(screen.getByText("最老可执行任务：")).toBeInTheDocument();
+  expect(screen.getByText("API 可用率")).toBeInTheDocument();
 });
 
 test("手动同步完成后刷新汇总并提供反馈", async () => {
@@ -128,10 +176,7 @@ test("手动同步完成后刷新汇总并提供反馈", async () => {
     if (input === "/sync" && init?.method === "POST") {
       return new Response(JSON.stringify({ status: "ok", results: {} }), { status: 200 });
     }
-    return new Response(JSON.stringify(overview), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse(input);
   });
   const user = userEvent.setup();
   render(<App />);
@@ -149,17 +194,14 @@ test("手动同步完成后刷新汇总并提供反馈", async () => {
     );
   });
   expect(await screen.findByText("同步完成，运行状态已刷新")).toBeInTheDocument();
-  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(fetchMock).toHaveBeenCalledTimes(9);
 });
 
 test("手动同步鉴权失效时返回解锁界面并显示原因", async () => {
   sessionStorage.setItem(API_KEY_STORAGE, "secret-key");
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     if (input === "/sync") return new Response(null, { status: 401 });
-    return new Response(JSON.stringify(overview), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse(input);
   });
   const user = userEvent.setup();
   render(<App />);

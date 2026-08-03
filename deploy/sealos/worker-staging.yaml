@@ -1,10 +1,27 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: inbox-server-warp-state
+  namespace: ns-tbs948af
+  annotations:
+    path: /var/lib/cloudflare-warp
+    value: "1"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: inbox-server-worker-staging
   namespace: ns-tbs948af
   annotations:
-    originImageName: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
+    originImageName: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:0d34bea391a75c734c231eadbcd72ec116d552d6f2e9d7d6e347b1bc545a1e48
+    inbox.yutianran.cn/warp-image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:04ba57c848686946be667f730e912090eddffa3f003e932ea20acfa440eb36d6
+    inbox.yutianran.cn/mihomo-image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:9b5e5ee79f68dc33e99273b01d2ff4a416a2ce91ff19f1fadc101f58250c2ceb
     deploy.cloud.sealos.io/minReplicas: "1"
     deploy.cloud.sealos.io/maxReplicas: "1"
   labels:
@@ -19,6 +36,8 @@ spec:
       app: inbox-server-worker-staging
   template:
     metadata:
+      annotations:
+        inbox.yutianran.cn/source-revision: 05cf4b8b2bedcabfad8be392bee6544a2557753f
       labels:
         app: inbox-server-worker-staging
         cloud.sealos.io/app-deploy-manager: inbox-server-worker-staging
@@ -31,10 +50,10 @@ spec:
         runAsUser: 1001
         seccompProfile:
           type: RuntimeDefault
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 60
       containers:
         - name: inbox-server-worker-staging
-          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:17604cc785bb9e6548068c2e33bac297c9cba432201fde7034cdbb69e9010a2a
+          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:0d34bea391a75c734c231eadbcd72ec116d552d6f2e9d7d6e347b1bc545a1e48
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -42,12 +61,43 @@ spec:
               drop:
                 - ALL
           env:
+            - name: ARTICLE_REPOSITORY_URL
+              value: https://github.com/v-yutianran/.agents.git
+            - name: BROWSER_PROXY_URL
+              value: http://127.0.0.1:7897
+            - name: CHANNELS_PATH
+              value: /app/channels.yaml
+            - name: CONTROL_PLANE_URL
+              value: https://inbox-api.yutianran.cn
+            - name: DEPLOYMENT_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['inbox.yutianran.cn/source-revision']
             - name: DISPLAY
               value: :99
             - name: HEALTH_PORT
               value: "8080"
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:40001
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:40001
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost
+            - name: OUTBOUND_PROXY_PORT
+              value: "40001"
+            - name: OUTBOUND_PROXY_READY_TIMEOUT_MS
+              value: "60000"
+            - name: PERSISTENCE_ROOT
+              value: /data
+            - name: WARP_SOCKS_PROXY_URL
+              value: socks5://127.0.0.1:40000
+            - name: WORKER_PROCESSING_ENABLED
+              value: "true"
             - name: TZ
               value: Asia/Shanghai
+          envFrom:
+            - secretRef:
+                name: inbox-server-worker-runtime
           ports:
             - name: health
               containerPort: 8080
@@ -56,7 +106,7 @@ spec:
             httpGet:
               path: /readyz
               port: health
-            failureThreshold: 12
+            failureThreshold: 60
             periodSeconds: 5
             timeoutSeconds: 3
           livenessProbe:
@@ -65,24 +115,151 @@ spec:
               port: health
             failureThreshold: 3
             periodSeconds: 30
-            timeoutSeconds: 5
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
               path: /readyz
               port: health
             failureThreshold: 3
             periodSeconds: 10
-            timeoutSeconds: 5
+            timeoutSeconds: 3
           resources:
             requests:
-              cpu: 20m
-              memory: 102Mi
-            limits:
               cpu: 200m
-              memory: 1024Mi
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
           volumeMounts:
             - name: vn-data
               mountPath: /data
+        - name: mihomo-egress
+          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:9b5e5ee79f68dc33e99273b01d2ff4a416a2ce91ff19f1fadc101f58250c2ceb
+          imagePullPolicy: IfNotPresent
+          args:
+            - -d
+            - /data/mihomo
+            - -f
+            - /etc/mihomo/config.yaml
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - grep -q ':1ED9 ' /proc/net/tcp /proc/net/tcp6
+            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - grep -q ':1ED9 ' /proc/net/tcp /proc/net/tcp6
+            failureThreshold: 3
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - grep -q ':1ED9 ' /proc/net/tcp /proc/net/tcp6
+            failureThreshold: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+          ports:
+            - name: proxy
+              containerPort: 7897
+              protocol: TCP
+            - name: socks
+              containerPort: 7898
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 20m
+              memory: 25Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - name: vn-data
+              mountPath: /data
+            - name: clash-config
+              mountPath: /etc/mihomo/config.yaml
+              subPath: config.yaml
+              readOnly: true
+        - name: warp-egress
+          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:04ba57c848686946be667f730e912090eddffa3f003e932ea20acfa440eb36d6
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          env:
+            - name: WARP_PROXY_PORT
+              value: "40000"
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - /bin/warp-cli --accept-tos --no-ansi status | grep -q Connected
+            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - /bin/warp-cli --accept-tos --no-ansi status | grep -q Connected
+            failureThreshold: 3
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - /bin/warp-cli --accept-tos --no-ansi status | grep -q Connected
+            failureThreshold: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: warp-state
+              mountPath: /var/lib/cloudflare-warp
+            - name: warp-run
+              mountPath: /run/cloudflare-warp
+            - name: warp-logs
+              mountPath: /var/log/cloudflare-warp
+      volumes:
+        - name: clash-config
+          secret:
+            secretName: inbox-server-clash-config
+            defaultMode: 0440
+        - name: warp-state
+          persistentVolumeClaim:
+            claimName: inbox-server-warp-state
+        - name: warp-run
+          emptyDir: {}
+        - name: warp-logs
+          emptyDir: {}
   volumeClaimTemplates:
     - metadata:
         name: vn-data

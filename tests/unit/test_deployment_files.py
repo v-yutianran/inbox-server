@@ -19,11 +19,12 @@ def test_git_manager_config_enables_quality_gate_and_automatic_cd() -> None:
 
     assert config["version"] == "0.1.0"
     assert config["ci"]["branches"] == ["main"]
-    assert config["ci"]["jobs"][0]["stack"] == "node"
-    assert "pnpm install --frozen-lockfile" in config["ci"]["jobs"][0][
-        "installCommand"
-    ]
-    assert config["ci"]["jobs"][0]["checkCommands"] == [
+    quality_job = config["ci"]["jobs"][0]
+    install_command = quality_job["installCommand"]
+    assert quality_job["stack"] == "python"
+    assert "npm ci" in install_command
+    assert "pnpm" not in install_command
+    assert quality_job["checkCommands"] == [
         'uv run ruff check src/inboxserver tests scripts',
         'uv run pytest tests/unit tests/integration -m "not e2e" --tb=short',
         "uv run mypy src/inboxserver --ignore-missing-imports",
@@ -35,10 +36,13 @@ def test_git_manager_config_enables_quality_gate_and_automatic_cd() -> None:
         "retainReleases": 5,
         "autoDeploy": True,
     }
-    for workflow in (generated_ci, legacy_ci):
-        assert "pnpm/action-setup@" in workflow
-        assert "actions/setup-node@" in workflow
-        assert "pnpm install --frozen-lockfile" in workflow
+    assert "actions/setup-python@" in generated_ci
+    assert "npm ci" in generated_ci
+    assert "pnpm" not in generated_ci
+    assert "actions/setup-node@" in legacy_ci
+    assert "cache: npm" in legacy_ci
+    assert "npm ci" in legacy_ci
+    assert "pnpm" not in legacy_ci
 
 
 def test_container_images_and_restart_policies_are_reproducible() -> None:

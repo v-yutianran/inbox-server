@@ -15,7 +15,7 @@ export function StatusOverview({ server, worker, scheduler }: Props) {
         <div className="status-card__body">
           <StatusDot variant={server.online ? "success" : "error"} label={server.online ? "API 在线" : "API 离线"} />
           <h2>{server.online ? "服务在线" : "服务离线"}</h2>
-          <p>FastAPI / PostgreSQL / Redis</p>
+          <p>Cloudflare Workers / D1 / Queues</p>
         </div>
       </Card>
       <Card className="status-card" padding={0} role="article">

@@ -2,15 +2,17 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 
 import { formatTime } from "../format";
-import type { OperationsOverview } from "../types";
+import type { OperationsOverview, OperationsReadiness } from "../types";
 import { ArticleHistory } from "./ArticleHistory";
 import { ChannelsPanel } from "./ChannelsPanel";
 import { QueuePanel } from "./QueuePanel";
+import { OperationsReadinessPanel } from "./OperationsReadinessPanel";
 import { StatusOverview } from "./StatusOverview";
 import { SyncHistory } from "./SyncHistory";
 
 type Props = {
   overview: OperationsOverview;
+  readiness: OperationsReadiness;
   refreshing: boolean;
   syncing: boolean;
   notice: string | null;
@@ -21,6 +23,7 @@ type Props = {
 
 export function Dashboard({
   overview,
+  readiness,
   refreshing,
   syncing,
   notice,
@@ -42,6 +45,7 @@ export function Dashboard({
       </header>
       {notice ? <Banner className="notice" status="success" title={notice} /> : null}
       <StatusOverview server={overview.server} worker={overview.worker} scheduler={overview.scheduler} />
+      <OperationsReadinessPanel readiness={readiness} />
       <QueuePanel queues={overview.queues} />
       <div className="split-grid">
         <ChannelsPanel channels={overview.channels} />

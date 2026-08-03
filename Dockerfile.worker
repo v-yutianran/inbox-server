@@ -1,4 +1,4 @@
-FROM node:22.17.0-bookworm-slim AS build
+FROM node:22.17.0-bookworm-slim@sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0 AS build
 
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 WORKDIR /app
@@ -21,7 +21,7 @@ RUN npm run build --workspace @inbox/domain \
         --workspace @inbox/domain \
         --include-workspace-root=false
 
-FROM node:22.17.0-bookworm-slim
+FROM node:22.17.0-bookworm-slim@sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0
 
 ENV DISPLAY=:99 \
     HEALTH_PORT=8080 \
@@ -37,17 +37,24 @@ RUN groupadd --gid 1001 pwuser \
     && useradd --create-home --gid 1001 --uid 1001 pwuser
 
 COPY --from=build --chown=pwuser:pwuser /app/node_modules ./node_modules
+
+USER root
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates git \
+    && ./node_modules/.bin/playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* \
+    && chmod -R a+rX /ms-playwright
+
 COPY --from=build --chown=pwuser:pwuser /app/apps/worker/package.json ./apps/worker/package.json
 COPY --from=build --chown=pwuser:pwuser /app/apps/worker/dist ./apps/worker/dist
 COPY --from=build --chown=pwuser:pwuser /app/packages/domain/package.json ./packages/domain/package.json
 COPY --from=build --chown=pwuser:pwuser /app/packages/domain/dist ./packages/domain/dist
+COPY --chown=pwuser:pwuser channels.yaml.example ./channels.yaml
+COPY --chown=pwuser:pwuser templates/article.md.eta ./templates/article.md.eta
 COPY --chown=pwuser:pwuser apps/worker/docker-entrypoint.sh /usr/local/bin/inbox-worker-entrypoint
+COPY --chown=pwuser:pwuser scripts/github-askpass.sh /usr/local/bin/inbox-github-askpass
 
-USER root
-RUN ./node_modules/.bin/playwright install --with-deps chromium \
-    && rm -rf /var/lib/apt/lists/* \
-    && chmod -R a+rX /ms-playwright \
-    && chmod 755 /usr/local/bin/inbox-worker-entrypoint \
+RUN chmod 755 /usr/local/bin/inbox-worker-entrypoint /usr/local/bin/inbox-github-askpass \
     && mkdir -p /data/archive /data/browser /tmp/.X11-unix \
     && chmod 1777 /tmp/.X11-unix \
     && chown -R pwuser:pwuser /data /home/pwuser

@@ -92,6 +92,72 @@ export type OperationsOverview = z.infer<typeof operationsOverviewSchema>;
 export type SyncJob = z.infer<typeof syncJobSchema>;
 export type SyncResponse = { readonly results: Record<string, unknown>; readonly status: "ok" };
 
+export function advanceSyncJob(
+  currentStats: Readonly<Record<string, unknown>>,
+  update: {
+    readonly errorMessage?: string;
+    readonly finishedAt: string;
+    readonly source: string;
+    readonly status: "done" | "failed";
+    readonly summary?: Readonly<Record<string, unknown>>;
+  },
+): {
+  readonly error: string | null;
+  readonly finishedAt: string | null;
+  readonly stats: Record<string, unknown>;
+  readonly status: "done" | "failed" | "running";
+} {
+  const queued = isRecord(currentStats.queued) ? currentStats.queued : {};
+  const queuedSources = Object.keys(queued);
+  if (!queuedSources.includes(update.source)) {
+    return { error: null, finishedAt: null, stats: { ...currentStats }, status: "running" };
+  }
+  const collected = nonnegativeNumber(update.summary?.collected);
+  const published = nonnegativeNumber(update.summary?.published);
+  const result = update.status === "done"
+    ? { collected, enqueued: { total: published }, published, status: "done" }
+    : {
+        enqueued: {},
+        error: update.errorMessage ?? "collection failed",
+        status: "failed",
+      };
+  const stats = { ...currentStats, [update.source]: result };
+  const allFinished = queuedSources.every((source) => isTerminalSourceResult(stats[source]));
+  if (!allFinished) {
+    return { error: null, finishedAt: null, stats, status: "running" };
+  }
+  const failed = queuedSources
+    .map((source) => stats[source])
+    .find((entry) => isRecord(entry) && entry.status === "failed");
+  const error = isRecord(failed) && typeof failed.error === "string" ? failed.error : null;
+  return {
+    error,
+    finishedAt: update.finishedAt,
+    stats,
+    status: error === null ? "done" : "failed",
+  };
+}
+
+export function buildCollectionJobs(options: {
+  readonly createdAt: string;
+  readonly randomUuid: () => string;
+  readonly runId: string;
+  readonly shadow: boolean;
+  readonly sources: readonly (typeof sourceNames)[number][];
+  readonly triggeredBy: "manual" | "schedule" | "shadow";
+}): readonly QueueJob[] {
+  return options.sources.map((source) =>
+    parseQueueJob({
+      createdAt: options.createdAt,
+      dedupeKey: `collect:${source}:${options.runId}`,
+      jobId: options.randomUuid(),
+      kind: "collect-source",
+      payload: { shadow: options.shadow, source, triggeredBy: options.triggeredBy },
+      schemaVersion: 1,
+    }),
+  );
+}
+
 export interface OperationsService {
   getOverview(): Promise<OperationsOverview>;
   listArticleEvents(limit: number): Promise<readonly ArticleEvent[]>;
@@ -107,6 +173,7 @@ interface OperationsServiceOptions {
   readonly producer: QueueProducer;
   readonly randomUuid?: () => string;
   readonly schedulerEnabled?: boolean;
+  readonly shadowMode?: boolean;
 }
 
 export function createOperationsServiceFromBindings(bindings: ApiBindings): OperationsService {
@@ -114,6 +181,7 @@ export function createOperationsServiceFromBindings(bindings: ApiBindings): Oper
     database: bindings.DB,
     producer: createQueueProducer(bindings.JOBS),
     schedulerEnabled: bindings.SCHEDULE_ENABLED === "true",
+    shadowMode: resolveCollectionShadowMode(bindings.SYNC_PUBLISH_ENABLED),
   });
 }
 
@@ -123,6 +191,7 @@ export function createD1OperationsService({
   producer,
   randomUuid = () => crypto.randomUUID(),
   schedulerEnabled = false,
+  shadowMode = true,
 }: OperationsServiceOptions): OperationsService {
   const db = drizzle(database, { schema: { operationsSnapshots, syncJobs } });
 
@@ -137,11 +206,27 @@ export function createD1OperationsService({
     const mergedJobs = [...currentJobs, ...snapshot.sync_jobs]
       .filter((job, index, jobs) => jobs.findIndex(({ id }) => id === job.id) === index)
       .slice(0, 10);
-    return normalizeOverviewStatus(
-      { ...snapshot, sync_jobs: mergedJobs },
+    const heartbeat = await database
+      .prepare(
+        "SELECT last_seen_at FROM worker_heartbeats ORDER BY last_seen_at DESC LIMIT 1",
+      )
+      .first<{ last_seen_at: string }>();
+    const normalized = normalizeOverviewStatus(
+      {
+        ...snapshot,
+        sync_jobs: mergedJobs,
+        worker: resolveWorkerHeartbeat(snapshot.worker, heartbeat?.last_seen_at ?? null),
+      },
       now(),
       schedulerEnabled,
     );
+    console.log(JSON.stringify({
+      description: "已基于 D1 最新心跳解析 worker 状态",
+      event: "operations.worker_status.resolved",
+      lastHeartbeatAt: normalized.worker.last_heartbeat_at,
+      online: normalized.worker.online,
+    }));
+    return normalized;
   }
 
   async function listSyncJobs(limit: number): Promise<readonly SyncJob[]> {
@@ -166,16 +251,14 @@ export function createD1OperationsService({
       (source) => overview.channels.sources[source]?.enabled === true,
     );
     const syncJobId = randomUuid();
-    const jobs: readonly QueueJob[] = enabledSources.map((source) =>
-      parseQueueJob({
-        createdAt,
-        dedupeKey: `collect:${source}:${syncJobId}`,
-        jobId: randomUuid(),
-        kind: "collect-source",
-        payload: { shadow: true, source, triggeredBy },
-        schemaVersion: 1,
-      }),
-    );
+    const jobs = buildCollectionJobs({
+      createdAt,
+      randomUuid,
+      runId: syncJobId,
+      shadow: shadowMode,
+      sources: enabledSources,
+      triggeredBy,
+    });
     const queued = Object.fromEntries(enabledSources.map((source) => [source, 1]));
     await db.insert(syncJobs).values({
       error: null,
@@ -223,6 +306,22 @@ export function createD1OperationsService({
   };
 }
 
+export function resolveCollectionShadowMode(syncPublishEnabled: string | undefined): boolean {
+  return syncPublishEnabled !== "true";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isTerminalSourceResult(value: unknown): boolean {
+  return isRecord(value) && (value.status === "done" || value.status === "failed");
+}
+
+function nonnegativeNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
 export function normalizeOverviewStatus(
   overview: OperationsOverview,
   now: Date,
@@ -234,12 +333,29 @@ export function normalizeOverviewStatus(
   const heartbeatAge = now.getTime() - heartbeatAt;
   const workerOnline =
     overview.worker.online && heartbeatAge >= -30_000 && heartbeatAge <= 90_000;
+  const intervalMs = overview.scheduler.interval_seconds * 1_000;
+  const nextRunAt = schedulerEnabled
+    ? new Date((Math.floor(now.getTime() / intervalMs) + 1) * intervalMs).toISOString()
+    : null;
   return {
     ...overview,
     generated_at: now.toISOString(),
-    scheduler: { ...overview.scheduler, enabled: schedulerEnabled },
+    scheduler: {
+      ...overview.scheduler,
+      enabled: schedulerEnabled,
+      next_run_at: nextRunAt,
+    },
     worker: { ...overview.worker, online: workerOnline },
   };
+}
+
+export function resolveWorkerHeartbeat(
+  snapshot: OperationsOverview["worker"],
+  lastHeartbeatAt: string | null,
+): OperationsOverview["worker"] {
+  return lastHeartbeatAt === null
+    ? snapshot
+    : { last_heartbeat_at: lastHeartbeatAt, online: true };
 }
 
 function emptyOverview(now: Date, schedulerEnabled: boolean): OperationsOverview {

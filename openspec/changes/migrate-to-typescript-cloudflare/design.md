@@ -2,7 +2,7 @@
 
 当前仓库包含 React/Vite console、FastAPI server、asyncio worker、PostgreSQL、Redis 与 Nginx。server 负责 API、调度和持久化，worker 同时负责队列消费、目标分发、定时 browser collect、心跳以及文章 Git 归档；browser runtime 强制 `headless=False`，依赖 Xvfb 和可持久化登录态。
 
-Cloudflare Workers 适合承载短生命周期 API、Cron Trigger、D1 与 Queues，但不适合现有长驻 headed Chromium 进程。Cloudflare Queues 的 HTTP pull consumer 可以让 Sealos 中的外部 Docker worker 使用租约批量拉取、确认或重试消息，因此混合部署可以保留 browser source 能力，同时让 console 与 server 共享 TypeScript 契约。
+Cloudflare Workers 适合承载短生命周期 API、Cron Trigger、D1 与 Queues，但不适合现有长驻 headed Chromium 进程。Cloudflare Queue consumer 先把消息幂等写入 D1 租约收件箱，Sealos 中的外部 Docker worker 再通过内部 API 批量领取、确认或重试，因此混合部署可以保留 browser source 能力，同时让 console 与 server 共享 TypeScript 契约。
 
 本设计对应 [proposal](./proposal.md)、[`cloudflare-application-runtime`](./specs/cloudflare-application-runtime/spec.md) 和 [`docker-worker-runtime`](./specs/docker-worker-runtime/spec.md)，长期决定记录在 [ADR-0004](../../../docs/adr/0004-typescript-cloudflare-docker-worker.md)。
 
@@ -50,13 +50,13 @@ console 继续使用 React/Vite，静态产物部署到 Cloudflare；API 使用 
 
 备选方案是把 Hono API 也放入 Docker；它能减少运行时差异，但无法获得 D1、Cron Trigger 和 Queues 的原生部署边界，也偏离本次 Cloudflare 目标。
 
-### 3. Docker worker 使用 Cloudflare Queues HTTP pull consumer
+### 3. Docker worker 使用 D1 租约收件箱
 
-API 与 Cron Trigger 只发布版本化任务消息，Docker worker 拉取消息并按租约处理。消息使用带判别字段的联合类型，至少包含 `schemaVersion`、`jobId`、`kind`、`dedupeKey`、`createdAt` 与对应 payload；外部 JSON 先作为 `unknown` 解析并通过运行时 schema 校验。
+API 与 Cron Trigger 只发布版本化任务消息；同一 Cloudflare Worker 的 Queue consumer 先按消息 ID 幂等持久化 D1，再确认 Cloudflare 消息。Docker worker 使用独立 service token 从 D1 收件箱领取消息并按租约处理。消息使用带判别字段的联合类型，至少包含 `schemaVersion`、`jobId`、`kind`、`dedupeKey`、`createdAt` 与对应 payload；外部 JSON 先作为 `unknown` 解析并通过运行时 schema 校验。
 
-队列按至少一次语义设计：业务副作用成功且幂等记录持久化后才 ack；可重试错误 nack/retry，不可重试错误进入死信处理。Cloudflare Queue 仅配置 pull consumer，避免一个队列同时混用 push 与 pull consumer。
+队列按至少一次语义设计：Cloudflare 消息只在 D1 inbox 持久化后 ack；业务副作用成功且幂等记录持久化后才结算 D1 租约；可重试错误延迟重放，不可重试错误进入死信处理。Cloudflare Queue 仅配置一个 Worker consumer。
 
-备选方案是由 Hono 暴露自建长轮询队列 API；这会重复实现租约、可见性超时和批量确认，因此不采用。
+备选方案是让 Sealos 直接调用 Cloudflare HTTP Pull API；这需要长期 `Queues Edit` API Token，而 Wrangler OAuth 会刷新且不适合作为常驻服务凭据，因此不采用。D1 租约收件箱只实现单副本 worker 所需的最小领取、可见性超时和批量结算，详见 [`ADR-0005`](../../../docs/adr/0005-stage-cloudflare-queues-in-d1.md)。
 
 ### 4. worker 保持 headed Chromium 与 PID 1 信号链
 
@@ -78,6 +78,14 @@ worker 提供仅 Pod 内使用的 liveness/readiness HTTP 端点，不创建公�
 
 Chromium 容器从 `cpu=200m,memory=1024Mi` 的浏览器验证起点开始，按 Sealos 资源阶梯用冷启动、轻量页、真实页面、一次交互和 60 秒稳定窗口向上或向下验证，最终值以最低通过档为准。
 
+### 7. WARP sidecar 提供受控出站网络
+
+Sealos 北京区域的 worker Pod 使用固定版本的官方 Cloudflare WARP 客户端，以非 root、无额外 Linux capability 的本地 SOCKS5 代理模式提供出站网络；注册状态写入独立 PVC，sidecar 不创建 Service 或 Ingress。不得复制本机 ClashX 节点、订阅或个人代理凭据到仓库、镜像、Secret 或云端。
+
+由于 WARP 代理内置 DNS 在目标区域不能可靠解析 Telegram、YouTube 和 Inoreader，worker 在 Pod loopback 上运行最小 HTTP CONNECT 适配器：先经 WARP 查询 Cloudflare DoH 得到目标 IPv4，再以该 IP 经 WARP 建连。Node HTTP 客户端与 headed Chromium 统一使用此适配器；只有代理返回 `warp=on` 且真实目标连通时，worker 才进入 ready 并开始领取任务。长期决定详见 [`ADR-0006`](../../../docs/adr/0006-warp-egress-sidecar.md)。
+
+Git smart-HTTP pack 经适配器连续两次在 180 秒内无法完成浅克隆，而同 Pod 清空代理变量后 24 秒完成。文章归档因此把 Git 子进程限定为 HTTPS 直连 GitHub，并继续让正文抓取、通知和 headed Chromium 经过 WARP；Git 操作仍使用最小仓库 token、浅克隆和固定超时，不复用本机 ClashX 配置。
+
 ## Risks / Trade-offs
 
 - [D1 与 PostgreSQL 的事务、时间和并发语义不同] → 用 Drizzle 隔离 SQL 方言，为关键不变量建立契约测试，并在切换前执行快照与增量两轮核对。
@@ -85,6 +93,7 @@ Chromium 容器从 `cpu=200m,memory=1024Mi` 的浏览器验证起点开始，按
 - [browser storage state 含敏感 Cookie] → D1 仅存加密密文，密钥只存在 Cloudflare/Sealos Secret，日志禁止输出消息 payload、Cookie 或解密内容。
 - [单副本 worker 暂时限制吞吐和高可用] → 第一阶段保持单副本以复用当前调度语义；只有 collector 锁与 destination 幂等证明通过后才允许横向扩容。
 - [Playwright/Xvfb 资源消耗高] → 使用浏览器专用资源验收，不套用普通服务默认值；发生 OOM、重启或探针抖动即提升资源档。
+- [WARP 注册或出站网络失效会阻断全部外部来源与目标] → 注册状态使用独立 PVC；代理、DoH 和 `warp=on` 都纳入启动门禁；控制面保留直连绕过并在切换前验证回滚。
 - [迁移周期内双栈增加维护成本] → 每个纵向切片必须有删除旧路径的完成条件；未达到门槛的切片保持清晰的旧路径回滚入口。
 - [当前仓库有既有未提交改动] → 本变更只修改精确路径并逐路径提交，不暂存或改写既有脏文件。
 
@@ -93,10 +102,11 @@ Chromium 容器从 `cpu=200m,memory=1024Mi` 的浏览器验证起点开始，按
 1. 建立 OpenSpec/ADR、npm workspace、共享任务 schema、Hono 健康端点和 worker 健康骨架，完成本地 typecheck/test/build/Docker 验证。
 2. 建立 D1 Drizzle schema、迁移脚本与数据核对报告；只使用临时或本地 D1，不改生产绑定。
 3. 迁移一个无浏览器、无外部分发副作用的代表性任务，验证 Queue pull、ack/retry、幂等和可观测性。
-4. 迁移一个 browser source，在 Sealos staging 用持久化登录态和 headed Chromium 完成手工验收；未获得自动化 E2E 授权时不运行浏览器自动化。
-5. 逐项迁移剩余 collectors、destinations、通知和文章归档，每项同步更新 parity checklist 与任务勾选。
-6. 在外部分发关闭的 shadow 模式完成双跑和数据核对，演练从新 API/worker 回滚到现有 Compose。
-7. 经用户确认生产数据迁移窗口后，停止旧 worker、执行最终增量迁移、启用新队列与单副本 Docker worker；观察通过后再单独决定是否下线 Python 服务。
+4. 在 Sealos staging 加入 WARP sidecar 与本地 DoH/CONNECT 适配器，验证非 root、无额外 capability、PVC 重建恢复和目标站点出站能力。
+5. 迁移一个 browser source，在 Sealos staging 用持久化登录态和 headed Chromium 完成手工验收；未获得自动化 E2E 授权时不运行浏览器自动化。
+6. 逐项迁移剩余 collectors、destinations、通知和文章归档，每项同步更新 parity checklist 与任务勾选。
+7. 在外部分发关闭的 shadow 模式完成双跑和数据核对，演练从新 API/worker 回滚到现有 Compose。
+8. 经用户确认生产数据迁移窗口后，停止旧 worker、执行最终增量迁移、启用新队列与单副本 Docker worker；观察通过后再单独决定是否下线 Python 服务。
 
 ## Open Questions
 

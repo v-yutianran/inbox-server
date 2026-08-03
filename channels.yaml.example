@@ -11,15 +11,34 @@ sources:
   github_stars:
     enabled: true
     config: {token: "${GITHUB_TOKEN}"}
-  # zhihu:  # 浏览器源：需先 POST /login/zhihu/cookie 配 z_c0（阶段3 命门已验证）
-  #   enabled: false
-  #   kind: BROWSER
-  #   config: {collection_id: "你的收藏夹ID", credential_name: "zhihu_creds"}
-  # bilibili:  # 浏览器源：需先 POST /login/bilibili/cookie 配 SESSDATA
-  #   enabled: false
-  #   kind: BROWSER
-  #   config: {media_id: "你的B站收藏夹ID", credential_name: "bilibili_creds"}
-  #   # 注意：B站用 media_id（收藏夹 ID），不是 collection_id（那是知乎的 key）
+  zhihu:
+    enabled: true
+    kind: BROWSER
+    config: {collection_id: "${ZHIHU_COLLECTION_ID}", credential_name: "zhihu_creds"}
+  bilibili:
+    enabled: true
+    kind: BROWSER
+    config: {media_id: "${BILIBILI_MEDIA_ID}", credential_name: "bilibili_creds"}
+  bilibili_toview:
+    enabled: true
+    kind: BROWSER
+    config: {credential_name: "bilibili_creds"}
+  inoreader:
+    enabled: true
+    kind: BROWSER
+    config: {credential_name: "inoreader_creds"}
+  youtube:
+    enabled: true
+    kind: BROWSER
+    config: {credential_name: "youtube_creds"}
+  x_bookmarks:
+    enabled: true
+    kind: BROWSER
+    config: {credential_name: "x_creds"}
+  x_likes:
+    enabled: true
+    kind: BROWSER
+    config: {credential_name: "x_creds", username: "${X_USERNAME}"}
 
 destinations:
   cubox:
@@ -35,10 +54,10 @@ destinations:
     item_kind: file
     config: {webdav_user: "${JIANGUOYUN_WEBDAV_USER}", webdav_pass: "${JIANGUOYUN_WEBDAV_PASS}"}
 
-# 仅归档功能上线后 Cubox 成功的新链接；worker 需挂载宿主机 ~/.agents，GITHUB_TOKEN 需有写权限。
+# 仅归档 Cubox 成功的新链接；仓库克隆到 Sealos PVC，GITHUB_TOKEN 需有写权限。
 article_archive:
-  enabled: false
-  repository_dir: /article-repository
+  enabled: true
+  repository_dir: /data/archive/repository
   articles_dir: references/article
   min_visible_characters: 200
   http_timeout_seconds: 30
@@ -54,6 +73,17 @@ article_archive:
 
 credentials: {}
 #   zhihu_creds: {platform: zhihu, kind: cookie, vault_id: "zhihu_main"}
+
+# 有新内容才发送；任一通知通道失败不会阻塞主流程。
+notification:
+  telegram_chat_id: "${TELEGRAM_CHAT_ID}"
+  notify_token: "${TELEGRAM_NOTIFY_TOKEN}"
+  smtp_host: "${SMTP_HOST}"
+  smtp_port: 465
+  smtp_user: "${SMTP_USER}"
+  smtp_pass: "${SMTP_PASS}"
+  email_from: "${EMAIL_FROM}"
+  email_to: "${EMAIL_TO}"
 
 llm:
   glm_api_key: "${Z_AI_API_KEY}"

@@ -1,6 +1,6 @@
 # inbox-server Roadmap
 
-> **来源**：`docs/optimization-plan.md`（代码质量）+ `docs/parity-checklist.md`（功能对等）
+> **来源**：`docs/optimization-plan.md`（历史 Python 代码质量）+ `docs/parity-checklist.md`（功能对等）+ `openspec/changes/improve-production-operations-readiness/`（当前生产运维）
 > **⚠️ 重要**：`optimization-plan.md` 写于 2026-06-27，其状态已**严重滞后**——P0 全部、P1 大部分在 2026-06-28 已实现但未回写文档。本 roadmap 的每一项 `[x]` 都有 `文件:行号` 代码证据，**以代码为唯一真相**，取代 optimization-plan 作为单点真相。
 > **推进方式**：每项一个 feature 分支 + PR，禁止直接改 main（见 `CLAUDE.md` Git 工作流硬规则）。
 
@@ -71,3 +71,28 @@ P1-6 + P2-7/8/9/10 已分别通过 **PR #4**（workers: P2-7/8/9）+ **PR #5**�
 - [x] `README.md` 补全（PR #6：架构/启动/配置/API/凭据获取）
 - [ ] ⚙️ 启用 browser 源前需配齐凭据（`POST /login/{platform}/cookie`）
 - [x] `docs/optimization-plan.md` 顶部已加过时声明（PR #3）
+
+---
+
+## E. 生产运维就绪
+
+> 当前事实来源为 OpenSpec change `improve-production-operations-readiness` 与 [`docs/production-operations-runbook.md`](docs/production-operations-runbook.md)。旧 Python 优化计划不描述 Cloudflare/Sealos 运行状态。
+
+### E1. 已完成的本地与隔离门禁
+
+- [x] Worker 健康状态机、`/healthz`、`/readyz`、组件独立探测与优雅停止
+- [x] 队列互斥分类、DLQ 一致性分类、绑定 D1 状态版本的重放 `planHash`
+- [x] 固定 canary fixture，覆盖纯函数、仓库、直接提取与浏览器提取路径且不访问真实目标
+- [x] D1 原生指标与组件化 Console 运维视图
+- [x] CAC TypeScript 发布 CLI，支持不可变 manifest、全链路 `--dry-run`、失败停止和显式回滚
+- [x] 六类 retention report 查询测试与覆盖索引查询计划门禁
+- [x] 管理 Key 缺失时 fail-closed，Console 构建产物敏感哨兵扫描为零
+
+### E2. 必须等待生产授权或观察窗口
+
+- [ ] 24 小时连续探针与至少 14 天指标/SLO 基线
+- [ ] P0 告警渠道、责任人、触发与恢复通知演练
+- [ ] 生产发布及 API/Console/Worker 回滚演练
+- [ ] 14 天 retention dry-run、最终保留期限与真实清理授权
+- [ ] 隔离备份恢复演练、生产 RPO 判定和容量成本基线
+- [ ] 多副本准入；未通过前 Worker 固定 `replicas: 1`

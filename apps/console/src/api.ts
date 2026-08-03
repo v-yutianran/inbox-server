@@ -1,4 +1,11 @@
-import type { OperationsOverview, SyncResponse } from "./types";
+import type {
+  HealthComponentsReport,
+  OperationsMetricsReport,
+  OperationsOverview,
+  OperationsReadiness,
+  QueueReadinessSummary,
+  SyncResponse,
+} from "./types";
 
 export const API_KEY_STORAGE = "inbox-admin-api-key:v1";
 
@@ -63,6 +70,15 @@ async function request<T>(path: string, apiKey: string, init?: RequestInit): Pro
 
 export function fetchOverview(apiKey: string): Promise<OperationsOverview> {
   return request<OperationsOverview>("/api/operations/overview", apiKey);
+}
+
+export async function fetchOperationsReadiness(apiKey: string): Promise<OperationsReadiness> {
+  const [health, queue, metrics] = await Promise.all([
+    request<HealthComponentsReport>("/api/operations/health/components", apiKey),
+    request<QueueReadinessSummary>("/api/operations/queue/summary", apiKey),
+    request<OperationsMetricsReport>("/api/operations/metrics?windowHours=24", apiKey),
+  ]);
+  return { health, metrics, queue };
 }
 
 export function triggerSync(apiKey: string): Promise<SyncResponse> {

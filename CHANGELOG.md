@@ -1,5 +1,115 @@
 # CHANGELOG
 
+## 2026-08-03
+
+### feat(operations)：持续采集候选运维基线与告警审计
+
+- 新增 expand-only D1 migration，持久化每日 7/30/90 天 retention 聚合、候选告警实例和状态迁移审计
+- 定时采集按自然日幂等写入，候选告警采用 `pending` / `firing` / `recovered` 状态机；并发采集不会重复样本或审计事件
+- 运维指标采集失败记录稳定脱敏事件但不阻塞主定时同步；未接入外部告警通知、未部署生产 migration，也未执行真实数据清理
+
+**如何验证**：
+- npm workspace strict typecheck、production build 和 39 files / 187 tests 通过；同一观察时刻重复采集不会提前推进候选告警
+- Python ruff 通过、pytest 258 passed（9 个既有 warning）、mypy 103 source files 通过；OpenSpec strict validate 与 GitNexus low-risk 变更门禁通过
+- 未运行需要真实凭据和显式授权的浏览器 E2E；未部署或改写生产 D1/Sealos
+
+### feat(operations)：建立生产健康、治理与可重复发布门禁
+
+- Worker 新增五态组件健康模型、独立 browser/mihomo/WARP 探测、业务依赖延期、优雅停止和带部署版本的运行指标；Sealos 探针与终止宽限期同步收紧
+- API 新增队列互斥分类、DLQ 一致性分类、绑定 D1 状态的重放 `planHash`、六类 retention report、原生指标趋势和 fail-closed 管理认证；Console 用组件化运维面板展示健康、积压与指标
+- 新增固定 fixture 隔离 canary、纯函数容量模型和 CAC TypeScript 发布 CLI；发布 manifest 固定 Cloudflare version/deployment、D1 migration、三镜像 digest、Sealos revision 与 Secret version ref，并支持全链路 `--dry-run`、稳定窗口、失败停止和显式回滚
+- 根目录收敛为唯一 `npm run release` 发布入口，Worker Node 基础镜像固定 digest；新增生产运维手册并更新 roadmap 与 ADR 索引，旧 `docs/optimization-plan.md` 仅保留为历史 Python 审查记录
+
+**如何验证**：
+- npm workspace strict typecheck、production build 和 39 files / 184 tests passed；Console 构建敏感哨兵泄漏数为 0
+- Python ruff passed、pytest 258 passed（9 个既有 warning）、mypy 103 source files passed；未运行需要真实凭据的浏览器 E2E
+- Worker/mihomo/WARP 三镜像均按 `linux/amd64` 实际构建成功；Worker 隔离容器 `/healthz`、`/readyz` 均为 200，`worker.lifecycle.ready` 可观测且测试容器已移除
+- 6 个 D1 migration 在隔离本地库完整应用并读回 23 张表；Sealos YAML 离线契约确认北京命名空间、单副本、三 digest 镜像、Secret 引用和三类探针
+- 未连接或改写生产 D1/Sealos，未部署、回滚、重放、清理或恢复真实数据；24 小时/14 天观察窗口与生产演练仍待对应授权
+
+### docs(operations)：生成生产运行优化计划
+
+- 基于最新 TypeScript/Cloudflare/Sealos 源码、GitNexus 执行流和线上只读快照，新增生产运维就绪 OpenSpec change
+- 计划按 P0/P1/P2 覆盖健康探针、DLQ 与积压治理、隔离 canary、SLO/告警、可重复发布回滚、数据保留、容量与高可用准入
+- 明确旧 `docs/optimization-plan.md` 只描述历史 Python 代码质量问题，不作为当前云端运行优化的事实来源
+
+**如何验证**：
+- OpenSpec status 四份规划 artifact 完整，strict validate 通过
+- docs-manager audit 与 GitNexus detect changes 通过；仅文档变更，不运行自动化浏览器 E2E
+
+### fix(ci)：恢复 npm 质量门禁
+
+- 两条 GitHub Actions 质量流水线统一使用与 `package-lock.json` 一致的 npm 工具链，移除未声明版本的 pnpm 初始化
+- git-manager 质量任务按实际主栈改为 Python，并继续安装 Defuddle / Eta 所需的 Node workspace 依赖
+
+**如何验证**：
+- git-manager workflow 重新生成后再次 dry-run 无差异，YAML 解析与 `git diff --check` 通过
+- npm workspace 150 tests、strict typecheck 与 production build 通过
+- Python ruff、258 tests（9 个既有 warning）与 mypy 103 source files 通过
+
+### fix(worker)：区分文章无损延期、真实失败与受控恢复
+
+- 文章归档改为一次原子检查日限额与窗口限额，任一窗口拒绝时不部分扣减，并在领取外部副作用前返回带 `retryAt` 的类型化延期
+- D1 job 新增独立 `failure_attempts`、延期状态和分段重投；限速与 effect busy 不消耗三次真实失败预算，`done` 与 `uncertain` 终态禁止自动重放
+- 新文章任务在首次领取时以 AES-GCM 保存可恢复信封；完成后删除，进入 DLQ 时保留，外部结果不确定时冻结；历史 DLQ 保持原样且不可自动恢复
+- 新增 worker token 保护的 dead-letter `dryRun`/幂等重放端点，响应、公开队列快照和稳定结构化日志均不包含业务 payload 或密文
+
+**如何验证**：
+- npm workspace 31 files / 150 tests passed，strict typecheck 与 production build passed；Cloudflare Worker dry-run 构建通过
+- 文章重试聚焦验证覆盖批量限速原子性、早到重投、effect busy、三次真实失败、信封生命周期、认证、幂等和敏感信息禁漏
+- 隔离 SQLite D1 演练确认 0004 保留历史 DLQ 全部原字段，旧版 Worker 写入契约在新 schema 上仍可用于代码回滚
+- Python 兼容基线 ruff passed、pytest 258 passed（9 个既有 warning）、mypy 103 source files passed
+- 未运行浏览器自动化 E2E，未连接或写入生产 D1，未重放任何线上历史 DLQ
+
+## 2026-08-02
+
+### fix(worker)：恢复微信文章双阶段正文提取
+
+- 文章直接抓取恢复桌面 Chrome User-Agent、中文语言头、重定向与 HTML 类型/大小校验，继续优先使用 Defuddle 提取正文
+- 微信异常页或正文验收失败时使用 headed Playwright 兜底，恢复等待 `#js_content`、网络稳定、滚动和额外渲染时间，再由 Defuddle 二次提取
+- 二次提取仍命中验证页时记录 `error_marker`，并补充直接提取拒绝、浏览器提取成功和归档失败的稳定结构化日志
+
+**如何验证**：
+- 新增微信直取、异常页浏览器回退及二次异常页拒绝回归测试，Worker 16 files / 69 tests passed
+- npm workspace 共 131 tests passed，strict typecheck 与 production build passed
+- Python 兼容基线 ruff passed、pytest 258 passed（9 个既有 warning）、mypy 103 source files passed
+- 固定生产 Worker 镜像为 `sha256:0d34bea391a75c734c231eadbcd72ec116d552d6f2e9d7d6e347b1bc545a1e48`，经南京大学 GHCR 代理部署到 Sealos 北京区；线上 Pod 的源码修订为 `05cf4b8b2bedcabfad8be392bee6544a2557753f`
+- 线上重放 37 条唯一历史微信文章后，28 条已记录 `committed/exists`，9 条在两轮提取后仍稳定命中微信验证页或 150 字占位正文并安全跳过；用户反馈的两条目标链接均已归档且远端 Git 可见
+- 重放压力暴露既有文章限速与 effect 租约重试竞态，新增 DLQ 保留用于后续恢复，未直接删除生产记录
+
+### fix(runtime)：恢复 Inoreader 线上采集与 Worker 在线状态
+
+- Worker 心跳改为独立异步循环，不再被串行浏览器任务阻塞而让 Console 误判离线；失败日志使用稳定事件 `worker.heartbeat.failed`
+- 增加独立的浏览器代理配置；Sealos 注入本机 Clash 规则的加密 Secret，并以固定 Mihomo `v1.19.29` 镜像为 Chromium 提供出口，API 与分发请求继续使用 WARP
+- 重新登录 Inoreader 并把加密 storage state 写入 Cloudflare D1；代理节点凭据不进入仓库、镜像和运行日志
+
+**如何验证**：
+- Worker 16 files / 66 tests passed，strict typecheck 与 production build passed；Mihomo 配置通过官方二进制 `-t` 校验
+- Worker 与 Mihomo 的源站 GHCR、南京大学代理镜像摘要分别一致；Sealos StatefulSet 滚动更新完成，三个容器全部 Ready，稳定观察期间未新增重启
+- 生产 Inoreader shadow 任务 attempt 1 完成，D1 终态为 `done`、0 个新条目；登录状态为 `ok`、`last_error=null`
+- 随后的生产定时同步 10 个来源全部 `done`，Inoreader 采集并发布 14 条；link/text/file/article 待处理数均归零
+- Inoreader 任务执行期间控制面继续收到独立心跳，线上运维概览返回 `worker.online=true`
+- 未运行自动化浏览器 E2E；使用 headed persistent Chromium 完成真实登录，并用线上 API、D1 终态、Sealos 探针和结构化日志闭环验证
+
+### feat(runtime)：完成 Cloudflare 与 Sealos 生产切换
+
+- Console 与 Hono API 完全部署到 Cloudflare Pages/Workers，D1、Queues、Cron 和自定义域名均启用；旧 PostgreSQL/Redis 数据完成幂等迁移与最终增量核对
+- worker 固定为南京大学 GHCR 代理摘要 `sha256:1121f1cde80c257aa3512c36f772260808836c9f1bcd15c1e2f9a49e85b3c9aa`，在 Sealos 北京区以 headed Chromium、PVC 与 WARP sidecar 运行
+- browser source 增加 180 秒 watchdog；YouTube 在命中已知基线边界后停止滚动，避免列表采集超过租约；队列终态补充 `worker.job.succeeded`/`worker.job.failed` 可关联日志
+- Git 文章归档绕过 WARP 直连 GitHub，使用浅克隆、远端 HEAD 比对和可恢复的不完整仓库备份，避免代理超时阻塞队列
+- 知乎文章归档复用 D1 中的加密登录凭据调用同源内容 API；Git 仓库已有文章时仍检查未提交内容并补推，远端 Git 操作增加三次瞬时失败重试
+- 运维概览改为读取 D1 最新 worker 心跳并按 Cron 间隔生成未来的下次运行时间；Console 技术栈文案同步为 Cloudflare Workers / D1 / Queues
+- 停止本机 console/server/postgres/redis 容器，保留 `inbox-server_pgdata` 与 `inbox-server_redisdata` 卷；线上 Cron 恢复为每 10 分钟运行
+
+**如何验证**：
+- npm workspace：API 39、Console 15、Worker 64、Domain 8 tests passed；strict typecheck、production build、Compose config、Sealos client/server dry-run 与 docker-to-sealos quality gate passed
+- Sealos 实测 StatefulSet Ready，worker 与 WARP imageID 均为固定摘要；`/healthz`、`/readyz` 返回 200，应用层代理返回 `warp=on`
+- 当前镜像的 YouTube shadow 任务 attempt 1 在 75.395 秒内完成，D1 为 `done`，基线边界结果为 0 个新条目；本机 Docker 停止后 Telegram shadow 任务 attempt 1 在 16.184 秒内完成
+- 生产重放原失败的 Bilibili 与知乎文章任务均在 attempt 1 完成，D1 为 `done`、文章事件为 `committed`；PVC Git 工作区干净、两个来源 URL 各归档一次且本地 HEAD 与远端 `main` 一致
+- Cloudflare Console HTML/JS、鉴权 API 与 CORS 实测通过：Pages 200、API Key 请求 200、未鉴权请求 401、Cron enabled
+- 首次受控生产同步中 Telegram、Dida、GitHub Stars、知乎、B 站收藏/稍后再看、YouTube、X bookmarks/likes 均完成；当时 Inoreader 因登录态过期失败，后续已由上方修复恢复
+- 未运行自动化浏览器 E2E：当前任务未授权；改用线上 API、真实 collector/destination、D1 终态、Sealos 探针和结构化日志完成验证
+
 ## 2026-08-01
 
 ### fix(cloudflare)：恢复 Console 运维概览数据链
