@@ -1,0 +1,94 @@
+services:
+  postgres:
+    image: postgres:16.14-bookworm
+    restart: "no"
+    environment:
+      POSTGRES_DB: inbox
+      POSTGRES_PASSWORD: inbox
+      POSTGRES_USER: inbox
+      TZ: Asia/Shanghai
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres-seed.sql:/docker-entrypoint-initdb.d/001-rehearsal-backup.sql:ro
+    networks: [rehearsal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inbox -d inbox"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  redis:
+    image: redis:7.4.9-bookworm
+    restart: "no"
+    networks: [rehearsal]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 3s
+
+  substitute-worker:
+    image: redis:7.4.9-bookworm
+    restart: "no"
+    command: ["sh", "-c", "exec sleep 3600"]
+    networks: [rehearsal]
+
+  server:
+    build:
+      context: ../..
+      dockerfile: deploy/rehearsal/Dockerfile.legacy
+    restart: "no"
+    environment: &legacy-environment
+      INBOX_ADMIN_API_KEY: synthetic-rehearsal-admin-key
+      INBOX_DATABASE_URL: postgresql+asyncpg://inbox:inbox@postgres:5432/inbox
+      INBOX_EMAIL_ENABLED: "false"
+      INBOX_LOG_LEVEL: INFO
+      INBOX_MASTER_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+      INBOX_REDIS_URL: redis://redis:6379/0
+      INBOX_SCHEDULER_ENABLED: "false"
+      TZ: Asia/Shanghai
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [rehearsal]
+    volumes:
+      - ./synthetic-channels.yml:/app/channels.yaml:ro
+    command: ["sh", "-c", "/app/.venv/bin/alembic upgrade head && exec /app/.venv/bin/uvicorn inboxserver.main:app --host 0.0.0.0 --port 8000"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/rehearsal/Dockerfile.legacy
+    restart: "no"
+    environment: *legacy-environment
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      server: {condition: service_healthy}
+    networks: [rehearsal]
+    volumes:
+      - ./synthetic-channels.yml:/app/channels.yaml:ro
+    command: ["sh", "-c", "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99; Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp & export DISPLAY=:99 && exec /app/.venv/bin/python -m inboxserver.workers.runner"]
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-m", "inboxserver.workers.healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+networks:
+  rehearsal:
+    internal: true
+
+volumes:
+  pgdata:
+  redisdata:

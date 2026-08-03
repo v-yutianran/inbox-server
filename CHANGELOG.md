@@ -2,6 +2,18 @@
 
 ## 2026-08-03
 
+### feat(operations)：完成强隔离旧 Docker Compose 回滚演练
+
+- 发布 CAC CLI 新增独立 `rehearse-legacy` 动作，对合成 manifest、固定资产路径、GHCR 不可变 digest、`planHash`、明确确认和仓库内证据路径实施 fail-closed 校验
+- 新增无生产 Secret、无用户目录挂载、无宿主端口且运行网络 `internal` 的合成 Compose，恢复旧 Python server/worker、PostgreSQL 备份标记和 Redis 心跳路径
+- 本地 D1 契约校验在 0004 旧 Worker 写入后应用 0005～0007 expand migration，验证最新 schema 可读且重放摘要不变；成功或失败均在 `finally` 清理临时资源
+
+**如何验证**：
+- npm workspace strict typecheck、production build 与 40 files / 196 tests 通过；release-operations 聚焦 9 个隔离演练用例通过
+- Python ruff 通过、pytest 258 passed（9 个既有 warning）、mypy 103 source files 通过
+- 最终 run `rb-20260803-183521` 实际停止替身 Worker 并恢复旧 server/worker，RTO 39.788 秒，7 个 D1 migration 兼容通过，容器/网络/卷/临时文件残留均为 0；证据 SHA-256 为 `023d057655ccfd99413a53a75917f114caa3f18bd8ee3538a848563be25e1105`
+- requirements-design、technical-design、acceptance-design 校验与两个 OpenSpec strict validate 通过；未连接、部署、回滚或改写 Cloudflare、Sealos 及真实数据
+
 ### feat(operations)：持续采集候选运维基线与告警审计
 
 - 新增 expand-only D1 migration，持久化每日 7/30/90 天 retention 聚合、候选告警实例和状态迁移审计
