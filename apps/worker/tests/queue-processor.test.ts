@@ -60,6 +60,41 @@ function createControlPlane(): WorkerControlPlane {
 }
 
 describe("queue processor", () => {
+  it("依赖未就绪时不 claim，安全延期 lease 并记录稳定事件", async () => {
+    const queue = createQueue();
+    const controlPlane = createControlPlane();
+    const handle = vi.fn();
+    const log = vi.fn();
+
+    await processQueueBatch({
+      accept: () => ({
+        action: "defer",
+        reasonCode: "warp_unready",
+        retryAfterSeconds: 30,
+      }),
+      batch: createBatch(),
+      controlPlane,
+      handle,
+      log,
+      queue,
+    });
+
+    expect(controlPlane.claimJob).not.toHaveBeenCalled();
+    expect(handle).not.toHaveBeenCalled();
+    expect(queue.settle).toHaveBeenCalledWith({
+      acks: [],
+      retries: [{ delaySeconds: 30, leaseId: "lease-1" }],
+    });
+    expect(log).toHaveBeenCalledWith(
+      "worker.job.acceptance.deferred",
+      expect.objectContaining({
+        description: "运行依赖未就绪，任务领取已安全延期",
+        jobId: job.jobId,
+        reasonCode: "warp_unready",
+      }),
+    );
+  });
+
   it("类型化延期不进入失败分类并按控制面 retryAt 结算", async () => {
     const queue = createQueue();
     const controlPlane = createControlPlane();

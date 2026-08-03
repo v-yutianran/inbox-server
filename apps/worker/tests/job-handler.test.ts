@@ -64,6 +64,52 @@ const channels = {
 } as unknown as Channels;
 
 describe("job handler", () => {
+  it("文章归档收到任务关联字段并沿用同一 effect 结算", async () => {
+    const cp = controlPlane();
+    const archive = vi.fn().mockResolvedValue({ outcome: "ok" });
+    const handle = createJobHandler({
+      archive,
+      browser: {} as Browser,
+      channels: {
+        article_archive: {
+          daily_limit: 500,
+          enabled: true,
+          rate_window_count: 120,
+          rate_window_seconds: 21_600,
+        },
+        destinations: {},
+        sources: {},
+      } as unknown as Channels,
+      controlPlane: cp,
+      stagingDir: "/tmp/inbox",
+    });
+    const article = {
+      createdAt: "2030-01-01T00:00:00.000Z",
+      dedupeKey: "dispatch:article:correlated",
+      jobId: "815aac37-69f9-4af2-838a-8fd22217a462",
+      kind: "dispatch-item",
+      payload: {
+        itemKind: "article",
+        requestedAt: "2030-01-01T00:00:00.000Z",
+        url: "https://example.invalid/article/correlated",
+      },
+      schemaVersion: 1,
+    } as QueueJob;
+
+    await expect(handle(article)).resolves.toEqual({
+      outcome: "completed",
+      summary: { destinations: { article_archive: "done" } },
+    });
+    expect(archive).toHaveBeenCalledWith(article.payload, {
+      dedupeKey: article.dedupeKey,
+      jobId: article.jobId,
+    });
+    expect(cp.finishEffect).toHaveBeenCalledWith(
+      "dispatch:article:correlated:article_archive",
+      { status: "done" },
+    );
+  });
+
   it("文章限速先于 effect claim 并返回无损延期", async () => {
     const cp = controlPlane();
     vi.mocked(cp.consumeRateLimits).mockResolvedValue({

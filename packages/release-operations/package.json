@@ -1,0 +1,21 @@
+{
+  "name": "@inbox/release-operations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "release": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "cac": "7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "tsx": "4.23.5",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

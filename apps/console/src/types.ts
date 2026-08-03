@@ -51,6 +51,56 @@ export type OperationsOverview = {
   article_events: ArticleEvent[];
 };
 
+export type HealthComponentState = "starting" | "ready" | "degraded" | "stopping" | "failed";
+
+export type HealthComponentsReport = {
+  components: Array<{
+    canAcceptWork: boolean;
+    component: "console" | "api" | "worker" | "browser" | "mihomo" | "warp";
+    deploymentVersion: string;
+    observedAt: string;
+    reasonCode: string;
+    state: HealthComponentState;
+  }>;
+  generatedAt: string;
+};
+
+export type QueueReadinessSummary = {
+  categories: {
+    deferred: number;
+    executable: number;
+    nonExecutable: number;
+    processing: number;
+  };
+  deploymentVersion: string;
+  earliestDeferredAt: string | null;
+  freezeAt: string;
+  jobStatusCounts: Record<string, number>;
+  oldestExecutableAgeSeconds: number | null;
+};
+
+export type OperationsMetricsReport = {
+  deploymentVersion: string;
+  generatedAt: string;
+  metrics: Array<{
+    current: number;
+    key: string;
+    threshold: {
+      comparison: "gt" | "lt";
+      state: "candidate";
+      value: number;
+    } | null;
+    trend: Array<{ at: string; value: number }>;
+  }>;
+  windowHours: number;
+};
+
+export type OperationsReadiness = {
+  health: HealthComponentsReport;
+  metrics: OperationsMetricsReport;
+  queue: QueueReadinessSummary;
+};
+
 export type SyncResponse = {
   status: "ok";
   results: Record<string, unknown>;

@@ -20,6 +20,10 @@ import {
   type LegacyMigrationService,
 } from "./legacy-migration.js";
 import {
+  createOperationsReadinessServiceFromBindings,
+  type OperationsReadinessService,
+} from "./operations-readiness.js";
+import {
   createQueueInboxServiceFromBindings,
   type QueueInboxService,
 } from "./queue-inbox.js";
@@ -54,11 +58,22 @@ const replayDeadLetterSchema = z.object({
   dryRun: z.boolean(),
   idempotencyKey: z.string().min(1).max(128),
 });
+const replayPlanSchema = z.object({
+  idempotencyKey: z.string().min(1).max(128),
+  jobId: z.string().min(1).max(128),
+});
+const replayExecuteSchema = replayPlanSchema.extend({
+  confirm: z.literal(true),
+  planHash: z.string().regex(/^[a-f0-9]{64}$/),
+});
 
 interface AppOptions {
   readonly createControlPlaneService?: (bindings: ApiBindings) => ControlPlaneService;
   readonly createLegacyMigrationService?: (bindings: ApiBindings) => LegacyMigrationService;
   readonly createOperationsService?: (bindings: ApiBindings) => OperationsService;
+  readonly createOperationsReadinessService?: (
+    bindings: ApiBindings,
+  ) => OperationsReadinessService;
   readonly createQueueInboxService?: (bindings: ApiBindings) => QueueInboxService;
 }
 
@@ -66,6 +81,7 @@ export function createApp({
   createControlPlaneService = createControlPlaneServiceFromBindings,
   createLegacyMigrationService = createLegacyMigrationServiceFromBindings,
   createOperationsService = createOperationsServiceFromBindings,
+  createOperationsReadinessService = createOperationsReadinessServiceFromBindings,
   createQueueInboxService = createQueueInboxServiceFromBindings,
 }: AppOptions = {}): Hono<{ Bindings: ApiBindings }> {
   const app = new Hono<{ Bindings: ApiBindings }>();
@@ -144,6 +160,86 @@ export function createApp({
     if (limit === null) return context.json({ detail: "invalid limit" }, 422);
     const items = await createOperationsService(context.env).listArticleEvents(limit);
     return context.json({ items, status: "ok" });
+  });
+  app.get("/api/operations/queue/summary", async (context) =>
+    context.json(
+      await createOperationsReadinessService(context.env).getQueueSummary(),
+    ),
+  );
+  app.get("/api/operations/health/components", async (context) =>
+    context.json(
+      await createOperationsReadinessService(context.env).getHealthComponents(),
+    ),
+  );
+  app.get("/api/operations/metrics", async (context) => {
+    const windowHours = readWindowHours(context.req.query("windowHours"));
+    if (windowHours === null) return context.json({ detail: "invalid windowHours" }, 422);
+    return context.json(
+      await createOperationsReadinessService(context.env).getMetrics({ windowHours }),
+    );
+  });
+  app.get("/api/operations/dlq/consistency", async (context) =>
+    context.json(
+      await createOperationsReadinessService(context.env).getDlqConsistency(),
+    ),
+  );
+  app.get("/api/operations/retention/report", async (context) => {
+    const retentionDays = readRetentionDays(context.req.query("retentionDays"));
+    if (retentionDays === null) {
+      return context.json({ detail: "invalid retentionDays" }, 422);
+    }
+    return context.json(
+      await createOperationsReadinessService(context.env).getRetentionReport({
+        retentionDays,
+      }),
+    );
+  });
+  app.post("/api/operations/replays/plan", async (context) => {
+    const parsed = replayPlanSchema.safeParse(await context.req.json());
+    if (!parsed.success) return context.json({ detail: "invalid replay plan request" }, 400);
+    const validation = await createControlPlaneService(context.env).replayDeadLetter(
+      parsed.data.jobId,
+      { dryRun: true, idempotencyKey: parsed.data.idempotencyKey },
+    );
+    return context.json(
+      await createOperationsReadinessService(context.env).createReplayPlan({
+        ...parsed.data,
+        validation,
+      }),
+    );
+  });
+  app.post("/api/operations/replays/execute", async (context) => {
+    const parsed = replayExecuteSchema.safeParse(await context.req.json());
+    if (!parsed.success) {
+      return context.json({ detail: "invalid replay execute request" }, 400);
+    }
+    const controlPlane = createControlPlaneService(context.env);
+    const validation = await controlPlane.replayDeadLetter(parsed.data.jobId, {
+      dryRun: true,
+      idempotencyKey: parsed.data.idempotencyKey,
+    });
+    const currentPlan = await createOperationsReadinessService(
+      context.env,
+    ).createReplayPlan({
+      idempotencyKey: parsed.data.idempotencyKey,
+      jobId: parsed.data.jobId,
+      validation,
+    });
+    if (currentPlan.planHash !== parsed.data.planHash) {
+      return context.json({ detail: "stale_plan" }, 409);
+    }
+    if (!currentPlan.replayable) {
+      return context.json({ detail: currentPlan.reason }, 409);
+    }
+    const result = await controlPlane.replayDeadLetter(parsed.data.jobId, {
+      dryRun: false,
+      idempotencyKey: parsed.data.idempotencyKey,
+    });
+    return context.json({
+      ...result,
+      operationId: parsed.data.idempotencyKey,
+      planHash: parsed.data.planHash,
+    });
   });
 
   app.use("/sync", requireApiKey);
@@ -300,4 +396,16 @@ function readLimit(value: string | undefined): number | null {
   if (value === undefined) return 20;
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100 ? parsed : null;
+}
+
+function readRetentionDays(value: string | undefined): number | null {
+  if (value === undefined) return 30;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 365 ? parsed : null;
+}
+
+function readWindowHours(value: string | undefined): number | null {
+  if (value === undefined) return 24;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 24 * 30 ? parsed : null;
 }

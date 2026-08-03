@@ -50,7 +50,7 @@ spec:
         runAsUser: 1001
         seccompProfile:
           type: RuntimeDefault
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 60
       containers:
         - name: inbox-server-worker-staging
           image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:0d34bea391a75c734c231eadbcd72ec116d552d6f2e9d7d6e347b1bc545a1e48
@@ -69,6 +69,10 @@ spec:
               value: /app/channels.yaml
             - name: CONTROL_PLANE_URL
               value: https://inbox-api.yutianran.cn
+            - name: DEPLOYMENT_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['inbox.yutianran.cn/source-revision']
             - name: DISPLAY
               value: :99
             - name: HEALTH_PORT
@@ -106,18 +110,19 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healthz
               port: health
             failureThreshold: 3
             periodSeconds: 30
-            timeoutSeconds: 5
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
               path: /readyz
               port: health
             failureThreshold: 3
             periodSeconds: 10
-            timeoutSeconds: 5
+            timeoutSeconds: 3
           resources:
             requests:
               cpu: 200m

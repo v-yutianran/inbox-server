@@ -2,6 +2,30 @@
 
 ## 2026-08-03
 
+### feat(operations)：建立生产健康、治理与可重复发布门禁
+
+- Worker 新增五态组件健康模型、独立 browser/mihomo/WARP 探测、业务依赖延期、优雅停止和带部署版本的运行指标；Sealos 探针与终止宽限期同步收紧
+- API 新增队列互斥分类、DLQ 一致性分类、绑定 D1 状态的重放 `planHash`、六类 retention report、原生指标趋势和 fail-closed 管理认证；Console 用组件化运维面板展示健康、积压与指标
+- 新增固定 fixture 隔离 canary、纯函数容量模型和 CAC TypeScript 发布 CLI；发布 manifest 固定 Cloudflare version/deployment、D1 migration、三镜像 digest、Sealos revision 与 Secret version ref，并支持全链路 `--dry-run`、稳定窗口、失败停止和显式回滚
+- 根目录收敛为唯一 `npm run release` 发布入口，Worker Node 基础镜像固定 digest；新增生产运维手册并更新 roadmap 与 ADR 索引，旧 `docs/optimization-plan.md` 仅保留为历史 Python 审查记录
+
+**如何验证**：
+- npm workspace strict typecheck、production build 和 39 files / 184 tests passed；Console 构建敏感哨兵泄漏数为 0
+- Python ruff passed、pytest 258 passed（9 个既有 warning）、mypy 103 source files passed；未运行需要真实凭据的浏览器 E2E
+- Worker/mihomo/WARP 三镜像均按 `linux/amd64` 实际构建成功；Worker 隔离容器 `/healthz`、`/readyz` 均为 200，`worker.lifecycle.ready` 可观测且测试容器已移除
+- 6 个 D1 migration 在隔离本地库完整应用并读回 23 张表；Sealos YAML 离线契约确认北京命名空间、单副本、三 digest 镜像、Secret 引用和三类探针
+- 未连接或改写生产 D1/Sealos，未部署、回滚、重放、清理或恢复真实数据；24 小时/14 天观察窗口与生产演练仍待对应授权
+
+### docs(operations)：生成生产运行优化计划
+
+- 基于最新 TypeScript/Cloudflare/Sealos 源码、GitNexus 执行流和线上只读快照，新增生产运维就绪 OpenSpec change
+- 计划按 P0/P1/P2 覆盖健康探针、DLQ 与积压治理、隔离 canary、SLO/告警、可重复发布回滚、数据保留、容量与高可用准入
+- 明确旧 `docs/optimization-plan.md` 只描述历史 Python 代码质量问题，不作为当前云端运行优化的事实来源
+
+**如何验证**：
+- OpenSpec status 四份规划 artifact 完整，strict validate 通过
+- docs-manager audit 与 GitNexus detect changes 通过；仅文档变更，不运行自动化浏览器 E2E
+
 ### fix(ci)：恢复 npm 质量门禁
 
 - 两条 GitHub Actions 质量流水线统一使用与 `package-lock.json` 一致的 npm 工具链，移除未声明版本的 pnpm 初始化
