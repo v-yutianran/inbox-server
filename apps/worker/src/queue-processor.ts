@@ -10,11 +10,13 @@ import type {
   QueueSettlement,
 } from "./cloudflare-queue-client.js";
 import type { JobHandlerResult } from "./job-handler.js";
+import type { JobAcceptanceDecision } from "./health.js";
 import type { WorkerControlPlane } from "./worker-control-plane.js";
 
 type JsonRecord = Readonly<Record<string, unknown>>;
 
 interface ProcessQueueBatchOptions {
+  readonly accept?: (job: QueueJob) => JobAcceptanceDecision;
   readonly batch: QueueBatch;
   readonly controlPlane: WorkerControlPlane;
   readonly handle: (job: QueueJob) => Promise<JobHandlerResult>;
@@ -25,6 +27,7 @@ interface ProcessQueueBatchOptions {
 
 /** 先落 D1 终态再结算 Cloudflare lease，进程崩溃只会导致安全的幂等重放。 */
 export async function processQueueBatch({
+  accept = () => ({ action: "accept" }),
   batch,
   controlPlane,
   handle,
@@ -51,6 +54,24 @@ export async function processQueueBatch({
           reason: failure.safeMessage,
         });
         settlement.acks.push(lease.leaseId);
+        continue;
+      }
+
+      const acceptance = accept(job);
+      if (acceptance.action === "defer") {
+        settlement.retries.push({
+          delaySeconds: acceptance.retryAfterSeconds,
+          leaseId: lease.leaseId,
+        });
+        log?.("worker.job.acceptance.deferred", {
+          attempts: lease.attempts,
+          description: "运行依赖未就绪，任务领取已安全延期",
+          jobId: job.jobId,
+          kind: job.kind,
+          reasonCode: acceptance.reasonCode,
+          retryAfterSeconds: acceptance.retryAfterSeconds,
+          ...(job.kind === "collect-source" ? { source: job.payload.source } : {}),
+        });
         continue;
       }
 

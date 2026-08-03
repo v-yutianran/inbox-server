@@ -21,3 +21,7 @@
 - [0004：采用 TypeScript、Cloudflare 与 Docker Worker 混合架构](./0004-typescript-cloudflare-docker-worker.md) — console 与 API 迁入 Cloudflare，headed Playwright worker 继续以 Sealos Docker 服务运行。
 - [0005：Cloudflare Queues 先落 D1 再由 Sealos 领取](./0005-stage-cloudflare-queues-in-d1.md) — Queue consumer 先持久化 D1 租约，Sealos 不持有 Cloudflare 个人令牌。
 - [0006：使用 WARP Sidecar 提供受控出站网络](./0006-warp-egress-sidecar.md) — 官方 WARP 与本地 DoH/CONNECT 适配器为 Sealos worker 提供不依赖本机代理的出站能力。
+
+## 生产运维边界
+
+当前生产运维优化继续遵循 ADR-0004～0006，不改变混合运行时、D1 任务暂存和 WARP 出站边界。发布回滚、探针、DLQ、指标和数据保留操作见[生产运维就绪手册](../production-operations-runbook.md)；多副本或外部 APM 只有通过对应准入并获批准后，才新建独立 ADR。

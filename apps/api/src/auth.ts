@@ -4,8 +4,14 @@ import type { QueueJob } from "@inbox/domain";
 
 export interface ApiBindings {
   readonly ADMIN_API_KEY?: string;
+  readonly CF_VERSION_METADATA?: {
+    readonly id: string;
+    readonly tag: string;
+    readonly timestamp: string;
+  };
   readonly CONSOLE_ORIGINS?: string;
   readonly DB: D1Database;
+  readonly DEPLOYMENT_VERSION?: string;
   readonly JOBS: Queue<QueueJob>;
   readonly SCHEDULE_ENABLED?: string;
   readonly STATE_ENCRYPTION_KEY?: string;
@@ -21,8 +27,7 @@ export const requireApiKey: MiddlewareHandler<ApiEnvironment> = async (
 ) => {
   const configuredKey = context.env.ADMIN_API_KEY?.trim();
   if (!configuredKey) {
-    await next();
-    return;
+    return context.json({ detail: "admin authentication unavailable" }, 503);
   }
   if (context.req.header("X-API-Key") !== configuredKey) {
     return context.json({ detail: "invalid api key" }, 401);

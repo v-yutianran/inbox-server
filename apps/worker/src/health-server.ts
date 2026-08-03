@@ -20,7 +20,7 @@ export async function startHealthServer(
   const now = options.now ?? Date.now;
   const server = createServer((request, response) => {
     if (request.method !== "GET") {
-      writeJson(response, { body: { status: "starting" }, status: 503 });
+      writeJson(response, { body: { status: "method_not_allowed" }, status: 405 });
       return;
     }
     if (request.url === "/healthz") {
@@ -58,7 +58,7 @@ export async function closeHealthServer(server: Server): Promise<void> {
 
 function writeJson(
   response: ServerResponse,
-  result: ProbeResult,
+  result: ProbeResult | { readonly body: unknown; readonly status: number },
 ): void {
   response.writeHead(result.status, { "Content-Type": "application/json" });
   response.end(JSON.stringify(result.body));

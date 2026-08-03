@@ -4,18 +4,19 @@
 
 ## 架构
 
-当前按 OpenSpec 分阶段迁移，Cloudflare 预览与旧生产链路并行：
+当前生产环境采用 Cloudflare + Sealos 混合架构，不依赖本机 Docker 服务：
 
 | 服务 | 部署 | 职责 |
 |------|------|------|
 | **console** | Cloudflare Pages（`apps/console`） | Vite / React 运维控制台 |
 | **server** | Cloudflare Workers（`apps/api`） | Hono API、D1 运维快照与 Cloudflare Queues 任务发布 |
-| **worker** | Docker（`apps/worker`） | headed Chromium / Xvfb 浏览器采集与队列消费 |
-| **legacy** | Docker Compose | FastAPI / PostgreSQL / Redis 生产链路，在数据与接口迁移完成前继续运行 |
+| **worker** | Sealos StatefulSet（`apps/worker`） | headed Chromium 浏览器采集、队列消费与文章归档 |
+| **sidecars** | Sealos（`deploy/sealos`） | mihomo 转发与 WARP 受控出站 |
+| **legacy** | 保留的 Docker Compose 资产 | 只作为授权回滚窗口内的旧资产，不是当前生产依赖 |
 
-Cloudflare API 已承载 Console 使用的运维概览、同步记录、归档事件和手动同步入口；其余业务端点仍按 `openspec/changes/migrate-to-typescript-cloudflare/tasks.md` 逐项迁移。预览环境不会替代或停止旧生产服务。
+Cloudflare API 负责运维控制面、D1 状态与 Queue 发布；Sealos Worker 负责需要浏览器和持久状态的执行面。生产运维入口、健康检查、重放、保留和发布回滚流程见 [`docs/production-operations-runbook.md`](docs/production-operations-runbook.md)。
 
-## 快速启动
+## Legacy Python 本地开发
 
 ```bash
 cp .env.example .env                      # 填部署密钥 + 业务凭据
@@ -23,22 +24,18 @@ cp channels.yaml.example channels.yaml    # 启用 source/destination
 docker compose up -d                       # server 启动自动 alembic 建表
 ```
 
-## Cloudflare 预览部署
+## 发布与回滚
 
-```bash
+```zsh
 npm ci
-npm run api:deploy:dry-run
-npm run db:migrate:remote --workspace @inbox/api
-npm run api:deploy
-npm run snapshot:import --workspace @inbox/api
-npm run verify:live --workspace @inbox/api
-npm run console:deploy:preview -- --api-url https://<worker>.workers.dev --dry-run
-npm run console:deploy:preview -- --api-url https://<worker>.workers.dev
+npm run release -- plan --manifest <release-manifest.json> --action apply
+npm run release -- apply --manifest <release-manifest.json> --dry-run
+npm run release -- apply --manifest <release-manifest.json> --confirm <planHash> --evidence <new-evidence.json>
 ```
 
-Console 部署脚本只允许在干净的非 `main` 分支执行，并把当前提交与功能分支写入 Pages 预览部署元数据。首次部署前需创建 `inbox-server-console` Pages 项目；API 管理密钥通过 Wrangler Secret `ADMIN_API_KEY` 配置，不写入仓库。导入旧运维快照前需在环境中提供 `INBOX_ADMIN_API_KEY` 与独立的 `WORKER_SERVICE_TOKEN`，导入脚本会校验旧 API 响应后通过内部认证端点写入远端 D1。
+根目录不提供绕过发布计划的 API/Console 手工部署快捷命令。release manifest 必须固定源码提交、Cloudflare version/deployment、D1 migration、Sealos revision 和三容器镜像 digest；实际执行还必须取得生产部署授权并确认同一 `planHash`。API 管理密钥通过 Wrangler Secret `ADMIN_API_KEY` 配置，不写入仓库、manifest 或发布证据。
 
-预览环境的 `SCHEDULE_ENABLED` 与 `SYNC_PUBLISH_ENABLED` 默认均为 `false`。只有 Docker Worker 已接通 Queue pull consumer 并完成端到端验证后才可启用，避免 Cron 或手动同步产生无人消费的任务。
+详细的 dry-run、回滚、稳定窗口和禁止事项见[生产运维就绪手册](docs/production-operations-runbook.md)。
 
 ### 手工验收清单
 

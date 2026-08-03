@@ -5,6 +5,10 @@ import {
   type OperationsService,
 } from "./operations.js";
 import {
+  createOperationsReadinessServiceFromBindings,
+  type OperationsReadinessService,
+} from "./operations-readiness.js";
+import {
   createQueueInboxServiceFromBindings,
   type QueueInboxService,
 } from "./queue-inbox.js";
@@ -15,7 +19,11 @@ export async function publishScheduledCollection(
   bindings: ApiBindings,
   createOperationsService: (bindings: ApiBindings) => OperationsService =
     createOperationsServiceFromBindings,
+  createOperationsReadinessService: (
+    bindings: ApiBindings,
+  ) => OperationsReadinessService = createOperationsReadinessServiceFromBindings,
 ): Promise<void> {
+  await createOperationsReadinessService(bindings).captureMetrics();
   if (bindings.SCHEDULE_ENABLED !== "true") return;
   await createOperationsService(bindings).requestScheduledSync();
 }

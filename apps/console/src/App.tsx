@@ -2,9 +2,17 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@astryxdesign/core/Button";
 import { TextInput } from "@astryxdesign/core/TextInput";
 
-import { ApiError, clearApiKey, fetchOverview, readApiKey, triggerSync, writeApiKey } from "./api";
+import {
+  ApiError,
+  clearApiKey,
+  fetchOperationsReadiness,
+  fetchOverview,
+  readApiKey,
+  triggerSync,
+  writeApiKey,
+} from "./api";
 import { Dashboard } from "./components/Dashboard";
-import type { OperationsOverview } from "./types";
+import type { OperationsOverview, OperationsReadiness } from "./types";
 
 type UnlockProps = {
   error?: string | null;
@@ -72,6 +80,7 @@ export function App() {
   const [apiKey, setApiKey] = useState(readApiKey);
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [overview, setOverview] = useState<OperationsOverview | null>(null);
+  const [readiness, setReadiness] = useState<OperationsReadiness | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -81,6 +90,7 @@ export function App() {
     clearApiKey();
     setApiKey("");
     setOverview(null);
+    setReadiness(null);
     setError(null);
     setUnlockError(null);
     setNotice(null);
@@ -96,7 +106,12 @@ export function App() {
     setRefreshing(true);
     setError(null);
     try {
-      setOverview(await fetchOverview(apiKey));
+      const [nextOverview, nextReadiness] = await Promise.all([
+        fetchOverview(apiKey),
+        fetchOperationsReadiness(apiKey),
+      ]);
+      setOverview(nextOverview);
+      setReadiness(nextReadiness);
     } catch (reason: unknown) {
       if (reason instanceof ApiError && reason.status === 401) {
         rejectApiKey();
@@ -126,11 +141,12 @@ export function App() {
   }
 
   if (error) return <ErrorState message={error} onRetry={() => void loadOverview()} onLock={lock} />;
-  if (!overview) return <main><p role="status">正在加载运行状态…</p></main>;
+  if (!overview || !readiness) return <main><p role="status">正在加载运行状态…</p></main>;
 
   return (
     <Dashboard
       overview={overview}
+      readiness={readiness}
       refreshing={refreshing}
       syncing={syncing}
       notice={notice}
