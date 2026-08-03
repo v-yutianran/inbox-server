@@ -25,6 +25,7 @@ describe("production operations readiness queries", () => {
       "0004_article_retry_safety.sql",
       "0005_operations_readiness.sql",
       "0006_operations_metrics.sql",
+      "0007_operations_baselines.sql",
     ]) {
       sqlite.exec(
         readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"),
@@ -380,14 +381,110 @@ describe("production operations readiness queries", () => {
     );
   });
 
-  it("SLO 阈值状态机只在越界和恢复时产生一次通知", () => {
+  it("同一 UTC 日幂等保存 7/30/90 天 retention 样本，跨日新增一组", async () => {
+    const readiness = service();
+
+    await Promise.all([readiness.captureMetrics(), readiness.captureMetrics()]);
+    await readiness.captureMetrics();
+    expect(
+      sqlite.prepare(
+        "SELECT COUNT(*) AS count FROM operations_alert_events WHERE state = 'firing'",
+      ).get(),
+    ).toEqual({ count: 0 });
+    observedNow = new Date("2030-01-01T12:00:00.000Z");
+    await readiness.captureMetrics();
+
+    expect(
+      sqlite.prepare(
+        `SELECT COUNT(*) AS count, COUNT(DISTINCT sample_date) AS days
+         FROM operations_retention_samples`,
+      ).get(),
+    ).toEqual({ count: 18, days: 1 });
+
+    observedNow = new Date("2030-01-02T00:00:00.000Z");
+    await readiness.captureMetrics();
+
+    expect(
+      sqlite.prepare(
+        `SELECT COUNT(*) AS count, COUNT(DISTINCT sample_date) AS days
+         FROM operations_retention_samples`,
+      ).get(),
+    ).toEqual({ count: 36, days: 2 });
+  });
+
+  it("候选阈值按 pending、firing、recovered 去重审计并最终清除实例", async () => {
+    sqlite.exec(`
+      INSERT INTO worker_heartbeats (worker_id, last_seen_at, details)
+      VALUES ('worker-alert', '2029-12-31T23:50:00.000Z',
+              '{"components":{"browser":{"state":"ready"},"mihomo":{"state":"ready"},"warp":{"state":"ready"}}}');
+    `);
+    const readiness = service();
+
+    await readiness.captureMetrics();
+    expect(
+      sqlite.prepare(
+        `SELECT state FROM operations_alert_instances
+         WHERE policy_key = 'worker.heartbeat_age_seconds'`,
+      ).get(),
+    ).toEqual({ state: "pending" });
+
+    observedNow = new Date("2030-01-01T00:10:00.000Z");
+    await readiness.captureMetrics();
+    expect(
+      sqlite.prepare(
+        `SELECT state FROM operations_alert_instances
+         WHERE policy_key = 'worker.heartbeat_age_seconds'`,
+      ).get(),
+    ).toEqual({ state: "firing" });
+
+    observedNow = new Date("2030-01-01T00:20:00.000Z");
+    sqlite.exec(
+      "UPDATE worker_heartbeats SET last_seen_at = '2030-01-01T00:20:00.000Z' WHERE worker_id = 'worker-alert'",
+    );
+    await readiness.captureMetrics();
+    expect(
+      sqlite.prepare(
+        `SELECT state FROM operations_alert_instances
+         WHERE policy_key = 'worker.heartbeat_age_seconds'`,
+      ).get(),
+    ).toEqual({ state: "recovered" });
+
+    observedNow = new Date("2030-01-01T00:30:00.000Z");
+    sqlite.exec(
+      "UPDATE worker_heartbeats SET last_seen_at = '2030-01-01T00:30:00.000Z' WHERE worker_id = 'worker-alert'",
+    );
+    await readiness.captureMetrics();
+
+    expect(
+      sqlite.prepare(
+        `SELECT state FROM operations_alert_instances
+         WHERE policy_key = 'worker.heartbeat_age_seconds'`,
+      ).get(),
+    ).toBeUndefined();
+    expect(
+      sqlite.prepare(
+        `SELECT state FROM operations_alert_events
+         WHERE policy_key = 'worker.heartbeat_age_seconds' ORDER BY occurred_at`,
+      ).all(),
+    ).toEqual([{ state: "pending" }, { state: "firing" }, { state: "recovered" }]);
+  });
+
+  it("候选阈值状态机只产生脱敏状态转换，不表达外部通知", () => {
+    const pending = evaluateThreshold({
+      comparison: "gt",
+      current: 120,
+      previousState: null,
+      threshold: 90,
+    });
+    expect(pending).toEqual({ state: "pending", transition: "pending" });
+
     const firing = evaluateThreshold({
       comparison: "gt",
       current: 120,
       previousState: "pending",
       threshold: 90,
     });
-    expect(firing).toEqual({ notify: true, state: "firing" });
+    expect(firing).toEqual({ state: "firing", transition: "firing" });
     expect(
       evaluateThreshold({
         comparison: "gt",
@@ -395,7 +492,7 @@ describe("production operations readiness queries", () => {
         previousState: firing.state,
         threshold: 90,
       }),
-    ).toEqual({ notify: false, state: "firing" });
+    ).toEqual({ state: "firing", transition: null });
     expect(
       evaluateThreshold({
         comparison: "gt",
@@ -403,6 +500,22 @@ describe("production operations readiness queries", () => {
         previousState: "firing",
         threshold: 90,
       }),
-    ).toEqual({ notify: true, state: "recovered" });
+    ).toEqual({ state: "recovered", transition: "recovered" });
+    expect(
+      evaluateThreshold({
+        comparison: "gt",
+        current: 30,
+        previousState: "recovered",
+        threshold: 90,
+      }),
+    ).toEqual({ state: null, transition: null });
+    expect(
+      evaluateThreshold({
+        comparison: "gt",
+        current: 30,
+        previousState: "pending",
+        threshold: 90,
+      }),
+    ).toEqual({ state: null, transition: null });
   });
 });

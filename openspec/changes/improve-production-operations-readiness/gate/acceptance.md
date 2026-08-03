@@ -72,15 +72,15 @@
 | REQ-P0-006 | AC-005 | 安全重放 | AT-P0-005 | `replay-plan.json` | 未执行 |
 | REQ-P0-007 | AC-005 | 重放状态机、queue inbox | AT-P0-005 | `replay-audit.json` | 未执行 |
 | REQ-P0-008 | AC-006 | 隔离 canary | AT-P0-006 | `canary-report.json` | 未执行 |
-| REQ-P0-009 | AC-007 | 发布回滚 CLI、兼容回滚 | AT-P0-007 | `isolated-rollback.md` | 未执行 |
-| REQ-P1-001 | AC-003/008 | 指标、SLI/SLO | AT-P0-003、AT-P1-001 | `metrics.json`、`baseline-14d.csv` | 未执行 |
-| REQ-P1-002 | AC-008 | SLO policy | AT-P1-001 | `slo-approval.md` | 未执行 |
-| REQ-P1-003 | AC-008 | 告警状态机 | AT-P1-001 | `alert-recovery.json` | 未执行 |
-| REQ-P1-004 | AC-009 | 可观测性与安全 | AT-P1-002 | `event-trace.json` | 未执行 |
+| REQ-P0-009 | AC-007 | 发布回滚 CLI、expand-only migration 与兼容回滚 | AT-P0-007、AT-P1-003 | `isolated-rollback.md`、`migration-compatibility.json` | 未执行 |
+| REQ-P1-001 | AC-003/008 | 指标、SLI/SLO、候选告警状态 | AT-P0-003、AT-P1-001 | `metrics.json`、`baseline-14d.csv`、`alert-candidate-audit.json` | 未执行 |
+| REQ-P1-002 | AC-008 | SLO policy、14 天窗口 | AT-P1-001 | `baseline-14d.csv`、`slo-approval.md` | 未执行 |
+| REQ-P1-003 | AC-008 | 候选告警状态机、可观测性 | AT-P1-001 | `alert-candidate-audit.json`、`alert-recovery.json` | 未执行 |
+| REQ-P1-004 | AC-009 | 可观测性与安全 | AT-P1-002 | `event-trace.json`、`sensitive-scan.json` | 未执行 |
 | REQ-P1-005 | AC-010 | 发布与回滚 CLI | AT-P1-003 | `release-plan.json` | 未执行 |
 | REQ-P1-006 | AC-010 | 发布阶段与停止条件 | AT-P1-003 | `failed-gate-diff.json` | 未执行 |
 | REQ-P1-007 | AC-007 | 发布回滚 CLI | AT-P0-007 | `rto-timeline.json` | 未执行 |
-| REQ-P1-008 | AC-011 | 数据保留、备份恢复 | AT-P1-004 | `retention-14d.csv` | 未执行 |
+| REQ-P1-008 | AC-011 | 指标数据模型、数据保留与备份恢复 | AT-P1-004 | `retention-daily-samples.json`、`retention-14d.csv` | 未执行 |
 | REQ-P1-009 | AC-012 | 配置与安全边界 | AT-P1-005 | `startup-gates.json` | 未执行 |
 | REQ-P1-010 | AC-005/012 | 运维接口、权限边界 | AT-P0-005、AT-P1-005 | `rbac-audit.json` | 未执行 |
 | REQ-P2-001 | AC-013 | 容量/成本指标 | AT-P2-001 | `capacity-report.json` | 未执行 |
@@ -90,9 +90,9 @@
 | REQ-P2-005 | AC-016 | 旧资产保留 | AT-P2-004 | `legacy-assets.md` | 未执行 |
 | NFR-001 | AC-001 | 健康状态机 | AT-P0-001 | `probe-24h.csv` | 未执行 |
 | NFR-002 | AC-007/015 | 回滚、备份恢复 | AT-P0-007、AT-P2-003 | `rto-timeline.json` | 未执行 |
-| NFR-003/004 | AC-009/012 | 可观测性与安全 | AT-P1-002、AT-P1-005 | `sensitive-scan.json` | 未执行 |
+| NFR-003/004 | AC-009/012 | 可观测性与安全 | AT-P1-002、AT-P1-005 | `event-trace.json`、`sensitive-scan.json` | 未执行 |
 | NFR-005 | AC-006 | 隔离 canary | AT-P0-006 | `side-effect-audit.json` | 未执行 |
-| NFR-006 | AC-017 | 迁移与兼容回滚 | AT-P1-006 | `contract-regression.json` | 未执行 |
+| NFR-006 | AC-017 | expand-only migration 与兼容回滚 | AT-P0-007、AT-P1-003、AT-P1-006 | `migration-compatibility.json`、`contract-regression.json` | 未执行 |
 | NFR-007 | AC-013 | 容量/成本指标 | AT-P2-001 | `cost-trend.json` | 未执行 |
 
 所有证据统一放入 `evidence/acceptance/<run-id>/`；实际路径、哈希、生成命令、时间和执行人写入执行记录，未生成文件不得视为证据。
@@ -151,10 +151,10 @@
 ## P1 验收用例
 
 ### AT-P1-001 14 天 SLI/SLO 与告警恢复
-- 前置/数据：完整连续 14 天脱敏样本、已批准渠道和候选/批准 policy；零副作用越界注入器。
-- 步骤：核对 SLI，批准阈值后制造越界并恢复，检查 pending/firing/recovered 去重。
-- 预期：当前值、趋势、阈值、采集时间、版本齐全；告警/恢复各一次且敏感命中为 0。
-- 证据：14 天原始聚合、批准记录、通知回执和敏感扫描；窗口未满不得通过。
+- 前置/数据：完整连续 14 天脱敏样本、候选 policy、零副作用越界注入器；外部投递阶段另需已批准渠道、责任人和窗口。
+- 步骤：核对 SLI；依次验证无状态→pending→firing→recovered→无状态、pending 提前恢复、重复/并发评估；在渠道批准前检查通知替身调用；批准阈值与渠道后再演练一次越界及恢复投递。
+- 预期：当前值、趋势、阈值、采集时间、版本齐全；候选状态转换可重复且去重，渠道批准前外部通知调用数为 0；获批后告警/恢复各恰一次且敏感命中为 0。
+- 证据：14 天原始聚合、候选状态审计、通知替身零调用记录、批准记录、获批后通知回执和敏感扫描；窗口未满或渠道未批准时对应阶段不得通过。
 - 自动化层级：单元+集成+隔离 E2E+14 天运行时证据。
 
 ### AT-P1-002 稳定事件追踪与敏感哨兵
@@ -172,10 +172,10 @@
 - 自动化层级：单元+脚本集成+隔离 E2E；生产发布/回滚受 AUTH-004/005 限制。
 
 ### AT-P1-004 保留报告与分批清理
-- 前置/数据：连续 14 天同参数 dry-run、已批准期限、隔离数据、可恢复备份；生产清理需 AUTH-003。
-- 步骤：核对候选，隔离执行分批清理，中断后恢复，再次执行验证幂等并对账。
-- 预期：仅批准状态/期限记录被处理；可中断、无长事务；幂等、审计、重试窗口不受破坏。
-- 证据：14 天报告、批准记录、游标、批次审计、前后计数/摘要和恢复证据。
+- 前置/数据：跨 UTC 日界的合成心跳、完成任务、任务信封、DLQ、重放审计和幂等记录；清理阶段另需连续 14 天同参数 dry-run、已批准期限、可恢复备份，生产清理需 AUTH-003。
+- 步骤：每日计算 7/30/90 天样本；重复与并发触发同一日 Cron；在部分窗口写入后注入失败并重跑；核对主采集、任务状态、租约和 Queue；满足清理门禁后才在隔离数据执行分批清理、中断恢复和幂等重跑。
+- 预期：每个 UTC 日按 `(sampleDate, recordKind, windowDays)` 唯一键幂等 upsert，同键仅一行；部分失败不标记整日完成，重跑补齐且无重复；采集失败只留脱敏证据，主采集、任务状态、租约和 Queue 发布意图零变化且不触发删除；清理仅处理已批准范围并可中断对账。
+- 证据：UTC 时间边界、每日样本与唯一键查询、并发/重复触发记录、失败注入与重跑对账、任务/租约/Queue 前后摘要、14 天报告、批准记录和隔离清理审计。
 - 自动化层级：单元+集成+隔离恢复；生产清理当前未授权。
 
 ### AT-P1-005 配置快速失败与权限隔离

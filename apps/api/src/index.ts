@@ -23,7 +23,16 @@ export async function publishScheduledCollection(
     bindings: ApiBindings,
   ) => OperationsReadinessService = createOperationsReadinessServiceFromBindings,
 ): Promise<void> {
-  await createOperationsReadinessService(bindings).captureMetrics();
+  try {
+    await createOperationsReadinessService(bindings).captureMetrics();
+  } catch (error) {
+    console.error(JSON.stringify({
+      description: "生产运维样本采集失败，主收集计划继续执行",
+      errorClass: error instanceof Error ? error.name : "UnknownError",
+      event: "operations.metrics.capture_failed",
+      service: "api",
+    }));
+  }
   if (bindings.SCHEDULE_ENABLED !== "true") return;
   await createOperationsService(bindings).requestScheduledSync();
 }

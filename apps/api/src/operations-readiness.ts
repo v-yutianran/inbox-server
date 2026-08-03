@@ -19,6 +19,13 @@ type TimeSummaryRow = {
   readonly oldest_at: string | null;
   readonly total: number | string;
 };
+type CandidateAlertState = "pending" | "firing" | "recovered";
+type CandidateMetric = { readonly key: string; readonly sampleCount: number; readonly value: number };
+type AlertInstanceRow = {
+  readonly last_evaluated_at: string;
+  readonly policy_key: string;
+  readonly state: CandidateAlertState;
+};
 
 export interface QueueReadinessSummary {
   readonly categories: {
@@ -220,6 +227,18 @@ export function createD1OperationsReadinessService({
             ),
         ),
       );
+      await persistCandidateAlerts({
+        database,
+        deploymentVersion,
+        metrics,
+        observedAt: windowEnd,
+      });
+      await captureDailyRetentionSamples({
+        database,
+        deploymentVersion,
+        observedAt: current,
+        service,
+      });
       console.log(JSON.stringify({
         description: "生产运维低基数指标已聚合",
         event: "operations.metrics.captured",
@@ -598,16 +617,28 @@ async function sha256Hex(value: string): Promise<string> {
 export function evaluateThreshold(input: {
   readonly comparison: "gt" | "lt";
   readonly current: number;
-  readonly previousState: "pending" | "firing" | "recovered";
+  readonly previousState: CandidateAlertState | null;
   readonly threshold: number;
-}): { readonly notify: boolean; readonly state: "firing" | "recovered" } {
+}): {
+  readonly state: CandidateAlertState | null;
+  readonly transition: CandidateAlertState | null;
+} {
   const breached = input.comparison === "gt"
     ? input.current > input.threshold
     : input.current < input.threshold;
   if (breached) {
-    return { notify: input.previousState !== "firing", state: "firing" };
+    if (input.previousState === "firing") {
+      return { state: "firing", transition: null };
+    }
+    if (input.previousState === "pending") {
+      return { state: "firing", transition: "firing" };
+    }
+    return { state: "pending", transition: "pending" };
   }
-  return { notify: input.previousState === "firing", state: "recovered" };
+  if (input.previousState === "firing") {
+    return { state: "recovered", transition: "recovered" };
+  }
+  return { state: null, transition: null };
 }
 
 function metricCounters(
@@ -640,6 +671,176 @@ function candidateThreshold(key: string): {
   };
   const threshold = thresholds[key];
   return threshold ? { ...threshold, state: "candidate" } : null;
+}
+
+async function persistCandidateAlerts(input: {
+  readonly database: D1Database;
+  readonly deploymentVersion: string;
+  readonly metrics: readonly CandidateMetric[];
+  readonly observedAt: string;
+}): Promise<void> {
+  const existing = await input.database
+    .prepare(
+      "SELECT policy_key, state, last_evaluated_at FROM operations_alert_instances",
+    )
+    .all<AlertInstanceRow>();
+  const previousByPolicy = new Map(
+    existing.results.map((row) => [row.policy_key, row]),
+  );
+  const statements: D1PreparedStatement[] = [];
+  const transitions: Array<{
+    readonly statementIndex: number;
+    readonly policyKey: string;
+    readonly state: CandidateAlertState;
+  }> = [];
+
+  for (const metric of input.metrics) {
+    const threshold = candidateThreshold(metric.key);
+    if (!threshold || metric.sampleCount === 0) continue;
+    const previous = previousByPolicy.get(metric.key);
+    if (previous?.last_evaluated_at === input.observedAt) continue;
+    const previousState = previous?.state ?? null;
+    const decision = evaluateThreshold({
+      comparison: threshold.comparison,
+      current: metric.value,
+      previousState,
+      threshold: threshold.value,
+    });
+    if (decision.state === null) {
+      if (previousState !== null) {
+        statements.push(
+          input.database
+            .prepare("DELETE FROM operations_alert_instances WHERE policy_key = ?")
+            .bind(metric.key),
+        );
+      }
+      continue;
+    }
+    statements.push(
+      input.database
+        .prepare(
+          `INSERT INTO operations_alert_instances
+           (policy_key, comparison, threshold_value, state, observed_value,
+            first_observed_at, last_evaluated_at, last_transition_at, deployment_version)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(policy_key) DO UPDATE SET
+             comparison = excluded.comparison,
+             threshold_value = excluded.threshold_value,
+             state = excluded.state,
+             observed_value = excluded.observed_value,
+             first_observed_at = CASE
+               WHEN operations_alert_instances.state = 'recovered'
+                    AND excluded.state = 'pending' THEN excluded.first_observed_at
+               ELSE operations_alert_instances.first_observed_at
+             END,
+             last_evaluated_at = excluded.last_evaluated_at,
+             last_transition_at = CASE
+               WHEN operations_alert_instances.state <> excluded.state
+                 THEN excluded.last_transition_at
+               ELSE operations_alert_instances.last_transition_at
+             END,
+             deployment_version = excluded.deployment_version`,
+        )
+        .bind(
+          metric.key,
+          threshold.comparison,
+          threshold.value,
+          decision.state,
+          metric.value,
+          input.observedAt,
+          input.observedAt,
+          input.observedAt,
+          input.deploymentVersion,
+        ),
+    );
+    if (decision.transition !== null) {
+      statements.push(
+        input.database
+          .prepare(
+            `INSERT OR IGNORE INTO operations_alert_events
+             (event_key, policy_key, state, comparison, threshold_value,
+              observed_value, occurred_at, deployment_version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            `${metric.key}:${decision.transition}:${input.observedAt}`,
+            metric.key,
+            decision.transition,
+            threshold.comparison,
+            threshold.value,
+            metric.value,
+            input.observedAt,
+            input.deploymentVersion,
+          ),
+      );
+      transitions.push({
+        policyKey: metric.key,
+        state: decision.transition,
+        statementIndex: statements.length - 1,
+      });
+    }
+  }
+
+  const results = statements.length > 0 ? await input.database.batch(statements) : [];
+  for (const transition of transitions) {
+    if (Number(results[transition.statementIndex]?.meta?.changes ?? 0) === 0) continue;
+    console.log(JSON.stringify({
+      description: "候选告警状态已进入脱敏审计，未发送外部通知",
+      event: `operations.alert_candidate.${transition.state}`,
+      policyKey: transition.policyKey,
+      service: "api",
+      state: transition.state,
+    }));
+  }
+}
+
+async function captureDailyRetentionSamples(input: {
+  readonly database: D1Database;
+  readonly deploymentVersion: string;
+  readonly observedAt: Date;
+  readonly service: OperationsReadinessService;
+}): Promise<void> {
+  const sampleDate = input.observedAt.toISOString().slice(0, 10);
+  const reports = await Promise.all(
+    [7, 30, 90].map((retentionDays) =>
+      input.service.getRetentionReport({ retentionDays })
+    ),
+  );
+  const statements = reports.flatMap((report) =>
+    Object.entries(report.resources).map(([recordKind, resource]) =>
+      input.database
+        .prepare(
+          `INSERT INTO operations_retention_samples
+           (sample_date, record_kind, window_days, cutoff_at, candidate_count,
+            oldest_candidate_at, captured_at, deployment_version)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(sample_date, record_kind, window_days) DO UPDATE SET
+             cutoff_at = excluded.cutoff_at,
+             candidate_count = excluded.candidate_count,
+             oldest_candidate_at = excluded.oldest_candidate_at,
+             captured_at = excluded.captured_at,
+             deployment_version = excluded.deployment_version`,
+        )
+        .bind(
+          sampleDate,
+          recordKind,
+          report.retentionDays,
+          report.cutoffAt,
+          resource.candidates,
+          resource.candidates > 0 ? resource.oldestAt : null,
+          report.generatedAt,
+          input.deploymentVersion,
+        )
+    ),
+  );
+  await input.database.batch(statements);
+  console.log(JSON.stringify({
+    description: "候选保留窗口每日聚合样本已幂等保存",
+    event: "operations.retention.sampled",
+    sampleCount: statements.length,
+    sampleDate,
+    service: "api",
+  }));
 }
 
 async function latestHeartbeat(database: D1Database): Promise<{
