@@ -55,7 +55,7 @@ spec:
         runAsUser: 1001
         seccompProfile:
           type: RuntimeDefault
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 60
       containers:
         - name: ${{ defaults.app_name }}
           image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:0d34bea391a75c734c231eadbcd72ec116d552d6f2e9d7d6e347b1bc545a1e48
@@ -66,6 +66,8 @@ spec:
               drop:
                 - ALL
           env:
+            - name: DEPLOYMENT_VERSION
+              value: sha256:0d34bea391a75c734c231eadbcd72ec116d552d6f2e9d7d6e347b1bc545a1e48
             - name: DISPLAY
               value: :99
             - name: HEALTH_PORT

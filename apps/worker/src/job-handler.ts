@@ -6,6 +6,7 @@ import {
 } from "@inbox/domain";
 import type { Browser } from "playwright";
 
+import type { ArticleCorrelation } from "./article-archive.js";
 import type { Channels } from "./channels.js";
 import { readOptionalString } from "./channels.js";
 import { collectSource, type CollectionResult, type CollectorDependencies } from "./collectors.js";
@@ -39,7 +40,10 @@ export type JobHandlerResult =
   | { readonly outcome: "uncertain"; readonly reason: string };
 
 interface JobHandlerOptions {
-  readonly archive?: (item: Extract<DispatchItem, { itemKind: "article" }>) => Promise<DeliveryResult>;
+  readonly archive?: (
+    item: Extract<DispatchItem, { itemKind: "article" }>,
+    correlation: ArticleCorrelation,
+  ) => Promise<DeliveryResult>;
   readonly browser: Browser;
   readonly channels: Channels;
   readonly collect?: CollectFunction;
@@ -133,7 +137,14 @@ export function createJobHandler(
       }
       let result: DeliveryResult;
       try {
-        result = await deliver(destination, job.payload);
+        result = destination === "article_archive"
+          && job.payload.itemKind === "article"
+          && options.archive
+          ? await options.archive(job.payload, {
+              dedupeKey: job.dedupeKey,
+              jobId: job.jobId,
+            })
+          : await deliver(destination, job.payload);
       } catch {
         await options.controlPlane.finishEffect(effectKey, {
           errorClass: "permanent",
@@ -275,9 +286,6 @@ function createConfiguredDeliverer(options: JobHandlerOptions): DeliverFunction 
         item,
         fetcher,
       );
-    }
-    if (destination === "article_archive" && item.itemKind === "article" && options.archive) {
-      return options.archive(item);
     }
     throw new Error(`destination does not support item: ${destination}/${item.itemKind}`);
   };

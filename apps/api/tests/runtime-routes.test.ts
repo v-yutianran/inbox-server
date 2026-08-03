@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app";
 import type { ControlPlaneService } from "../src/control-plane";
 import type { QueueInboxService } from "../src/queue-inbox";
+import type { OperationsReadinessService } from "../src/operations-readiness";
 
 function createService(): ControlPlaneService {
   return {
@@ -68,7 +69,149 @@ function queueInbox(): QueueInboxService {
   };
 }
 
+function operationsReadiness(): OperationsReadinessService {
+  return {
+    captureMetrics: vi.fn().mockResolvedValue(undefined),
+    createReplayPlan: vi.fn().mockResolvedValue({
+      idempotencyKey: "operation-1",
+      jobId: "job-1",
+      planHash: "a".repeat(64),
+      published: false,
+      reason: "replayable",
+      replayable: true,
+      status: "validated",
+    }),
+    getDlqConsistency: vi.fn().mockResolvedValue({
+      counts: { matched: 1 },
+      deploymentVersion: "test",
+      freezeAt: "2030-01-01T00:00:00.000Z",
+      samples: { matched: ["job-1"] },
+      totals: { deadJobs: 1, deadLetters: 1 },
+      unexplainedCount: 0,
+    }),
+    getHealthComponents: vi.fn().mockResolvedValue({
+      components: [{ component: "api", state: "ready" }],
+      generatedAt: "2030-01-01T00:00:00.000Z",
+    }),
+    getMetrics: vi.fn().mockResolvedValue({
+      deploymentVersion: "test",
+      generatedAt: "2030-01-01T00:00:00.000Z",
+      metrics: [{ current: 1, key: "api.availability", threshold: null, trend: [] }],
+      windowHours: 24,
+    }),
+    getQueueSummary: vi.fn().mockResolvedValue({
+      categories: { deferred: 1, executable: 2, nonExecutable: 0, processing: 1 },
+      deploymentVersion: "test",
+      earliestDeferredAt: "2030-01-01T00:05:00.000Z",
+      freezeAt: "2030-01-01T00:00:00.000Z",
+      jobStatusCounts: {},
+      oldestExecutableAgeSeconds: 60,
+    }),
+    getRetentionReport: vi.fn().mockResolvedValue({
+      cutoffAt: "2029-12-02T00:00:00.000Z",
+      dryRun: true,
+      generatedAt: "2030-01-01T00:00:00.000Z",
+      resources: {},
+      retentionDays: 30,
+    }),
+  };
+}
+
 describe("management compatibility routes", () => {
+  it("管理重放先生成零写入计划，只执行同参数同哈希且显式确认的请求", async () => {
+    const controlPlane = createService();
+    const readiness = operationsReadiness();
+    const app = createApp({
+      createControlPlaneService: () => controlPlane,
+      createOperationsReadinessService: () => readiness,
+    });
+    const bindings = { ADMIN_API_KEY: "admin" };
+    const headers = { "Content-Type": "application/json", "X-API-Key": "admin" };
+    const payload = { idempotencyKey: "operation-1", jobId: "job-1" };
+
+    const plan = await app.request(
+      "/api/operations/replays/plan",
+      { body: JSON.stringify(payload), headers, method: "POST" },
+      bindings,
+    );
+    expect(plan.status).toBe(200);
+    expect(await plan.json()).toMatchObject({ planHash: "a".repeat(64), status: "validated" });
+    expect(controlPlane.replayDeadLetter).toHaveBeenCalledWith("job-1", {
+      dryRun: true,
+      idempotencyKey: "operation-1",
+    });
+
+    const stale = await app.request(
+      "/api/operations/replays/execute",
+      {
+        body: JSON.stringify({ ...payload, confirm: true, planHash: "b".repeat(64) }),
+        headers,
+        method: "POST",
+      },
+      bindings,
+    );
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({ detail: "stale_plan" });
+
+    vi.mocked(controlPlane.replayDeadLetter).mockResolvedValueOnce({
+      published: false,
+      reason: "replayable",
+      replayable: true,
+      status: "validated",
+    }).mockResolvedValueOnce({
+      published: true,
+      reason: "published",
+      replayable: true,
+      status: "published",
+    });
+    const executed = await app.request(
+      "/api/operations/replays/execute",
+      {
+        body: JSON.stringify({ ...payload, confirm: true, planHash: "a".repeat(64) }),
+        headers,
+        method: "POST",
+      },
+      bindings,
+    );
+    expect(executed.status).toBe(200);
+    expect(await executed.json()).toMatchObject({
+      operationId: "operation-1",
+      planHash: "a".repeat(64),
+      published: true,
+      status: "published",
+    });
+    expect(controlPlane.replayDeadLetter).toHaveBeenLastCalledWith("job-1", {
+      dryRun: false,
+      idempotencyKey: "operation-1",
+    });
+  });
+
+  it("运维就绪报告受管理 Key 保护且保持只读资源语义", async () => {
+    const readiness = operationsReadiness();
+    const app = createApp({ createOperationsReadinessService: () => readiness });
+    const bindings = { ADMIN_API_KEY: "admin" };
+
+    expect(
+      (await app.request("/api/operations/queue/summary", undefined, bindings)).status,
+    ).toBe(401);
+    const headers = { "X-API-Key": "admin" };
+    const [queue, consistency, retention, health, metrics] = await Promise.all([
+      app.request("/api/operations/queue/summary", { headers }, bindings),
+      app.request("/api/operations/dlq/consistency", { headers }, bindings),
+      app.request("/api/operations/retention/report?retentionDays=30", { headers }, bindings),
+      app.request("/api/operations/health/components", { headers }, bindings),
+      app.request("/api/operations/metrics?windowHours=24", { headers }, bindings),
+    ]);
+
+    expect(queue.status).toBe(200);
+    expect(consistency.status).toBe(200);
+    expect(await consistency.json()).toMatchObject({ unexplainedCount: 0 });
+    expect(retention.status).toBe(200);
+    expect(health.status).toBe(200);
+    expect(metrics.status).toBe(200);
+    expect(readiness.getRetentionReport).toHaveBeenCalledWith({ retentionDays: 30 });
+  });
+
   it("保持 queue、dlq、channels 与 login 的响应 shape 和鉴权", async () => {
     const service = createService();
     const app = createApp({ createControlPlaneService: () => service });

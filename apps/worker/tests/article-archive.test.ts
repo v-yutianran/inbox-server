@@ -118,11 +118,14 @@ describe("article archive", () => {
       });
 
       await expect(
-        archive({
-          itemKind: "article",
-          requestedAt: "2026-08-02T04:00:00.000Z",
-          url: "https://mp.weixin.qq.com/s/direct",
-        }),
+        archive(
+          {
+            itemKind: "article",
+            requestedAt: "2026-08-02T04:00:00.000Z",
+            url: "https://mp.weixin.qq.com/s/direct",
+          },
+          { dedupeKey: "dispatch:article:direct", jobId: "job-direct" },
+        ),
       ).resolves.toEqual({ outcome: "ok" });
 
       expect(fetcher).toHaveBeenCalledWith(
@@ -139,7 +142,11 @@ describe("article archive", () => {
       expect(repository.save).toHaveBeenCalledOnce();
       expect(log).toHaveBeenCalledWith(
         "article.extract.direct.succeeded",
-        expect.objectContaining({ description: "文章直接提取成功" }),
+        expect.objectContaining({
+          dedupeKey: "dispatch:article:direct",
+          description: "文章直接提取成功",
+          jobId: "job-direct",
+        }),
       );
       expect(log).not.toHaveBeenCalledWith(
         "article.extract.browser.succeeded",

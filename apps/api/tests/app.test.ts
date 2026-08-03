@@ -112,7 +112,7 @@ describe("health routes", () => {
 });
 
 describe("authentication middleware", () => {
-  it("未配置外部 key 时保持开发模式开放", async () => {
+  it("未配置管理 key 时失败关闭且不回显配置细节", async () => {
     const app = new Hono<{ Bindings: ApiBindings }>();
     app.get("/protected", requireApiKey, (context) => context.json({ ok: true }));
 
@@ -121,7 +121,8 @@ describe("authentication middleware", () => {
       WORKER_SERVICE_TOKEN: "worker-secret",
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ detail: "admin authentication unavailable" });
   });
 
   it("配置外部 key 后拒绝错误值并接受正确值", async () => {

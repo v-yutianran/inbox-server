@@ -10,6 +10,10 @@ const expectedTables = [
   "incremental_baselines",
   "login_sessions",
   "operations_snapshots",
+  "operations_alert_events",
+  "operations_alert_instances",
+  "operations_metric_samples",
+  "operations_retention_samples",
   "subscriptions",
   "sync_jobs",
   "telegram_offsets",
@@ -44,6 +48,18 @@ describe("D1 migrations", () => {
       new URL("../migrations/0004_article_retry_safety.sql", import.meta.url),
       "utf8",
     );
+    const readinessMigration = readFileSync(
+      new URL("../migrations/0005_operations_readiness.sql", import.meta.url),
+      "utf8",
+    );
+    const metricsMigration = readFileSync(
+      new URL("../migrations/0006_operations_metrics.sql", import.meta.url),
+      "utf8",
+    );
+    const baselinesMigration = readFileSync(
+      new URL("../migrations/0007_operations_baselines.sql", import.meta.url),
+      "utf8",
+    );
 
     database.exec(initialMigration);
     database.exec(runtimeMigration);
@@ -52,6 +68,10 @@ describe("D1 migrations", () => {
     database.exec(runtimeMigration);
     database.exec(inboxMigration);
     database.exec(retrySafetyMigration);
+    database.exec(readinessMigration);
+    database.exec(metricsMigration);
+    database.exec(baselinesMigration);
+    database.exec(baselinesMigration);
 
     const rows = database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
@@ -110,6 +130,9 @@ describe("D1 migrations", () => {
       "0002_worker_runtime.sql",
       "0003_queue_inbox.sql",
       "0004_article_retry_safety.sql",
+      "0005_operations_readiness.sql",
+      "0006_operations_metrics.sql",
+      "0007_operations_baselines.sql",
     ]) {
       database.exec(
         readFileSync(new URL(`../migrations/${migration}`, import.meta.url), "utf8"),

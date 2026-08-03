@@ -12,6 +12,8 @@ import { createControlPlaneQueueClient } from "./cloudflare-queue-client.js";
 import { parseWorkerConfig } from "./config.js";
 import {
   createWorkerHealthState,
+  decideJobAcceptance,
+  healthSnapshot,
   reduceWorkerHealthState,
   type WorkerHealthState,
 } from "./health.js";
@@ -19,6 +21,12 @@ import { abortableDelay, runHeartbeatLoop } from "./heartbeat.js";
 import { closeHealthServer, startHealthServer } from "./health-server.js";
 import { createJobHandler } from "./job-handler.js";
 import { createNotifier } from "./notifications.js";
+import {
+  createRuntimeMetrics,
+  reduceRuntimeMetrics,
+  runtimeMetricsSnapshot,
+  sanitizeLogContext,
+} from "./observability.js";
 import {
   startWarpOutboundProxy,
   type WarpOutboundProxy,
@@ -29,11 +37,25 @@ import { createWorkerControlPlane } from "./worker-control-plane.js";
 async function run(): Promise<void> {
   const config = parseWorkerConfig(process.env);
   const abortController = new AbortController();
-  const stop = () => abortController.abort();
+  let state: WorkerHealthState = createWorkerHealthState(Date.now(), {
+    mihomoRequired: Boolean(config.browserProxyUrl),
+    warpRequired: Boolean(config.warpSocksProxyUrl),
+  });
+  let runtimeMetrics = createRuntimeMetrics();
+  const workerLog = (event: string, context: Readonly<Record<string, unknown>> = {}) => {
+    runtimeMetrics = reduceRuntimeMetrics(runtimeMetrics, event);
+    log(event, context);
+  };
+  const stop = () => {
+    state = reduceWorkerHealthState(state, {
+      at: Date.now(),
+      type: "shutdown-started",
+    });
+    abortController.abort();
+  };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
-  let state: WorkerHealthState = createWorkerHealthState(Date.now());
   let browser: Browser | undefined;
   let heartbeatTask: Promise<void> | undefined;
   let healthServer: Server | undefined;
@@ -52,6 +74,15 @@ async function run(): Promise<void> {
           socksProxyUrl: config.warpSocksProxyUrl,
         })
       : undefined;
+    if (config.warpSocksProxyUrl) {
+      state = reduceWorkerHealthState(state, {
+        at: Date.now(),
+        component: "warp",
+        reasonCode: "socks_proxy_connected",
+        state: "ready",
+        type: "component-state",
+      });
+    }
     const externalFetch = outboundProxy?.fetcher ?? fetch;
     browser = await launchHeadedBrowser(
       config.display,
@@ -61,7 +92,17 @@ async function run(): Promise<void> {
       at: Date.now(),
       type: "browser-ready",
     });
-    log("worker_ready", {
+    if (config.browserProxyUrl) {
+      state = reduceWorkerHealthState(state, {
+        at: Date.now(),
+        component: "mihomo",
+        reasonCode: "browser_proxy_configured",
+        state: "ready",
+        type: "component-state",
+      });
+    }
+    workerLog("worker.lifecycle.ready", {
+      description: "Worker 运行依赖已就绪",
       display: config.display,
       browserProxyEnabled: Boolean(config.browserProxyUrl ?? outboundProxy),
       healthPort: config.healthPort,
@@ -79,12 +120,14 @@ async function run(): Promise<void> {
         controlPlane,
         details: () => ({
           backlogCount: latestBacklogCount,
-          browserReady: true,
+          deploymentVersion: process.env.DEPLOYMENT_VERSION ?? "unknown",
+          ...healthSnapshot(state),
+          metrics: runtimeMetricsSnapshot(runtimeMetrics),
           processingEnabled: true,
         }),
         intervalMs: config.heartbeatIntervalMs,
         onError: (error) => {
-          log("worker.heartbeat.failed", { error: safeErrorMessage(error) });
+          workerLog("worker.heartbeat.failed", { error: safeErrorMessage(error) });
         },
         signal: abortController.signal,
         workerId: config.workerId,
@@ -103,7 +146,7 @@ async function run(): Promise<void> {
             channels,
             fetcher: externalFetch,
             getCredential: (name) => controlPlane.getCredential(name),
-            log,
+            log: workerLog,
             recordEvent: (event) => controlPlane.recordArticleEvent(event),
             repository: new GitArticleRepository({
               articlesDir: channels.article_archive.articles_dir,
@@ -132,10 +175,11 @@ async function run(): Promise<void> {
           const batch = await queue.pull();
           latestBacklogCount = batch.backlogCount;
           await processQueueBatch({
+            accept: (job) => decideJobAcceptance(state, job),
             batch,
             controlPlane,
             handle,
-            log,
+            log: workerLog,
             onProgress: () => {
               state = reduceWorkerHealthState(state, {
                 at: Date.now(),
@@ -156,7 +200,7 @@ async function run(): Promise<void> {
             at: Date.now(),
             type: "loop-error",
           });
-          log("worker_loop_error", {
+          workerLog("worker.loop.failed", {
             error: safeErrorMessage(error),
           });
           await abortableDelay(config.queuePollIntervalMs, abortController.signal);
@@ -164,18 +208,14 @@ async function run(): Promise<void> {
       }
     }
   } finally {
-    abortController.abort();
+    stop();
     await heartbeatTask;
-    state = reduceWorkerHealthState(state, {
-      at: Date.now(),
-      type: "shutdown-started",
-    });
     await browser?.close();
     await outboundProxy?.close();
     if (healthServer) await closeHealthServer(healthServer);
     process.off("SIGINT", stop);
     process.off("SIGTERM", stop);
-    log("worker_stopped");
+    workerLog("worker.lifecycle.stopped", { description: "Worker 已完成优雅退出" });
   }
 }
 
@@ -199,14 +239,18 @@ function waitForAbort(signal: AbortSignal): Promise<void> {
 }
 
 function log(event: string, context: Readonly<Record<string, unknown>> = {}): void {
-  console.log(JSON.stringify({ ...context, event, timestamp: new Date().toISOString() }));
+  console.log(JSON.stringify({
+    ...sanitizeLogContext(context),
+    event,
+    timestamp: new Date().toISOString(),
+  }));
 }
 
 run().catch((error: unknown) => {
   console.error(
     JSON.stringify({
       error: error instanceof Error ? error.message : "unknown error",
-      event: "worker_failed",
+      event: "worker.lifecycle.failed",
       timestamp: new Date().toISOString(),
     }),
   );

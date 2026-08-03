@@ -51,6 +51,11 @@ export interface ArticleRepository {
   }): Promise<{ readonly created: boolean; readonly filename: string }>;
 }
 
+export interface ArticleCorrelation {
+  readonly dedupeKey: string;
+  readonly jobId: string;
+}
+
 interface ArticleAssessment {
   readonly reason: "error_marker" | "missing_title" | "short_content" | null;
   readonly valid: boolean;
@@ -130,10 +135,14 @@ export function createArticleArchiver(options: {
   }) => Promise<void>;
   readonly repository: ArticleRepository;
   readonly templatePath: string;
-}): (item: Extract<DispatchItem, { itemKind: "article" }>) => Promise<DeliveryResult> {
+}): (
+  item: Extract<DispatchItem, { itemKind: "article" }>,
+  correlation?: ArticleCorrelation,
+) => Promise<DeliveryResult> {
   const fetcher = options.fetcher ?? fetch;
   const now = options.now ?? (() => new Date());
-  return async (item) => {
+  return async (item, correlation) => {
+    const correlated = correlation ?? {};
     const fingerprint = await urlFingerprint(item.url);
     let usedBrowser = false;
     let article: ExtractedArticle;
@@ -174,6 +183,7 @@ export function createArticleArchiver(options: {
           );
         } catch (error: unknown) {
           options.log?.("article.extract.direct.rejected", {
+            ...correlated,
             description: "文章直接提取失败，准备使用浏览器渲染",
             reason: safeErrorCode(error),
             urlFingerprint: fingerprint,
@@ -182,6 +192,7 @@ export function createArticleArchiver(options: {
         if (directArticle && directAssessment?.valid) {
           article = directArticle;
           options.log?.("article.extract.direct.succeeded", {
+            ...correlated,
             description: "文章直接提取成功",
             urlFingerprint: fingerprint,
             visibleCharacters: directAssessment.visibleCharacters,
@@ -190,6 +201,7 @@ export function createArticleArchiver(options: {
           usedBrowser = true;
           if (directAssessment) {
             options.log?.("article.extract.direct.rejected", {
+              ...correlated,
               description: "文章直接提取未通过正文验收，准备使用浏览器渲染",
               reason: directAssessment.reason,
               urlFingerprint: fingerprint,
@@ -212,6 +224,7 @@ export function createArticleArchiver(options: {
         : assessArticle(article, options.channels.article_archive.min_visible_characters);
       if (assessment && !assessment.valid) {
         options.log?.("article.extract.failed", {
+          ...correlated,
           description: "浏览器渲染后的文章仍未通过正文验收",
           reason: assessment.reason,
           urlFingerprint: fingerprint,
@@ -229,6 +242,7 @@ export function createArticleArchiver(options: {
       }
       if (assessment && usedBrowser) {
         options.log?.("article.extract.browser.succeeded", {
+          ...correlated,
           description: "浏览器渲染后的文章提取成功",
           urlFingerprint: fingerprint,
           visibleCharacters: assessment.visibleCharacters,
@@ -264,6 +278,7 @@ export function createArticleArchiver(options: {
       return { outcome: "ok" };
     } catch (error: unknown) {
       options.log?.("article.archive.failed", {
+        ...correlated,
         description: "文章归档失败",
         errorCode: safeErrorCode(error),
         urlFingerprint: fingerprint,
