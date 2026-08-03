@@ -2,6 +2,16 @@
 
 ## 2026-08-03
 
+### docs(operations)：生成生产运行优化计划
+
+- 基于最新 TypeScript/Cloudflare/Sealos 源码、GitNexus 执行流和线上只读快照，新增生产运维就绪 OpenSpec change
+- 计划按 P0/P1/P2 覆盖健康探针、DLQ 与积压治理、隔离 canary、SLO/告警、可重复发布回滚、数据保留、容量与高可用准入
+- 明确旧 `docs/optimization-plan.md` 只描述历史 Python 代码质量问题，不作为当前云端运行优化的事实来源
+
+**如何验证**：
+- OpenSpec status 四份规划 artifact 完整，strict validate 通过
+- docs-manager audit 与 GitNexus detect changes 通过；仅文档变更，不运行自动化浏览器 E2E
+
 ### fix(ci)：恢复 npm 质量门禁
 
 - 两条 GitHub Actions 质量流水线统一使用与 `package-lock.json` 一致的 npm 工具链，移除未声明版本的 pnpm 初始化
