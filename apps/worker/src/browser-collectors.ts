@@ -219,7 +219,8 @@ async function collectInoreader(
   try {
     await page.goto("https://www.inoreader.com/starred", browserNavigationOptions("inoreader"));
     await waitForDocumentBody(page);
-    if (/\/(login|signin)/.test(page.url())) throw new Error("inoreader login expired");
+    if (isInoreaderLoginUrl(page.url())) throw new Error("inoreader login expired");
+    await waitForInoreaderContent(page);
     const items = await scrollExtract(
       page,
       extractInoreader,
@@ -444,4 +445,22 @@ function required(config: Readonly<Record<string, unknown>>, key: string, source
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const INOREADER_READY_SELECTOR = [
+  ':is(div.ar.article, div.ar, div.article, [role="article"], article):is([id^="article_"], [data-article-id])',
+  ':is(a.article_title_link, a.article_title, .article_title a, a[data-article-id], h2 a, h3 a, a.title)[href]',
+].join(" ");
+
+async function waitForInoreaderContent(page: Page): Promise<void> {
+  try {
+    await page.waitForSelector(INOREADER_READY_SELECTOR, { timeout: 60_000 });
+  } catch {
+    if (isInoreaderLoginUrl(page.url())) throw new Error("inoreader login expired");
+    throw new Error("inoreader content not ready: timeout");
+  }
+}
+
+function isInoreaderLoginUrl(url: string): boolean {
+  return /\/(login|signin)/.test(url);
 }
