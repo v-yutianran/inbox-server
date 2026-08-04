@@ -21,7 +21,7 @@ describe("notifications", () => {
   it("生成不含凭据的收集摘要", () => {
     expect(
       formatCollectionNotification({ collected: 3, published: 2, source: "telegram" }),
-    ).toBe("[收件箱同步] telegram：收集 3 条，发布 2 条");
+    ).toBe("[收件箱同步] telegram：收集 3 条，已入队 2 条");
   });
 
   it("并行调用 Telegram 与 SMTP，任一失败均不阻塞主流程", async () => {
@@ -39,13 +39,13 @@ describe("notifications", () => {
       expect.objectContaining({
         body: JSON.stringify({
           chat_id: "12345",
-          text: "[收件箱同步] telegram：收集 3 条，发布 2 条",
+          text: "[收件箱同步] telegram：收集 3 条，已入队 2 条",
         }),
       }),
     );
     expect(sendMail).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: "[收件箱同步] telegram：收集 3 条，发布 2 条",
+        body: "[收件箱同步] telegram：收集 3 条，已入队 2 条",
         host: "smtp.example.com",
         password: "smtp-pass",
         port: 465,

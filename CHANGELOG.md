@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 2026-08-04
+
+### fix(worker)：修复 Inoreader 虚拟列表分页与通知语义
+
+- Inoreader 滚动采集改为按稳定 article key 跨轮次累积去重；可见数量保持 30 但条目已切换时不再提前结束，并保留无新 key 停止与 20 轮硬上限
+- 通用 `scrollExtract` 仅在显式提供稳定 key 时启用新策略，YouTube 与 X 继续沿用原数量稳定行为
+- 收集通知把 dispatch job 数量从“发布”改为“已入队”，避免误报 Cubox 或文章归档已完成；继续复用 `worker.job.succeeded` 的低敏感 summary 观察单次采集结果
+
+**如何验证**：
+- `npm run test --workspace @inbox/worker -- tests/browser-navigation.test.ts tests/notifications.test.ts`（18 tests）
+- `npm run test --workspace @inbox/worker -- tests/job-handler.test.ts`（9 tests）
+- `npm run test --workspace @inbox/worker`（20 files / 95 tests）
+- `npm test`（41 files / 214 tests）与 `npm run build`（全 workspace typecheck + production build）
+- 未运行自动化浏览器 E2E，未连接真实 Inoreader、生产 baseline 或外部目标，也未部署 Cloudflare/Sealos
+
 ## 2026-08-03
 
 ### feat(operations)：完成三类持久状态隔离恢复演练

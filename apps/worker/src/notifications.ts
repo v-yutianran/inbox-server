@@ -29,7 +29,7 @@ type SendMail = (options: SmtpMailOptions) => Promise<void>;
 type Warn = (event: string, message: string) => void;
 
 export function formatCollectionNotification(summary: CollectionNotification): string {
-  return `[收件箱同步] ${summary.source}：收集 ${summary.collected} 条，发布 ${summary.published} 条`;
+  return `[收件箱同步] ${summary.source}：收集 ${summary.collected} 条，已入队 ${summary.published} 条`;
 }
 
 export function createNotifier(options: {

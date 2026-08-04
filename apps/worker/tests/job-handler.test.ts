@@ -327,6 +327,32 @@ describe("job handler", () => {
     });
   });
 
+  it("生产 collect 没有新内容时不通知", async () => {
+    const cp = controlPlane();
+    const notify = vi.fn().mockResolvedValue(undefined);
+    const handle = createJobHandler({
+      browser: {} as Browser,
+      channels,
+      collect: vi.fn().mockResolvedValue({
+        items: [],
+        meta: { collected: 0 },
+        source: "github_stars",
+        stateUpdates: [],
+      } satisfies CollectionResult),
+      controlPlane: cp,
+      deliver: vi.fn(),
+      notify,
+      stagingDir: "/tmp/inbox",
+    });
+
+    await handle(collectJob(false));
+
+    expect(notify).not.toHaveBeenCalled();
+    expect(cp.claimEffect).not.toHaveBeenCalledWith(
+      expect.objectContaining({ destination: "notification" }),
+    );
+  });
+
   it("effect 已完成时不重复调用外部 destination", async () => {
     const cp = controlPlane();
     vi.mocked(cp.claimEffect).mockResolvedValue({ state: "done" });
