@@ -8,10 +8,10 @@
 | 版本/提交 | 文档基线为分支 `docs/production-operations-readiness-plan`；实现验收开始时必须冻结并记录实际提交、Cloudflare version、镜像 digest 与 Sealos revision |
 | 环境 | 本地自动化、隔离集成环境、隔离恢复环境；生产环境默认只读 |
 | 日期 | 2026-08-03 |
-| 状态 | 验收设计已完成；实现与验收尚未执行 |
+| 状态 | 验收设计已更新；TC-001、TC-002 隔离子范围已通过 |
 | 责任人 | 实现：开发人员；执行：独立验收人员；线上动作：获授权运维/发布人员 |
-| 需求基线 | `requirements.md` 1.1 |
-| 设计基线 | `technical-design.md` 1.1 |
+| 需求基线 | `requirements.md` 1.2 |
+| 设计基线 | `technical-design.md` 1.2 |
 | 关联资料 | `../specs/production-operations-readiness/spec.md`、`../tasks.md`、`../proposal.md`、`../design.md` |
 
 ## 验收范围与排除项
@@ -88,17 +88,20 @@
 | REQ-P2-002 | AC-013 | 单副本决定 | AT-P2-001 | `capacity-alert.json` | 未执行 |
 | REQ-P2-003 | AC-014 | 关键决定与权衡 | AT-P2-002 | `replica-admission.md` | 未执行 |
 | REQ-P2-004 | AC-015 | 数据保留、备份恢复 | AT-P2-003 | `restore-reconcile.json` | 未执行 |
+| REQ-019 | AC-018 | DES-019 固定合成快照与零生产可达恢复执行器 | AT-SR-001～AT-SR-006 | `state-restore-rehearsal.json` | 通过 |
 | REQ-P2-005 | AC-016 | 旧资产保留 | AT-P2-004 | `legacy-assets.md` | 未执行 |
 | NFR-001 | AC-001 | 健康状态机 | AT-P0-001 | `probe-24h.csv` | 未执行 |
-| NFR-002 | AC-007/015 | 回滚、备份恢复 | AT-P0-007、AT-P2-003 | `rto-timeline.json` | 未执行 |
-| NFR-003/004 | AC-009/012 | 可观测性与安全 | AT-P1-002、AT-P1-005 | `event-trace.json`、`sensitive-scan.json` | 未执行 |
-| NFR-005 | AC-006 | 隔离 canary | AT-P0-006 | `side-effect-audit.json` | 未执行 |
+| NFR-002 | AC-007/015/018 | 回滚、备份恢复、DES-019 隔离状态恢复 | AT-P0-007、AT-P2-003、AT-SR-003～AT-SR-006 | `rto-timeline.json`、`state-restore-rehearsal.json` | 部分通过；生产 RPO 未执行 |
+| NFR-003/004 | AC-009/012/018 | 可观测性与安全、DES-019 脱敏证据 | AT-P1-002、AT-P1-005、AT-SR-005 | `event-trace.json`、`sensitive-scan.json` | 部分通过；TC-002 脱敏证据通过 |
+| NFR-005 | AC-006/018 | 隔离 canary、DES-019 零生产可达恢复 | AT-P0-006、AT-SR-001～AT-SR-006 | `side-effect-audit.json`、`state-restore-rehearsal.json` | 部分通过；TC-002 零生产可达通过 |
 | NFR-006 | AC-017 | expand-only migration 与兼容回滚 | AT-P0-007、AT-P1-003、AT-P1-006 | `migration-compatibility.json`、`contract-regression.json` | 未执行 |
 | NFR-007 | AC-013 | 容量/成本指标 | AT-P2-001 | `cost-trend.json` | 未执行 |
 
 所有证据统一放入 `evidence/acceptance/<run-id>/`；实际路径、哈希、生成命令、时间和执行人写入执行记录，未生成文件不得视为证据。
 
 `TC-001` 是 REQ-018→DES-018→AC-007→AT-RB-001～AT-RB-006 的稳定追踪 ID，实际执行记录必须使用该 ID 关联计划、事件和证据。
+
+`TC-002` 是 REQ-019→DES-019→AC-018→AT-SR-001～AT-SR-006 的稳定追踪 ID。它只判定合成隔离恢复、RTO、候选 RPO 和零副作用，不替代 AT-P2-003 对获批准生产 RPO 与真实平台备份能力的最终判定。
 
 ## P0 验收用例
 
@@ -229,6 +232,17 @@
 - 证据：快照标识、恢复时间线、版本/schema、对账与扫描结果。
 - 自动化层级：隔离恢复演练；RPO 未批准时只能未验证，生产恢复需单独授权。
 
+### 隔离状态恢复演练用例
+
+| 用例 ID | 优先级 | 前置/数据 | 步骤 | 预期结果 | 证据 | 当前结果 |
+| --- | --- | --- | --- | --- | --- | --- |
+| AT-SR-001 manifest 与 dry-run | P0 | 固定三类合成快照、严格 manifest | 重复生成计划并执行 dry-run | `planHash` 稳定；文件读取、目录创建、写入和外部命令均为 0；额外字段、任意路径、URL 或命令被拒绝 | `state-restore-rehearsal.json` | 通过 |
+| AT-SR-002 快照完整性 fail-closed | P0 | Worker、浏览器、WARP 固定快照及摘要 | 分别注入摘要错误、路径越界、符号链接、重复或未允许文件 | 在创建恢复目录前失败；失败事件脱敏；生产资源变更为 0 | `state-restore-rehearsal.json` | 通过 |
+| AT-SR-003 三类恢复与启动门禁 | P0 | 摘要匹配的三类合成快照 | 恢复到唯一临时目录并重新读取 schema、状态类别、稳定标识和记录数 | 三类状态均通过合成启动门禁；写入权限为 `0600`；不启动真实 Worker、Chromium 或 WARP | `state-restore-rehearsal.json` | 通过 |
+| AT-SR-004 RTO 与候选 RPO | P0 | `capturedAt` 距恢复开始不超过 24 小时，生产 RPO 未批准 | 测量恢复开始到启动门禁完成的 RTO，并计算候选 RPO | RTO ≤15 分钟、候选窗口 ≤24 小时；证据 `rpoStatus=unapproved`，不得出现生产 RPO 已达成结论 | `state-restore-rehearsal.json` | 通过 |
+| AT-SR-005 对账、敏感与副作用 | P0 | 已恢复三类状态 | 比较源/目标摘要、schema、文件数、稳定标识与记录数并扫描证据 | 所有对账一致；敏感命中、网络调用、外部命令、生产资源变更均为 0 | `state-restore-rehearsal.json`、`sensitive-scan.json` | 通过 |
+| AT-SR-006 成功与失败清理 | P0 | 成功路径及启动门禁失败注入 | 分别执行并在结束后读回临时目录 | 两条路径临时目录残留均为 0；记录 `cleanup_completed` 或脱敏失败结果 | `state-restore-rehearsal.json` | 通过 |
+
 ### AT-P2-004 旧资产零删除
 - 前置/数据：旧 Python、Docker 数据和部署资产精确清单、回滚窗口与备份状态。
 - 步骤：只读核对清单和删除授权，生成保留/移除建议，不执行删除。
@@ -238,8 +252,9 @@
 
 ## 执行记录、未执行项与残余风险
 
-- 本文仍以验收设计为主；仅 `TC-001` 对应的 AT-RB-001～AT-RB-006 已有执行事实，其余用例仍为“未执行”。
+- 本文仍以验收设计为主；`TC-001` 对应的 AT-RB-001～AT-RB-006 与 `TC-002` 对应的 AT-SR-001～AT-SR-006 已有执行事实，其余用例仍为“未执行”。
 - `TC-001` 已于 2026-08-03 使用最终 run `rb-20260803-183521` 执行：`planHash=d637b23df6a2771d5fd6443151b081f8517cb46f32047dd31ed84228a40aa58f`，RTO 39.788 秒，7 个 D1 migration 兼容校验通过，容器/网络/卷/临时文件残留均为 0，证据为 `evidence/acceptance/rb-20260803-183521/rollback-rehearsal.json`。
+- `TC-002` 已于 2026-08-03 使用最终 run `sr-20260803-124424` 执行：`planHash=0ea2f9c023bf262c6828836b8e4832287dd1feaf18d855ae8c5c46ca7fb13dfd`，RTO 4 毫秒，候选 RPO 35.751 秒，三类状态摘要/模式/记录数对账通过，外部调用、命令、生产变更、敏感命中和临时目录残留均为 0；生产 RPO 明确保留 `unapproved`。证据为 `evidence/acceptance/sr-20260803-124424/state-restore-rehearsal.json` 与同目录 `sensitive-scan.json`，主证据 SHA-256 为 `65aab965b728b9180632ea19330b0ca5fa566fbb4382a2969abb470ac8c9d54e`。
 - 24 小时探针窗口、14 天 SLI/SLO 基线、14 天 retention dry-run 均未在本文中宣告完成。
 - 告警渠道/责任人、最终 SLO、保留期、生产 RPO 和多副本路线只阻塞对应最终判定，不阻塞实现。
 - 单副本仍有可用性上限；在容量、备份恢复和多副本 ADR 完成前保持已知残余风险。
@@ -247,9 +262,9 @@
 
 ## 覆盖统计
 
-- 需求覆盖：REQ-P0 9/9、REQ-P1 10/10、REQ-P2 5/5、NFR 7/7 均映射设计章节、AC、用例和计划证据。
-- 验收标准覆盖：AC-001～AC-017 共 17/17；用例 23 个，其中 P0 12、P1 7、P2 4。
-- 已执行通过：6；未执行：17；敏感信息允许命中：0；真实外部副作用允许次数：0。
+- 需求覆盖：REQ-P0 9/9、REQ-P1 10/10、REQ-P2 5/5、REQ-018/019 2/2、NFR 7/7 均映射设计章节、AC、用例和计划证据。
+- 验收标准覆盖：AC-001～AC-018 共 18/18；用例 29 个，其中 P0 12、P1 7、P2 10。
+- 已执行通过：12；未执行：17；敏感信息允许命中：0；真实外部副作用允许次数：0。
 
 ## 阻塞项
 
@@ -258,4 +273,4 @@
 
 ## 验收结论
 
-**验收设计门禁通过，TC-001 隔离回滚子范围通过；整体验收执行结论仍为阻塞。** 其余阻塞来自未授权生产动作、尚未实现项及观察窗未完成，不得将 TC-001 结论外推到其他用例。
+**验收设计门禁通过，TC-001 隔离回滚与 TC-002 隔离状态恢复子范围通过；整体验收执行结论仍为阻塞。** 其余阻塞来自未授权生产动作、尚未实现项及观察窗未完成，不得将两个隔离结论外推到生产 RPO 或其他用例。

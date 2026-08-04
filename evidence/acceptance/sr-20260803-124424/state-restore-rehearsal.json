@@ -1,0 +1,108 @@
+{
+  "candidateRpo": {
+    "observedMilliseconds": 35751,
+    "productionStatus": "unapproved",
+    "status": "candidate_verified",
+    "targetMilliseconds": 86400000,
+    "withinCandidate": true
+  },
+  "counters": {
+    "commandsExecuted": 0,
+    "externalCalls": 0,
+    "productionMutations": 0,
+    "sensitiveMatches": 0
+  },
+  "dryRun": false,
+  "event": "operations.state_restore_rehearsal.completed",
+  "planHash": "0ea2f9c023bf262c6828836b8e4832287dd1feaf18d855ae8c5c46ca7fb13dfd",
+  "residuals": {
+    "tempDirs": 0
+  },
+  "restoreName": "inbox-state-restore-sr-20260803-124424",
+  "rpoStatus": "unapproved",
+  "rtoMilliseconds": 4,
+  "runId": "sr-20260803-124424",
+  "states": [
+    {
+      "fileCount": 1,
+      "mode": "0600",
+      "reconciled": true,
+      "recordCount": 1,
+      "restoredSha256": "4872b945300374fea49f5120b9980b837e9966523429ae692c42b63265d3e44e",
+      "schemaVersion": 1,
+      "sourceSha256": "4872b945300374fea49f5120b9980b837e9966523429ae692c42b63265d3e44e",
+      "stableId": "synthetic-worker-v1",
+      "stateKind": "worker"
+    },
+    {
+      "fileCount": 1,
+      "mode": "0600",
+      "reconciled": true,
+      "recordCount": 1,
+      "restoredSha256": "16381ae257820e3717905f166d48ae7f9991f127e6a394652886a326521810dd",
+      "schemaVersion": 1,
+      "sourceSha256": "16381ae257820e3717905f166d48ae7f9991f127e6a394652886a326521810dd",
+      "stableId": "synthetic-browser-v1",
+      "stateKind": "browser"
+    },
+    {
+      "fileCount": 1,
+      "mode": "0600",
+      "reconciled": true,
+      "recordCount": 1,
+      "restoredSha256": "19829e2f33fa6682ce52557270d7951bcbe7ca29138542c41f14c2e79f6b81ea",
+      "schemaVersion": 1,
+      "sourceSha256": "19829e2f33fa6682ce52557270d7951bcbe7ca29138542c41f14c2e79f6b81ea",
+      "stableId": "synthetic-warp-v1",
+      "stateKind": "warp"
+    }
+  ],
+  "steps": [
+    {
+      "description": "在创建恢复目录前验证固定快照、摘要与候选 RPO",
+      "event": "operations.state_restore_rehearsal.step_completed",
+      "finishedAt": "2026-08-03T12:44:59.751Z",
+      "id": "snapshot-preflight",
+      "resultSummary": "three fixed snapshots verified",
+      "startedAt": "2026-08-03T12:44:59.749Z",
+      "status": "succeeded"
+    },
+    {
+      "description": "把三类合成状态恢复到唯一临时目录并设置 0600 权限",
+      "event": "operations.state_restore_rehearsal.step_completed",
+      "finishedAt": "2026-08-03T12:44:59.754Z",
+      "id": "restore",
+      "resultSummary": "three synthetic states restored",
+      "startedAt": "2026-08-03T12:44:59.751Z",
+      "status": "succeeded"
+    },
+    {
+      "description": "重新读取三类状态并执行不启动真实进程的合成启动门禁",
+      "event": "operations.state_restore_rehearsal.step_completed",
+      "finishedAt": "2026-08-03T12:44:59.755Z",
+      "id": "startup-gate",
+      "resultSummary": "synthetic startup gate passed",
+      "startedAt": "2026-08-03T12:44:59.754Z",
+      "status": "succeeded"
+    },
+    {
+      "description": "对账摘要、schema、稳定标识、文件数和记录数",
+      "event": "operations.state_restore_rehearsal.step_completed",
+      "finishedAt": "2026-08-03T12:44:59.755Z",
+      "id": "reconciliation",
+      "resultSummary": "all state identities reconciled",
+      "startedAt": "2026-08-03T12:44:59.755Z",
+      "status": "succeeded"
+    },
+    {
+      "description": "无论成功或失败都清理临时恢复目录",
+      "event": "operations.state_restore_rehearsal.cleanup_completed",
+      "finishedAt": "2026-08-03T12:44:59.757Z",
+      "id": "cleanup",
+      "resultSummary": "temporary restore directory removed",
+      "startedAt": "2026-08-03T12:44:59.755Z",
+      "status": "succeeded"
+    }
+  ],
+  "traceId": "TC-002"
+}

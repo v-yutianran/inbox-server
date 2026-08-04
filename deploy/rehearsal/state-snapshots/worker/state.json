@@ -1,0 +1,11 @@
+{
+  "records": [
+    {
+      "key": "synthetic-job",
+      "status": "ready"
+    }
+  ],
+  "schemaVersion": 1,
+  "stableId": "synthetic-worker-v1",
+  "stateKind": "worker"
+}

@@ -21,6 +21,16 @@ import {
   type ReleaseAction,
   type ReleasePlan,
 } from "./release-plan.js";
+import {
+  executeStateRestoreRehearsal,
+  StateRestoreRehearsalError,
+  writeStateRestoreEvidence,
+} from "./state-restore-executor.js";
+import {
+  buildStateRestorePlan,
+  parseStateRestoreManifest,
+  type StateRestorePlan,
+} from "./state-restore-plan.js";
 
 interface CommonOptions {
   readonly compensate?: boolean;
@@ -96,6 +106,30 @@ cli
     }
   });
 
+cli
+  .command("rehearse-state-restore", "在零生产可达环境演练恢复 Worker、浏览器与 WARP 状态")
+  .option("--manifest <path>", "隔离状态恢复 manifest JSON 路径")
+  .option("--dry-run", "只输出同参数计划，禁止读取或写入文件")
+  .option("--confirm <planHash>", "实际演练时确认同一 planHash")
+  .option("--evidence <path>", "实际演练后写入脱敏证据 JSON")
+  .action(async (options: CommonOptions) => {
+    const plan = await loadStateRestorePlan(requiredManifest(options.manifest));
+    try {
+      const result = await executeStateRestoreRehearsal(plan, {
+        ...(options.confirm ? { confirm: options.confirm } : {}),
+        dryRun: options.dryRun === true,
+        repositoryRoot,
+      });
+      print(result);
+      if (options.evidence && !options.dryRun) {
+        await writeStateRestoreEvidence(repositoryPath(options.evidence), result);
+      }
+    } catch (error: unknown) {
+      if (error instanceof StateRestoreRehearsalError) print(error.evidence);
+      throw error;
+    }
+  });
+
 cli.help();
 
 try {
@@ -114,6 +148,11 @@ async function loadPlan(actionName: ReleaseAction, path: string): Promise<Releas
 async function loadLegacyRehearsalPlan(path: string): Promise<LegacyRehearsalPlan> {
   const raw = JSON.parse(await readFile(path, "utf8")) as unknown;
   return buildLegacyRehearsalPlan(parseLegacyRehearsalManifest(raw));
+}
+
+async function loadStateRestorePlan(path: string): Promise<StateRestorePlan> {
+  const raw = JSON.parse(await readFile(path, "utf8")) as unknown;
+  return buildStateRestorePlan(parseStateRestoreManifest(raw));
 }
 
 function action(value: string): ReleaseAction {
