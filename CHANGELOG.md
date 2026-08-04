@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2026-08-05
+
+### fix(worker)：等待 Inoreader SPA article 就绪后再采集
+
+- 修复 Inoreader 在 `document.body` 已出现但 article 尚未渲染时提前返回零新增的问题；仅在 Inoreader 登录检查后等待带稳定 key 和标题链接的可提取 article，不修改共享滚动或其它来源
+- 内容等待沿用 60 秒预算且不增加固定 sleep；超时后重新检查登录 URL，分别报告登录失效或可重试的内容未就绪错误
+- 未就绪失败发生在采集结果生成前，不更新 `baseline:inoreader`、不创建 dispatch job、不写登录 session，也不发送同步通知
+
+**如何验证**：
+- RED：`npm run test --workspace @inbox/worker -- inoreader-readiness.test.ts`（3 个目标用例全部按预期失败：延迟 article 返回 0，两个失败场景被误报成功）
+- GREEN：`npm run test --workspace @inbox/worker -- inoreader-readiness.test.ts browser-navigation.test.ts`（2 files / 20 tests）
+- `npm run test --workspace @inbox/worker`（21 files / 99 tests），Worker typecheck 与 build 通过
+- `npm test`（42 files / 218 tests），全 workspace typecheck 与 production build 通过
+- Python 兼容门禁：ruff 通过，pytest 258 passed（9 个既有 warning），mypy 103 source files 通过
+- 未运行自动化浏览器 E2E，未连接真实 Inoreader 或生产 baseline，未部署 Cloudflare/Sealos
+
 ## 2026-08-04
 
 ### fix(worker)：修复 Inoreader 虚拟列表分页与通知语义

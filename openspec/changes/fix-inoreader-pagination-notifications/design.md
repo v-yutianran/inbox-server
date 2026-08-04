@@ -9,6 +9,7 @@
 **Goals:**
 
 - 单次 Inoreader 采集累积滚动过程中发现的全部唯一 article key。
+- `document.body` 已出现但 SPA article 尚未渲染时，等待至少一个可提取 article 就绪。
 - 没有新 key 时及时停止，并保留 20 轮硬上限。
 - 保持未启用稳定 key 策略的 YouTube、X 调用行为不变。
 - 通知准确说明 dispatch jobs “已入队”。
@@ -40,12 +41,22 @@
 
 `worker.job.succeeded` 已记录低敏感度的 job kind、耗时和 summary；collect summary 包含 source、collected、published。该事件足以观察修复后的单次采集结果，因此不新增重复日志，也不记录文章标题、URL 或凭据。
 
+### 5. Inoreader 在滚动采集前等待可提取 article
+
+`collectInoreader` 在现有登录 URL 检查之后、`scrollExtract` 之前，使用与 `extractInoreader` 相同的 DOM 选择器和 60 秒预算等待至少一个带稳定 key 的标题链接。等待是内容条件驱动，不增加固定 sleep，也不修改共享的 `waitForDocumentBody` 或 `scrollExtract`。
+
+若等待超时，先重新检查当前 URL：已跳转登录页时继续抛出登录失效错误，否则抛出 Inoreader 内容未就绪错误。两种失败都在采集结果生成前终止，因此不会把 SPA 未就绪误报为零新增，也不会更新 baseline、创建 dispatch job 或发送同步通知。
+
+选择专用等待是因为生产证据表明 Inoreader 的 body 与 article 渲染之间存在数秒延迟，而其它浏览器来源没有同一契约。备选方案是给所有来源增加固定延迟，但会扩大公共路径影响并无谓增加任务耗时；另一备选方案是把空结果视为成功，无法区分真实零收藏与页面未就绪。
+
 ## Risks / Trade-offs
 
 - [Inoreader 页面持续产生新 key，单次采集时间变长] → 保留 20 轮硬上限，并测试达到上限后可确定返回。
 - [稳定 key 选择器错误导致条目被错误合并] → 只使用解析后必填的 Inoreader article key，并测试重叠窗口和同数量换页。
 - [公共函数签名变更影响其它来源] → 参数为可选且默认分支保持原逻辑，增加 YouTube/X 默认行为回归测试与 Worker 完整测试。
 - [“已入队”仍不等于最终保存成功] → 文案明确限定在队列阶段，最终交付聚合保持在本次范围外。
+- [真实空收藏页与未就绪页面可能都没有 article] → 在取得稳定空态 DOM 契约前采取 fail-closed；超时显式失败并进入既有重试/失败观测，不推进 baseline。
+- [Inoreader DOM 变化导致就绪选择器失效] → 等待与提取共用选择器定义，定向测试锁定延迟渲染、登录跳转和超时路径。
 
 ## Migration Plan
 

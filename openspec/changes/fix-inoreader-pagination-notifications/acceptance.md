@@ -5,17 +5,17 @@
 | 项目 | 内容 |
 | --- | --- |
 | 变更 | `fix-inoreader-pagination-notifications` |
-| 状态 | 本地验收通过 |
+| 状态 | 本地修复与门禁通过，生产复验待授权 |
 | 读者 | 开发、评审、发布与运维人员 |
-| 验收范围 | 本地合成数据下的 Worker 代码、测试、类型与构建门禁 |
+| 验收范围 | 本地 Worker 门禁、Inoreader SPA 内容就绪、生产单来源采集与去重闭环 |
 | 证据根目录 | 当前功能 worktree |
-| 最后更新 | 2026-08-04 |
+| 最后更新 | 2026-08-05 |
 
 ## 验收范围与排除项
 
-验收范围包括 Inoreader 虚拟列表按 article key 累积去重、稳定停止、轮次上限、YouTube/X 默认行为不变、通知“已入队”语义、零新增不通知和既有结构化成功事件。
+验收范围包括 Inoreader SPA 内容就绪、虚拟列表按 article key 累积去重、稳定停止、轮次上限、YouTube/X 默认行为不变、通知“已入队”语义、零新增不通知、既有结构化成功事件，以及生产单来源首次采集与第二次去重闭环。
 
-排除生产 Cloudflare/Sealos 部署、真实 Inoreader 账号、真实 baseline、真实 Cubox/文章归档副作用、历史 DLQ 和最终交付聚合通知。上述排除项不作为本地代码交付结论的阻断项，但作为上线前残余风险单独记录。
+排除 Cloudflare API/Console、D1 schema、Queue envelope、其它来源、baseline 重置、历史 DLQ 重放和最终交付聚合通知。生产部署、真实 Inoreader 数据和外部目标副作用仅在获得对应授权后执行；计划本身不授权这些操作。
 
 ## 进入与退出条件
 
@@ -31,6 +31,7 @@
 - RED 用例先在旧实现上失败，GREEN 后全部通过。
 - Worker 定向测试、全量测试、typecheck、build、OpenSpec 校验均通过。
 - GitNexus 变更检测没有发现范围外的生产流程影响。
+- 生产首次单来源采集发现预置的新收藏并完成入队，紧接的第二次采集为零新增且不重复通知。
 - 未执行项、残余风险和上线前手工验证要求已明确记录。
 
 ## 需求、验收标准与用例追踪矩阵
@@ -43,6 +44,9 @@
 | REQ-003 | 通知准确表达队列阶段 | AC-004 | 非零通知显示“已入队”，不显示“发布成功”或“保存成功” | TC-006 | `notifications.test.ts` 通过 |
 | REQ-003 | 通知准确表达队列阶段 | AC-005 | 零新增不通知；单个非零 collect job 仍只调用一次通知 | TC-007 | `job-handler.test.ts` 通过 |
 | REQ-001、REQ-003 | 运行时行为可观测 | AC-006 | 复用 `worker.job.succeeded`，summary 可观察 source、collected、published 且不含文章敏感内容 | TC-008 | `queue-processor.test.ts` 随 Worker 全量测试通过 |
+| REQ-004 | Inoreader SPA 内容就绪后再提取 | AC-007 | body 先出现而 article 延迟出现时必须等待可提取条目，禁止误报零新增 | TC-009 | `inoreader-readiness.test.ts` RED/GREEN 通过 |
+| REQ-004 | Inoreader SPA 未就绪时安全失败 | AC-008 | 超时或登录失效必须显式失败，且不更新 baseline、不入队、不通知 | TC-010 | `inoreader-readiness.test.ts` 通过 |
+| REQ-001、REQ-004 | 生产单来源去重闭环 | AC-009 | 首次采集 N 条并使 baseline 单调增加 N，第二次采集为零且无重复副作用 | TC-011 | 待修复部署后执行 |
 
 ## 验收用例
 
@@ -94,6 +98,24 @@
 - 操作：运行 queue processor 相关测试或检查现有测试证据。
 - 期望：成功事件为 `worker.job.succeeded`，低敏感 summary 字段可用于核对采集/入队结果。
 
+### TC-009 SPA 延迟渲染就绪
+
+- 前置：Page stub 在 `document.body` 就绪后仍返回零个 article，随后延迟渲染包含稳定 key 和 HTTP 链接的 article。
+- 操作：从 Inoreader collector 调用边界执行采集，不直接测试一个脱离调用链的浅层工具函数。
+- 期望：采集等待 article 可提取后再进入 `scrollExtract`，返回延迟出现的唯一条目；不得使用固定 sleep。
+
+### TC-010 未就绪与登录失效安全边界
+
+- 前置：分别构造 article 永不出现和页面转入 login/signin 的场景。
+- 操作：执行 Inoreader collect job。
+- 期望：任务以可分类错误失败，不写 `baseline:inoreader`，不创建 dispatch job，不发送同步通知；其它 browser source 不受影响。
+
+### TC-011 生产单来源两次采集
+
+- 前置：获得生产部署与真实数据复验授权；记录基线 B0、旧镜像 digest、Worker 状态、DLQ 和当前 3 条未入基线收藏。
+- 操作：部署修复后的 Worker，只触发 Inoreader 两次，每次使用不同 run id。
+- 期望：第一次 `collected=3`、`published=3`、baseline=B0+3，dispatch/effect 成功且只通知一次；第二次 `0/0`，不新增 dispatch、effect、通知或 DLQ。
+
 ## 执行记录
 
 | 时间 | 用例/门禁 | 命令或方式 | 结果 | 证据摘要 |
@@ -105,28 +127,47 @@
 | 2026-08-04 | 全 workspace 回归 | `npm test` | 通过 | 41 files / 214 tests；Console 输出既有 jsdom canvas 提示但测试全绿 |
 | 2026-08-04 | 类型与生产构建 | Worker typecheck/build；`npm run build` | 通过 | 全 workspace typecheck、API Wrangler dry-run、Console 与 Worker production build 通过 |
 | 2026-08-04 | 规格与影响门禁 | OpenSpec validate；GitNexus compare `origin/main` | 通过 | OpenSpec valid；6 个已跟踪文件、7 个符号、4 条流程，风险为 medium，无 API/Console/数据库变更 |
+| 2026-08-04 | TC-009 生产复现 | 仅发布 Inoreader collect job，run id `f298e0e5-c920-4248-bf4c-7e4ab9e9622c` | 不通过 | job `2867b967-2325-446c-8346-65da08e3b5f0` 完成但 summary 为 `collected=0,published=0` |
+| 2026-08-04 | TC-009 只读时序诊断 | 使用同一凭据与代理记录 0/1/3/6/10 秒低敏感 DOM 计数 | 缺陷确认 | 0～3 秒为 0 条；6 秒出现 30 条，其中 3 条不在实际 `baseline:inoreader` 的 570 条 key 中；未输出标题、URL 或凭据 |
+| 2026-08-04 | GitNexus 修复前影响评估 | `impact(collectInoreader, upstream)` | HIGH | 1 个直接调用者，沿 `collectWithContext → collectBrowserSource → collectSource` 影响 3 条采集流程；修复必须限定在 Inoreader 专用等待 |
+| 2026-08-05 | RED：TC-009、TC-010 | `npm run test --workspace @inbox/worker -- inoreader-readiness.test.ts` | 符合预期地失败 | 3 个目标用例失败：延迟 article 返回零条；永不就绪与登录跳转被误报为成功 |
+| 2026-08-05 | GREEN：TC-009、TC-010 与共享浏览器回归 | `npm run test --workspace @inbox/worker -- inoreader-readiness.test.ts browser-navigation.test.ts` | 通过 | 2 files / 20 tests；内容超时被既有分类器判为 retryable |
+| 2026-08-05 | Worker 全量与构建 | Worker test、typecheck、build | 通过 | 21 files / 99 tests；共享 `waitForDocumentBody`、`scrollExtract` 与其它来源测试不变 |
+| 2026-08-05 | 全 workspace 与 Python 兼容门禁 | `npm test`、typecheck、build；ruff、pytest、mypy | 通过 | npm 42 files / 218 tests；pytest 258 passed（9 个既有 warning）；mypy 103 source files |
+| 2026-08-05 | GitNexus 修复后范围门禁 | 刷新当前 worktree 索引后执行 `detect-changes --scope all` | 通过 | 风险由相邻符号误映射的 high 收敛为 medium；仅 3 条 Inoreader 采集流程受影响，无 YouTube 或共享滚动流程 |
+
+## 修复策略与执行顺序
+
+修复任务以 [`tasks.md`](./tasks.md) 第 5～8 节为唯一执行清单，严格按 RED → GREEN → REFACTOR → 生产验收推进：
+
+1. 先补 collector 边界的延迟渲染失败测试和未就绪安全测试，并更新 design/spec；没有红灯证据不得实现。
+2. 只在 `collectInoreader` 中增加内容就绪等待，等待“存在可提取 article”，不修改共享 `waitForDocumentBody`、`scrollExtract` 或其它来源，也不使用固定延时。
+3. 完成本地定向、全量、类型、构建、OpenSpec、验收文档和 GitNexus 门禁；任一失败即停止交付。
+4. 获得单独授权后只更新 Sealos Worker，执行一次 3 条新增采集和一次零新增复验；不重置 baseline、不重放 DLQ。
+5. 失败时回滚旧 Worker 镜像 digest；baseline 保持单调，已经发生的外部副作用不做自动逆操作。
 
 ## 未执行项与阻塞项
 
-- 生产部署：未获本次生产部署授权，明确排除。
-- 真实账号 E2E：未获真实用户数据自动验证授权，明确排除。
+- 生产部署：本轮未授权部署；本地修复与门禁已通过，等待独立部署授权。
+- 真实账号复验：此前一次验证已确认旧实现缺陷；修复后的 TC-011 尚未获得当前任务授权。
 - 外部目标最终保存：当前系统没有本次范围内的聚合回执契约，明确排除。
 
 ## 残余风险
 
 - Inoreader DOM 或 article key 提取规则未来变化时，稳定 key 可能失效；上线后应核对 `worker.job.succeeded` 的单次采集 summary。
+- “至少一个可提取 article”就绪条件无法表达真正的空收藏页；若后续需要支持空账号，应先取得稳定空态 DOM 证据再扩展，当前不得用超时后的零条结果掩盖未就绪。
 - 20 轮上限可能在极大 backlog 下仍不能一次取完，但会阻止无限滚动；后续 Cron 仍可继续处理。
 - “已入队”只证明 dispatch jobs 已创建，不证明 Cubox 或文章归档最终成功。
 
 ## 验收结论
 
-当前结论：本地交付范围通过。REQ-001～REQ-003 的自动化用例、Worker 全量测试、全 workspace 测试、类型检查、生产构建、OpenSpec 与 GitNexus 门禁均通过；该结论不代表已部署生产，也不代表真实 Inoreader 或外部目标最终交付已在线验证。
+当前结论：**本地修复验收通过，生产验收待授权**。REQ-001～REQ-004 的合成测试、全量回归、类型与构建门禁均通过；TC-009、TC-010 已证明延迟渲染会等待、未就绪会安全失败。TC-011 尚未部署和连接真实生产数据，因此不得归档该 change，也不得宣称线上 Inoreader 流程已恢复。
 
 ## 覆盖统计
 
 | 指标 | 当前值 | 目标 |
 | --- | --- | --- |
-| 需求覆盖 | 3/3 已执行通过 | 3/3 |
-| 验收标准覆盖 | 6/6 已执行通过 | 6/6 |
-| 用例覆盖 | 8/8 已执行通过 | 8/8 |
-| 关键路径覆盖 | 100% | 100% |
+| 需求覆盖 | 4/4 本地通过 | 4/4 |
+| 验收标准覆盖 | 8/9 本地通过，1/9 生产未执行 | 9/9 |
+| 用例覆盖 | 10/11 本地通过，1/11 生产未执行 | 11/11 |
+| 生产关键路径覆盖 | 0/1 通过 | 1/1 |
