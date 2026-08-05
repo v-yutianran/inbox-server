@@ -2,6 +2,17 @@
 
 ## 2026-08-05
 
+### docs(openspec)：同步并归档九个已完成变更
+
+- 将九个已完成 change 的 delta specs 同步为 10 个主 capability 的 49 条最终 requirement；文章归档按先建立 Markdown 归档、再切换 Git 仓库的顺序合并，最终移除旧坚果云归档要求
+- 将 `migrate-to-typescript-cloudflare`、`fix-article-rate-limit-effect-retry`、`add-github-cicd`、`add-operations-console`、`move-article-archive-to-git`、`change-link-daily-limit`、`add-article-markdown-archive`、`add-x-playwright-source`、`add-github-stars-source` 归档到 `openspec/changes/archive/2026-08-05-*`
+- 保留仍有 13 项任务未完成的 `improve-production-operations-readiness` 为唯一 active change
+
+**如何验证**：
+- delta 顺序模拟与主规格逐 requirement 对照通过（10 capabilities / 49 requirements / 0 drift）
+- `/Users/xinwu/Library/pnpm/bin/openspec validate --all --strict --no-interactive`（14 passed / 0 failed）
+- 9 个归档目录均存在且未完成任务为 0，`git diff --check` 通过
+
 ### docs(openspec)：归档 Inoreader 分页与通知修复
 
 - 将 Inoreader 虚拟列表完整采集、SPA 内容就绪和稳定 key 去重要求同步到 `browser-collect-parity` 主规格
