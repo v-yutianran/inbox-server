@@ -106,7 +106,7 @@ uv run pytest -m e2e
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **inbox-server** (3334 symbols, 5938 relationships, 191 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **inbox-server-fix-inoreader-pagination-notification** (4256 symbols, 7569 relationships, 214 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
@@ -130,10 +130,10 @@ This project is indexed by GitNexus as **inbox-server** (3334 symbols, 5938 rela
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/inbox-server/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/inbox-server/clusters` | All functional areas |
-| `gitnexus://repo/inbox-server/processes` | All execution flows |
-| `gitnexus://repo/inbox-server/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/inbox-server-fix-inoreader-pagination-notification/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/inbox-server-fix-inoreader-pagination-notification/clusters` | All functional areas |
+| `gitnexus://repo/inbox-server-fix-inoreader-pagination-notification/processes` | All execution flows |
+| `gitnexus://repo/inbox-server-fix-inoreader-pagination-notification/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 

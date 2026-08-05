@@ -219,8 +219,15 @@ async function collectInoreader(
   try {
     await page.goto("https://www.inoreader.com/starred", browserNavigationOptions("inoreader"));
     await waitForDocumentBody(page);
-    if (/\/(login|signin)/.test(page.url())) throw new Error("inoreader login expired");
-    const items = await scrollExtract(page, extractInoreader, (value) => parseInoreaderItems(value));
+    if (isInoreaderLoginUrl(page.url())) throw new Error("inoreader login expired");
+    await waitForInoreaderContent(page);
+    const items = await scrollExtract(
+      page,
+      extractInoreader,
+      (value) => parseInoreaderItems(value),
+      undefined,
+      ({ key }) => key,
+    );
     const fresh = items.filter(({ key }) => !known.has(key));
     return bookmarks("inoreader", fresh, new Set([...known, ...fresh.map(({ key }) => key)]));
   } finally {
@@ -363,19 +370,32 @@ export async function scrollExtract<T>(
   extract: () => unknown[],
   parse: (input: readonly unknown[]) => readonly T[],
   shouldStop: (items: readonly T[]) => boolean = () => false,
+  stableKey?: (item: T) => string,
 ): Promise<readonly T[]> {
   const accumulated: T[] = [];
+  const keyedItems = stableKey ? new Map<string, T>() : undefined;
   let previousCount = -1;
   for (let index = 0; index < 20; index += 1) {
     const current = parse(await page.evaluate(extract));
-    if (current.length === previousCount) break;
-    accumulated.splice(0, accumulated.length, ...current);
-    previousCount = current.length;
+    if (stableKey && keyedItems) {
+      let added = 0;
+      for (const item of current) {
+        const key = stableKey(item);
+        if (keyedItems.has(key)) continue;
+        keyedItems.set(key, item);
+        added += 1;
+      }
+      if (added === 0) break;
+    } else {
+      if (current.length === previousCount) break;
+      accumulated.splice(0, accumulated.length, ...current);
+      previousCount = current.length;
+    }
     if (shouldStop(current)) break;
     await scrollDocumentToEnd(page);
     await page.waitForTimeout(1_500);
   }
-  return accumulated;
+  return keyedItems ? [...keyedItems.values()] : accumulated;
 }
 
 function extractInoreader(): unknown[] {
@@ -425,4 +445,22 @@ function required(config: Readonly<Record<string, unknown>>, key: string, source
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const INOREADER_READY_SELECTOR = [
+  ':is(div.ar.article, div.ar, div.article, [role="article"], article):is([id^="article_"], [data-article-id])',
+  ':is(a.article_title_link, a.article_title, .article_title a, a[data-article-id], h2 a, h3 a, a.title)[href]',
+].join(" ");
+
+async function waitForInoreaderContent(page: Page): Promise<void> {
+  try {
+    await page.waitForSelector(INOREADER_READY_SELECTOR, { timeout: 60_000 });
+  } catch {
+    if (isInoreaderLoginUrl(page.url())) throw new Error("inoreader login expired");
+    throw new Error("inoreader content not ready: timeout");
+  }
+}
+
+function isInoreaderLoginUrl(url: string): boolean {
+  return /\/(login|signin)/.test(url);
 }

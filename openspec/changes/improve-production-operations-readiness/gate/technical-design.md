@@ -4,18 +4,18 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | 待验收设计 |
-| 版本 | 1.1 |
+| 状态 | 技术设计已确认 |
+| 版本 | 1.2 |
 | 日期 | 2026-08-03 |
 | 读者 | 开发、验收、发布与生产运维人员 |
 | 范围 | OpenSpec change `improve-production-operations-readiness` |
-| 唯一需求输入 | `requirements.md` 1.1 |
+| 唯一需求输入 | `requirements.md` 1.2 |
 | 维护入口 | 本文件；需求变化先更新 `requirements.md` 并重新完成设计门禁 |
 | 关联决定 | ADR-0004 混合运行时、ADR-0005 D1 暂存 Cloudflare Queues、ADR-0006 WARP 出站 sidecar |
 
 ## 关联需求
 
-本轮隔离回滚设计直接关联 `REQ-018`、`REQ-P0-009`、`REQ-P1-005`～`REQ-P1-007`、`NFR-002`、`NFR-005`、`NFR-006` 与 `AC-007`；其它需求继续沿用本文既有追踪矩阵。
+本轮隔离状态恢复设计直接关联 `REQ-019`、`REQ-P2-004`、`NFR-002`、`NFR-003`、`NFR-005` 与 `AC-018`；既有隔离回滚设计与其它需求继续沿用本文追踪矩阵。
 
 ## 背景、目标与非目标
 
@@ -68,7 +68,7 @@ flowchart LR
 
 ## 详细设计
 
-以下状态机、接口、数据、发布、隔离演练、迁移和可观测性章节共同构成本 change 的详细设计；本轮实现仅进入 `DES-018` 明确的隔离回滚范围。
+以下状态机、接口、数据、发布、隔离演练、迁移和可观测性章节共同构成本 change 的详细设计；本轮实现仅进入 `DES-019` 明确的隔离状态恢复范围。
 
 ## 健康状态机
 
@@ -189,6 +189,26 @@ D1 双版本兼容以迁移契约测试为事实源：完整 migration 后旧 Wo
 
 该设计不改变生产发布 manifest、`rollback` 命令、公开 API、D1 schema 或 Sealos 资源，属于可删除的隔离验证能力，无需新增 ADR。代价是不能证明真实平台控制面权限和网络恢复，只证明恢复材料、旧运行路径、跨版本数据契约与编排顺序；真实生产回滚仍需单独授权。
 
+## 隔离三类状态备份恢复演练
+
+### DES-019：固定合成快照与零生产可达的恢复执行器
+
+为满足 `REQ-019`，在 `@inbox/release-operations` CAC CLI 新增独立 `rehearse-state-restore` 动作。该动作不复用 `apply`、`rollback` 或 `rehearse-legacy` 的外部命令路径，不调用 `kubectl`、`wrangler`、Sealos、Cloudflare、registry、浏览器或网络；只读取仓库内固定合成快照并写入操作系统临时目录。
+
+状态恢复 manifest 只接受以下固定字段：`schemaVersion=1`、唯一 `runId`、源码提交、`capturedAt`、候选 RPO 秒数 `86400`、`rpoStatus=unapproved`，以及 Worker、浏览器、WARP 三类快照的固定仓库相对路径、快照 ID、schema、文件数、稳定标识和 SHA-256。任何额外字段、仓库外路径、绝对路径、可变命令、生产资源名、Secret、URL 或业务内容均拒绝。规范化 manifest 后由纯函数生成稳定 `planHash`。
+
+固定阶段如下：
+
+1. `snapshot-preflight`：确认三类状态恰好各一份、路径为允许的固定 JSON、源文件是普通文件且非符号链接，文件大小受限，摘要/schema/状态类别/稳定标识/记录数一致；失败时尚未创建恢复目录。
+2. `restore`：在唯一 `inbox-state-restore-<runId>-*` 临时目录下创建三类隔离根目录，以 `0600` 写入已验证字节；不保留源路径权限和所有权，不覆盖既有目录。
+3. `startup-gate`：从恢复目录重新读取并按与预检相同的严格 schema 校验，三类状态全部 `ready` 才允许继续；这是合成启动门禁，不宣称真实 Worker、Chromium 或 WARP 进程已启动。
+4. `reconciliation`：比较源与恢复后的 SHA-256、schema、文件数、稳定标识和记录数，计算从恢复开始到门禁通过的 RTO，以及从 `capturedAt` 到恢复开始的候选 RPO；候选 RPO 不超过 24 小时只记为 `candidate_verified`，生产状态始终保留 `unapproved`。
+5. `cleanup`：无论成功或失败均删除唯一临时目录并读回不存在；证据记录真实外部调用、生产资源变更、敏感命中与临时残留均为 0。
+
+dry-run 只解析 manifest、输出阶段计划和同一 `planHash`，文件读取数、目录创建数与写入数均为 0；实际演练必须显式提供该哈希。执行器使用 Node 文件系统结构化 API，不经 shell，不跟随符号链接，不接受任意目标路径。证据使用稳定事件 `operations.state_restore_rehearsal.planned|step_completed|step_failed|completed|failed|cleanup_completed`，包含 `traceId=TC-002`、三类不可逆摘要、RTO、候选 RPO 判定、对账和清理结果，不包含文件内容、真实路径、凭据或用户数据。
+
+仓库固定快照只表达三类数据契约：Worker 持久游标/归档元数据、浏览器 storage-state 等价结构、WARP 注册状态等价结构；全部使用合成标识和空敏感集合。该能力证明恢复编排、完整性门禁与候选日备份窗口，不证明 Sealos PVC 快照 API、真实浏览器登录态、真实 WARP 重新注册或生产 RPO，因此不改变 `OPEN-004`，也无需新增 ADR。
+
 ## 数据保留、备份与恢复
 
 - 保留报告覆盖心跳、完成任务、任务信封、DLQ、重放审计和幂等 effect；初始 7/30/90 天仅为候选。
@@ -228,6 +248,7 @@ canary 使用固定合成 fixture、显式 canary 标识、隔离存储和无副
 | 单元 | 状态转换、领取决策、SLI 聚合、候选阈值四态转换、每日样本唯一键/截止时间、planHash、保留选择、发布/回滚计划纯函数 |
 | 集成 | D1 expand-only migration、旧版本读取兼容、每日样本同键 upsert、重复/并发 Cron、部分写入中断后重跑、采集失败不影响主采集/任务处理、冻结一致性查询、唯一操作键、queue inbox、指标窗口 |
 | 隔离回滚 | rehearsal manifest fail-closed、dry-run 零命令、同一 planHash 确认、临时 Compose 停替身/起旧路径、D1 双版本契约、RTO、真实外部调用为 0、失败后资源残留为 0 |
+| 隔离状态恢复 | 三类固定快照 fail-closed、dry-run 零 IO、同一 planHash 确认、路径/符号链接/摘要拒绝、临时恢复、启动门禁、RTO、候选 RPO、对账与失败清理 |
 | 契约 | 运维 API 鉴权、错误语义、过期状态、候选期外部通知调用为 0、同参数 dry-run/execute、旧公开 API 不变 |
 | 组件 | 独立健康服务在长浏览器任务下响应；Mihomo/WARP 故障时领取隔离 |
 | 端到端 | 本 change 不运行自动化 E2E；隔离 canary、外部告警/恢复、真实发布失败停止、生产版本回退和备份恢复均须另行授权 |
@@ -237,7 +258,9 @@ canary 使用固定合成 fixture、显式 canary 标识、隔离存储和无副
 
 ## 备选方案与权衡
 
-本轮没有选择复用生产 `rollback` 执行器，因为即使使用合成 manifest，也会保留误调用 `wrangler`/`kubectl` 的风险；没有选择仓库外一次性 shell 脚本，因为它会复制 manifest 校验、planHash、证据和脱敏规则；没有选择真实生产回滚演练，因为当前任务没有生产部署或回滚授权。选择独立 `rehearse-legacy` 动作的代价是新增少量隔离编排代码和固定 Compose 资产，收益是生产控制面调用在类型和执行路径上不可达。
+本轮没有选择 Sealos PVC 或真实状态副本，因为当前任务没有生产数据复制和生产恢复授权；没有选择 tar/shell 管道，因为归档路径穿越、符号链接和权限语义会扩大攻击面；没有选择把状态恢复并入生产 `rollback` 或 `rehearse-legacy`，因为会引入不必要的控制面或 Docker 可达路径。固定 JSON 合成快照覆盖的格式有限，但能以最小依赖证明完整性、恢复顺序、RTO、候选 RPO 与失败清理。
+
+既有隔离回滚仍保持独立 `rehearse-legacy` 动作：没有选择复用生产 `rollback` 执行器，因为即使使用合成 manifest，也会保留误调用 `wrangler`/`kubectl` 的风险；没有选择仓库外一次性 shell 脚本，因为它会复制 manifest 校验、planHash、证据和脱敏规则；没有选择真实生产回滚演练，因为当前任务没有生产部署或回滚授权。
 
 1. **D1 为运维事实源，Queues 仅传输**：避免双写后无法判断发布结果；代价是增加 inbox 发布延迟与补偿状态。该决定延续 ADR-0005，无需新 ADR。
 2. **健康快照与工作负载 IO 分离**：保证探针预算；代价是 liveness 不能单独证明业务进展，必须结合 readiness、心跳和 SLI。
@@ -267,7 +290,8 @@ canary 使用固定合成 fixture、显式 canary 标识、隔离存储和无副
 | REQ-P1-008 | 数据保留、备份与恢复 |
 | REQ-P1-009、NFR-003 | 启动门禁、Secret 与敏感字段边界 |
 | REQ-P2-001～003 | 容量成本、单副本决定与 ADR 门禁 |
-| REQ-P2-004/005 | 备份恢复、旧资产保留 |
+| REQ-P2-004、REQ-019、NFR-002/003/005 | 数据保留、备份与恢复、隔离三类状态备份恢复演练、可观测性与安全 |
+| REQ-P2-005 | 旧资产保留 |
 
 ## 待决策事项
 

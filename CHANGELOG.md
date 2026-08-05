@@ -1,6 +1,60 @@
 # CHANGELOG
 
+## 2026-08-05
+
+### ops(worker)：完成 Inoreader 修复的 Sealos 生产验收
+
+- 从源码 revision `96cd3f8a467a148b523037e9c96862084032b7be` 构建 `linux/amd64` Worker，并固定南京大学 GHCR 代理镜像 digest `sha256:db860618b2afd0dd40144a6b61b6fa48602054a1bb70308fe088cfaaad7a354f`
+- 仅滚动更新 Sealos Worker；Cloudflare API/Console、D1 schema、`baseline:inoreader` 与历史 DLQ 均未手工修改，Mihomo/WARP sidecar 镜像保持不变
+- 第一次生产 Inoreader 采集为 3/3，权威 baseline 从 570 单调增加到 573，三条 link job、三条 Cubox effect 与通知 effect 均完成；第二次为 0/0，无重复通知或 DLQ 增量
+
+**如何验证**：
+- Dockerfile `--check` 零告警；公共 GHCR 与南京大学代理解析到同一 digest；StatefulSet server-side dry-run 仅包含三个预期字段
+- 新 Pod 三容器 Ready，`/healthz` 与 `/readyz` 均为 200；部署稳定窗口 87 秒、业务后稳定窗口 80 秒均无活动故障
+- 两个目标 collect job 均为一次 `done`，并有 `worker.job.succeeded`/ack；DLQ 保持总计 333、Inoreader collect 94
+- 旧 Worker digest 的回滚 patch 已通过 server-side dry-run；所有门禁通过，因此未实际回滚
+
+### fix(worker)：等待 Inoreader SPA article 就绪后再采集
+
+- 修复 Inoreader 在 `document.body` 已出现但 article 尚未渲染时提前返回零新增的问题；仅在 Inoreader 登录检查后等待带稳定 key 和标题链接的可提取 article，不修改共享滚动或其它来源
+- 内容等待沿用 60 秒预算且不增加固定 sleep；超时后重新检查登录 URL，分别报告登录失效或可重试的内容未就绪错误
+- 未就绪失败发生在采集结果生成前，不更新 `baseline:inoreader`、不创建 dispatch job、不写登录 session，也不发送同步通知
+
+**如何验证**：
+- RED：`npm run test --workspace @inbox/worker -- inoreader-readiness.test.ts`（3 个目标用例全部按预期失败：延迟 article 返回 0，两个失败场景被误报成功）
+- GREEN：`npm run test --workspace @inbox/worker -- inoreader-readiness.test.ts browser-navigation.test.ts`（2 files / 20 tests）
+- `npm run test --workspace @inbox/worker`（21 files / 99 tests），Worker typecheck 与 build 通过
+- `npm test`（42 files / 218 tests），全 workspace typecheck 与 production build 通过
+- Python 兼容门禁：ruff 通过，pytest 258 passed（9 个既有 warning），mypy 103 source files 通过
+- 合成自动化浏览器 E2E 未运行；生产验证通过 Sealos 中既有 headed Chromium、真实 Inoreader 与 D1 低敏感状态完成
+
+## 2026-08-04
+
+### fix(worker)：修复 Inoreader 虚拟列表分页与通知语义
+
+- Inoreader 滚动采集改为按稳定 article key 跨轮次累积去重；可见数量保持 30 但条目已切换时不再提前结束，并保留无新 key 停止与 20 轮硬上限
+- 通用 `scrollExtract` 仅在显式提供稳定 key 时启用新策略，YouTube 与 X 继续沿用原数量稳定行为
+- 收集通知把 dispatch job 数量从“发布”改为“已入队”，避免误报 Cubox 或文章归档已完成；继续复用 `worker.job.succeeded` 的低敏感 summary 观察单次采集结果
+
+**如何验证**：
+- `npm run test --workspace @inbox/worker -- tests/browser-navigation.test.ts tests/notifications.test.ts`（18 tests）
+- `npm run test --workspace @inbox/worker -- tests/job-handler.test.ts`（9 tests）
+- `npm run test --workspace @inbox/worker`（20 files / 95 tests）
+- `npm test`（41 files / 214 tests）与 `npm run build`（全 workspace typecheck + production build）
+- 未运行自动化浏览器 E2E，未连接真实 Inoreader、生产 baseline 或外部目标，也未部署 Cloudflare/Sealos
+
 ## 2026-08-03
+
+### feat(operations)：完成三类持久状态隔离恢复演练
+
+- 新增 `rehearse-state-restore`，使用固定合成快照验证 Worker、浏览器状态与 WARP 状态的完整性、0600 恢复权限、启动门禁、摘要对账和失败清理
+- dry-run 不访问快照或临时目录，实际演练必须确认同一 `planHash`；执行器不调用 shell、网络、Cloudflare、Sealos、真实 Worker、Chromium 或 WARP
+- `TC-002` 最终 run `sr-20260803-124424` 的 RTO 为 4 毫秒，候选 RPO 为 35.751 秒，外部调用、命令、生产变更、敏感命中和临时目录残留均为 0；生产 RPO 仍为 `unapproved`
+
+**如何验证**：
+- `npm --workspace @inbox/release-operations run typecheck`
+- `npm --workspace @inbox/release-operations test`（30 tests）
+- `state-restore-rehearsal.json` 语义读回、SHA-256 与 0600 权限检查通过
 
 ### feat(operations)：完成强隔离旧 Docker Compose 回滚演练
 

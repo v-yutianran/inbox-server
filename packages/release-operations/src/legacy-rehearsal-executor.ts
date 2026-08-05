@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
@@ -11,6 +11,7 @@ import type {
   LegacyRehearsalPlan,
   LegacyRehearsalStep,
 } from "./legacy-rehearsal-plan.js";
+import { writeEvidenceFile } from "./evidence-writer.js";
 import type { CommandResult, CommandRunner } from "./release-executor.js";
 
 export interface D1CompatibilityResult {
@@ -75,11 +76,7 @@ export async function writeLegacyRehearsalEvidence(
   path: string,
   value: LegacyRehearsalEvidence,
 ): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, {
-    encoding: "utf8",
-    flag: "wx",
-  });
+  await writeEvidenceFile(path, value);
 }
 
 type IdentityCheck = (
