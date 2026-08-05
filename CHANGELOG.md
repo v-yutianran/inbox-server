@@ -2,6 +2,17 @@
 
 ## 2026-08-05
 
+### feat(worker)：建立多副本安全门禁并维持单副本
+
+- 容量纯模型新增 active-passive 与任务分片决策，逐项检查租约独占、effect 幂等、文章归档写锁、登录态隔离和分片所有权
+- 当前归档锁、登录态隔离与分片所有权门禁未通过，明确继续保持 Sealos Worker 单副本，不创建多副本 ADR
+- 运维 runbook 将已验证合成包络限定为 0.2 task/s（720 task/h），并记录停止非必要增量、保留队列和重新准入的降级顺序
+
+**如何验证**：
+- RED：聚焦测试 8 项因 `evaluateReplicaSafety` 尚不存在而失败
+- GREEN：`npm run test --workspace @inbox/worker -- capacity-model.test.ts`（14 tests）
+- `npm run test --workspace @inbox/worker`、workspace typecheck/build、OpenSpec strict、GitNexus 与 `git diff --check`
+
 ### docs(openspec)：同步并归档九个已完成变更
 
 - 将九个已完成 change 的 delta specs 同步为 10 个主 capability 的 49 条最终 requirement；文章归档按先建立 Markdown 归档、再切换 Git 仓库的顺序合并，最终移除旧坚果云归档要求
