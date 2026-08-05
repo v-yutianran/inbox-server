@@ -141,6 +141,7 @@
 | 2026-08-05 | TC-011 第一次生产采集 | scheduler run `09cd7532-9495-49d8-992e-00310430e770` | 通过 | job `b55064f5-e356-426d-83aa-174ea58402fc` 一次成功，3/3；baseline 570→573；3 个 link job、3 个 Cubox effect 和通知 effect 均 done |
 | 2026-08-05 | TC-011 第二次生产采集 | manual single-source run `e76a953e-77ef-4ec7-8fab-0e344b84c05c` | 通过 | job `0b912405-7d7d-4f5e-9023-3f17ba36bc6e` 一次成功，0/0；baseline=573；无通知 effect；DLQ 零增 |
 | 2026-08-05 | 生产业务后稳定门禁 | 同参数双采样 Sealos 日志/事件并复核当前探针 | 通过 | 80 秒内 warning 计数未增长，active failure=0；历史 readiness 超时最后发生于 19:22:58Z；两目标任务均有 `worker.job.succeeded`/ack |
+| 2026-08-05 | Git 远端交付 | PR #43、#44、#45 | 通过 | 分页与通知语义修复、SPA 就绪等待和生产验收证据均已使用 merge commit 合入 `main` |
 
 ## 修复策略与执行顺序
 
@@ -154,7 +155,6 @@
 
 ## 未执行项与阻塞项
 
-- Git 远端交付：本轮只授权部署、两次生产复验和失败回滚；本地 commit 由项目规则自动执行，普通 push/PR 仍待当前授权。
 - Cloudflare API/Console 与 D1 schema：明确排除且未修改；本地主目录中的旧管理键返回 401，不影响 Worker 内部控制面与 D1 只读验收。
 - 最终交付聚合通知：当前系统没有本次范围内的跨目标聚合回执契约，明确排除；本次三条 Cubox effect 已单独核对为 done。
 
