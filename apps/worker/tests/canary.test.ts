@@ -14,7 +14,7 @@ import type { Channels } from "../src/channels";
 
 const channels: Channels = {
   article_archive: {
-    articles_dir: "references/article",
+    articles_dir: "raw/article",
     browser_timeout_seconds: 45,
     daily_limit: 10_000,
     defuddle_timeout_seconds: 30,

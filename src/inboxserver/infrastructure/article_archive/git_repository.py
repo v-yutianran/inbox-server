@@ -21,7 +21,7 @@ class GitArticleRepository:
         self,
         repository_dir: str | Path,
         *,
-        articles_dir: str = "references/article",
+        articles_dir: str = "raw/article",
         remote: str = "origin",
         branch: str = "main",
         github_token: str | None = None,

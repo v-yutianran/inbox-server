@@ -29,7 +29,6 @@ destinations:
 article_archive:
   enabled: true
   repository_dir: /data/archive/repository
-  articles_dir: references/article
 credentials: {}
 `,
     );
@@ -40,6 +39,7 @@ credentials: {}
     });
     const summary = safeChannelSummary(channels);
 
+    expect(channels.article_archive.articles_dir).toBe("raw/article");
     expect(channels.sources.telegram?.config.bot_token).toBe("telegram-secret");
     expect(summary.sources.zhihu).toEqual({
       credential_name: "zhihu_creds",

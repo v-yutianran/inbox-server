@@ -82,11 +82,11 @@
 - **THEN** 系统 SHALL 保留远程图片 URL，且 MUST NOT 下载图片、改写为本地资源或内嵌二进制内容
 
 ### Requirement: Git 仓库归档与原始 URL 幂等交付
-系统 SHALL 将 Markdown 保存到宿主机 `~/.agents/references/article`，并 MUST 在每次成功创建或补交文章后提交当前文章文件并推送 `.agents` 仓库远端。
+系统 SHALL 将 Markdown 保存到宿主机 `~/.agents/raw/article`，并 MUST 在每次成功创建或补交文章后提交当前文章文件并推送 `.agents` 仓库远端。
 
 #### Scenario: 归档新文章并推送
 - **WHEN** Markdown 已通过正文验收，且仓库中不存在 frontmatter `source_url` 与原始 URL 精确相同的文章
-- **THEN** 系统 SHALL 原子写入 `references/article/<安全文件名>`、仅提交该文章路径并立即 push
+- **THEN** 系统 SHALL 原子写入 `raw/article/<安全文件名>`、仅提交该文章路径并立即 push
 
 #### Scenario: 原始 URL 已存在
 - **WHEN** 仓库中已有文章的 frontmatter `source_url` 与原始 URL 精确相同
@@ -111,4 +111,3 @@
 #### Scenario: 重试耗尽进入死信队列
 - **WHEN** 归档任务达到现有最大重试次数仍未成功
 - **THEN** 系统 SHALL 将该任务移入独立文章归档 DLQ，并保留 URL、标题、重试次数和失败上下文供运维排查
-

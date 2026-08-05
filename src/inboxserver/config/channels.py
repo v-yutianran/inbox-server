@@ -30,7 +30,7 @@ class ArticleArchiveConfig(BaseModel):
 
     enabled: bool = False
     repository_dir: str = "/article-repository"
-    articles_dir: str = "references/article"
+    articles_dir: str = "raw/article"
     min_visible_characters: int = Field(default=200, gt=0)
     http_timeout_seconds: float = Field(default=30, gt=0)
     browser_timeout_seconds: float = Field(default=45, gt=0)

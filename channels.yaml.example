@@ -58,7 +58,7 @@ destinations:
 article_archive:
   enabled: true
   repository_dir: /data/archive/repository
-  articles_dir: references/article
+  articles_dir: raw/article
   min_visible_characters: 200
   http_timeout_seconds: 30
   browser_timeout_seconds: 45
