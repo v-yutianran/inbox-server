@@ -33,7 +33,7 @@ tags: <%~ it.tags_yaml %>
 
 const articleChannels: Channels = {
   article_archive: {
-    articles_dir: "references/article",
+    articles_dir: "raw/article",
     browser_timeout_seconds: 45,
     daily_limit: 10_000,
     defuddle_timeout_seconds: 30,
@@ -376,7 +376,7 @@ esac
 
     try {
       const repository = new GitArticleRepository({
-        articlesDir: "references/article",
+        articlesDir: "raw/article",
         askpassPath: "/bin/true",
         githubToken: "test-token",
         repositoryDir: repositoryDirectory,
@@ -404,7 +404,7 @@ esac
     const binDirectory = join(directory, "bin");
     const gitLog = join(directory, "git.log");
     const repositoryDirectory = join(directory, "repository");
-    const articlesDirectory = join(repositoryDirectory, "references/article");
+    const articlesDirectory = join(repositoryDirectory, "raw/article");
     const fakeGit = join(binDirectory, "git");
     const previousPath = process.env.PATH;
     const previousGitLog = process.env.GIT_LOG;
@@ -431,7 +431,7 @@ esac
 
     try {
       const repository = new GitArticleRepository({
-        articlesDir: "references/article",
+        articlesDir: "raw/article",
         askpassPath: "/bin/true",
         githubToken: "test-token",
         repositoryDir: repositoryDirectory,
@@ -485,7 +485,7 @@ fi
 
     try {
       const repository = new GitArticleRepository({
-        articlesDir: "references/article",
+        articlesDir: "raw/article",
         askpassPath: "/bin/true",
         githubToken: "test-token",
         repositoryDir: repositoryDirectory,
@@ -534,7 +534,7 @@ fi
 
     try {
       const repository = new GitArticleRepository({
-        articlesDir: "references/article",
+        articlesDir: "raw/article",
         askpassPath: "/bin/true",
         githubToken: "test-token",
         repositoryDir: repositoryDirectory,

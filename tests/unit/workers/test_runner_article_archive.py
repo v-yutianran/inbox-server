@@ -21,7 +21,7 @@ def test_build_archive_service_uses_git_repository_without_jianguoyun(monkeypatc
         article_archive=ArticleArchiveConfig(
             enabled=True,
             repository_dir="/article-repository",
-            articles_dir="references/article",
+            articles_dir="raw/article",
         )
     )
     repository = object()
@@ -49,7 +49,7 @@ def test_build_archive_service_uses_git_repository_without_jianguoyun(monkeypatc
     assert repository_config == {
         "args": ("/article-repository",),
         "kwargs": {
-            "articles_dir": "references/article",
+            "articles_dir": "raw/article",
             "github_token": "test-token",
         },
     }

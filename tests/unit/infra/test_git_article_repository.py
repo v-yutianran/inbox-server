@@ -64,10 +64,10 @@ async def test_saves_commits_and_pushes_new_article(tmp_path: Path) -> None:
     )
 
     assert created is True
-    article = worktree / "references/article/20260719-测试文章.md"
+    article = worktree / "raw/article/20260719-测试文章.md"
     assert article.is_file()
     assert _git(worktree, "status", "--short") == ""
-    assert "references/article/20260719-测试文章.md" in _git(
+    assert "raw/article/20260719-测试文章.md" in _git(
         remote, "ls-tree", "-r", "--name-only", "main"
     )
 
@@ -86,7 +86,7 @@ async def test_exact_source_url_deduplicates_and_name_collision_gets_fingerprint
     ) is False
     assert await repository.save_if_absent(filename, second_url, _markdown(second_url)) is True
 
-    files = sorted((worktree / "references/article").glob("*.md"))
+    files = sorted((worktree / "raw/article").glob("*.md"))
     assert len(files) == 2
     names = {path.name for path in files}
     assert filename in names
@@ -98,7 +98,7 @@ async def test_retry_finishes_uncommitted_or_unpushed_article_without_duplicate(
     tmp_path: Path,
 ) -> None:
     remote, worktree, repository = _repository(tmp_path)
-    article = worktree / "references/article/20260719-测试文章.md"
+    article = worktree / "raw/article/20260719-测试文章.md"
     article.parent.mkdir(parents=True)
     article.write_bytes(_markdown("https://example.com/retry"))
 
@@ -110,7 +110,7 @@ async def test_retry_finishes_uncommitted_or_unpushed_article_without_duplicate(
     assert _git(worktree, "status", "--short") == ""
     assert _git(remote, "rev-list", "--count", "main") == "2"
 
-    second = worktree / "references/article/20260719-本地提交.md"
+    second = worktree / "raw/article/20260719-本地提交.md"
     second.write_bytes(_markdown("https://example.com/local-commit"))
     _git(worktree, "add", str(second.relative_to(worktree)))
     _git(worktree, "commit", "-m", "docs(article): 本地待推送")
@@ -137,7 +137,7 @@ async def test_commits_only_article_and_reports_git_failure(tmp_path: Path) -> N
     assert _git(worktree, "diff", "--cached", "--name-only") == "AGENTS.md"
     assert (worktree / "private.txt").is_file()
     assert _git(worktree, "show", "--format=", "--name-only", "HEAD") == (
-        "references/article/20260719-测试文章.md"
+        "raw/article/20260719-测试文章.md"
     )
 
     _git(worktree, "remote", "set-url", "origin", str(tmp_path / "missing.git"))
@@ -169,7 +169,7 @@ async def test_transient_remote_failure_retries_without_refetching_article(tmp_p
     remote.rename(future_remote)
 
     assert await delivery is True
-    assert "references/article/20260719-网络重试.md" in _git(
+    assert "raw/article/20260719-网络重试.md" in _git(
         future_remote, "ls-tree", "-r", "--name-only", "main"
     )
 

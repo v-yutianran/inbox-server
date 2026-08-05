@@ -21,7 +21,7 @@ const destinationSchema = z
   .passthrough();
 const archiveSchema = z
   .object({
-    articles_dir: z.string().default("references/article"),
+    articles_dir: z.string().default("raw/article"),
     browser_timeout_seconds: z.number().positive().default(45),
     daily_limit: z.number().int().positive().default(10_000),
     defuddle_timeout_seconds: z.number().positive().default(30),

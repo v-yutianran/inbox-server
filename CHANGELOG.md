@@ -2,6 +2,20 @@
 
 ## 2026-08-05
 
+### fix(article)：将文章归档目录切换到 raw 层
+
+- TypeScript Worker、Python 兼容运行时和示例配置的默认归档路径由 `references/article` 改为 `raw/article`
+- Git 写入、URL 去重、单文件提交与 push 语义保持不变；历史 `references/article` 文件不迁移、不删除，也不新增旧目录 fallback 或双写
+- 新增 `move-article-archive-to-raw` OpenSpec change，并同步 canonical spec 与 ADR 的当前路径决定
+
+**如何验证**：
+- RED：TypeScript 默认路径 1 项失败，Python 默认与实际写入路径 6 项失败，均收到旧值 `references/article`
+- GREEN：归档聚焦测试 TypeScript 19 项、Python 18 项通过
+- `npm test`、`npm run typecheck`、`npm run build` → passed
+- `uv run ruff check src/inboxserver tests scripts`、`uv run pytest tests/unit tests/integration -m "not e2e" --tb=short`（258 passed，9 warnings）、`uv run mypy src/inboxserver --ignore-missing-imports` → passed
+- `openspec validate --all --strict --no-interactive` → 15 passed，0 failed；`git diff --check` → passed
+- GitNexus `detect_changes` → LOW，0 条执行流受影响
+
 ### feat(worker)：建立多副本安全门禁并维持单副本
 
 - 容量纯模型新增 active-passive 与任务分片决策，逐项检查租约独占、effect 幂等、文章归档写锁、登录态隔离和分片所有权
