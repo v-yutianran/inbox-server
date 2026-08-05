@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateCapacityModel, type CapacityModelInput } from "../src/capacity-model.js";
+import {
+  evaluateCapacityModel,
+  evaluateReplicaSafety,
+  type CapacityModelInput,
+  type ReplicaSafetyInput,
+} from "../src/capacity-model.js";
 
 const baseline: CapacityModelInput = {
   arrivalRatePerSecond: 0.2,
@@ -58,6 +63,108 @@ describe("capacity model", () => {
     );
     expect(() => evaluateCapacityModel({ ...baseline, durationSeconds: 0 })).toThrow(
       /durationSeconds/,
+    );
+  });
+});
+
+const replicaBaseline: ReplicaSafetyInput = {
+  archiveWriteLock: false,
+  capacityStatus: "stable",
+  effectIdempotency: true,
+  leaseExclusive: true,
+  loginStateIsolated: false,
+  requestedReplicas: 2,
+  shardOwnershipExclusive: false,
+};
+
+describe("replica safety model", () => {
+  it("当前归档锁和登录态未隔离时维持单副本", () => {
+    expect(evaluateReplicaSafety(replicaBaseline)).toEqual({
+      activePassiveBlockers: ["archive-write-lock", "login-state-isolation"],
+      activePassiveEligible: false,
+      recommendedTopology: "single",
+      requestedReplicas: 2,
+      shardedBlockers: [
+        "archive-write-lock",
+        "login-state-isolation",
+        "shard-ownership",
+      ],
+      shardedEligible: false,
+      reason: "safety-gates-failed",
+    });
+  });
+
+  it.each([
+    ["leaseExclusive", "lease-exclusivity"],
+    ["effectIdempotency", "effect-idempotency"],
+    ["archiveWriteLock", "archive-write-lock"],
+    ["loginStateIsolated", "login-state-isolation"],
+  ] as const)("任一 active-passive 门禁 %s 失败都禁止扩副本", (field, blocker) => {
+    const input = {
+      ...replicaBaseline,
+      archiveWriteLock: true,
+      capacityStatus: "saturated" as const,
+      loginStateIsolated: true,
+      [field]: false,
+    };
+
+    expect(evaluateReplicaSafety(input)).toMatchObject({
+      activePassiveBlockers: [blocker],
+      activePassiveEligible: false,
+      recommendedTopology: "single",
+      reason: "safety-gates-failed",
+    });
+  });
+
+  it("容量饱和且共享安全门禁通过时仅允许 active-passive", () => {
+    expect(evaluateReplicaSafety({
+      ...replicaBaseline,
+      archiveWriteLock: true,
+      capacityStatus: "saturated",
+      loginStateIsolated: true,
+    })).toMatchObject({
+      activePassiveBlockers: [],
+      activePassiveEligible: true,
+      recommendedTopology: "active-passive",
+      shardedBlockers: ["shard-ownership"],
+      shardedEligible: false,
+      reason: "active-passive-ready",
+    });
+  });
+
+  it("容量仍有余量时即使门禁全绿也不扩副本", () => {
+    expect(evaluateReplicaSafety({
+      ...replicaBaseline,
+      archiveWriteLock: true,
+      loginStateIsolated: true,
+      shardOwnershipExclusive: true,
+    })).toMatchObject({
+      activePassiveEligible: true,
+      recommendedTopology: "single",
+      shardedEligible: true,
+      reason: "capacity-headroom",
+    });
+  });
+
+  it("容量饱和且分片所有权也隔离时才建议分片", () => {
+    expect(evaluateReplicaSafety({
+      ...replicaBaseline,
+      archiveWriteLock: true,
+      capacityStatus: "saturated",
+      loginStateIsolated: true,
+      shardOwnershipExclusive: true,
+    })).toMatchObject({
+      activePassiveEligible: true,
+      recommendedTopology: "sharded",
+      shardedBlockers: [],
+      shardedEligible: true,
+      reason: "sharding-ready",
+    });
+  });
+
+  it("拒绝非正整数副本数", () => {
+    expect(() => evaluateReplicaSafety({ ...replicaBaseline, requestedReplicas: 0 })).toThrow(
+      /requestedReplicas/,
     );
   });
 });

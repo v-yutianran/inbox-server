@@ -24,6 +24,37 @@ export interface CapacityModelResult {
   readonly uniqueArrivals: number;
 }
 
+export type ReplicaSafetyBlocker =
+  | "archive-write-lock"
+  | "effect-idempotency"
+  | "lease-exclusivity"
+  | "login-state-isolation"
+  | "shard-ownership";
+
+export interface ReplicaSafetyInput {
+  readonly archiveWriteLock: boolean;
+  readonly capacityStatus: CapacityModelResult["status"];
+  readonly effectIdempotency: boolean;
+  readonly leaseExclusive: boolean;
+  readonly loginStateIsolated: boolean;
+  readonly requestedReplicas: number;
+  readonly shardOwnershipExclusive: boolean;
+}
+
+export interface ReplicaSafetyResult {
+  readonly activePassiveBlockers: readonly ReplicaSafetyBlocker[];
+  readonly activePassiveEligible: boolean;
+  readonly recommendedTopology: "active-passive" | "sharded" | "single";
+  readonly requestedReplicas: number;
+  readonly shardedBlockers: readonly ReplicaSafetyBlocker[];
+  readonly shardedEligible: boolean;
+  readonly reason:
+    | "active-passive-ready"
+    | "capacity-headroom"
+    | "safety-gates-failed"
+    | "sharding-ready";
+}
+
 export function evaluateCapacityModel(input: CapacityModelInput): CapacityModelResult {
   validateInput(input);
   const uniqueArrivals = Math.floor(input.arrivalRatePerSecond * input.durationSeconds);
@@ -57,6 +88,58 @@ export function evaluateCapacityModel(input: CapacityModelInput): CapacityModelR
     proxyDowntimeSeconds,
     status: backlog === 0 ? "stable" : "saturated",
     uniqueArrivals,
+  };
+}
+
+export function evaluateReplicaSafety(input: ReplicaSafetyInput): ReplicaSafetyResult {
+  if (!Number.isInteger(input.requestedReplicas) || input.requestedReplicas <= 0) {
+    throw new Error("副本安全模型 requestedReplicas 必须是正整数");
+  }
+
+  const activePassiveBlockers = [
+    ...(!input.leaseExclusive ? ["lease-exclusivity" as const] : []),
+    ...(!input.effectIdempotency ? ["effect-idempotency" as const] : []),
+    ...(!input.archiveWriteLock ? ["archive-write-lock" as const] : []),
+    ...(!input.loginStateIsolated ? ["login-state-isolation" as const] : []),
+  ];
+  const shardedBlockers = [
+    ...activePassiveBlockers,
+    ...(!input.shardOwnershipExclusive ? ["shard-ownership" as const] : []),
+  ];
+  const activePassiveEligible = activePassiveBlockers.length === 0;
+  const shardedEligible = shardedBlockers.length === 0;
+
+  if (!activePassiveEligible) {
+    return {
+      activePassiveBlockers,
+      activePassiveEligible,
+      recommendedTopology: "single",
+      requestedReplicas: input.requestedReplicas,
+      shardedBlockers,
+      shardedEligible,
+      reason: "safety-gates-failed",
+    };
+  }
+  if (input.capacityStatus === "stable" || input.requestedReplicas === 1) {
+    return {
+      activePassiveBlockers,
+      activePassiveEligible,
+      recommendedTopology: "single",
+      requestedReplicas: input.requestedReplicas,
+      shardedBlockers,
+      shardedEligible,
+      reason: "capacity-headroom",
+    };
+  }
+
+  return {
+    activePassiveBlockers,
+    activePassiveEligible,
+    recommendedTopology: shardedEligible ? "sharded" : "active-passive",
+    requestedReplicas: input.requestedReplicas,
+    shardedBlockers,
+    shardedEligible,
+    reason: shardedEligible ? "sharding-ready" : "active-passive-ready",
   };
 }
 
