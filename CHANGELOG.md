@@ -2,6 +2,16 @@
 
 ## 2026-08-05
 
+### docs(openspec)：归档 Inoreader 分页与通知修复
+
+- 将 Inoreader 虚拟列表完整采集、SPA 内容就绪和稳定 key 去重要求同步到 `browser-collect-parity` 主规格
+- 将通知数量的“已入队”语义与禁止冒充最终交付的约束同步到 `notification-report` 主规格
+- 补齐 PR #43、#44、#45 的远端交付证据，完成任务 8.6，并将 change 归档到 `2026-08-05-fix-inoreader-pagination-notifications`
+
+**如何验证**：
+- `/Users/xinwu/Library/pnpm/bin/openspec validate --all --strict --no-interactive`（15 passed / 0 failed）
+- delta requirement 与主规格逐字对照通过，`git diff --check` 通过
+
 ### ops(worker)：完成 Inoreader 修复的 Sealos 生产验收
 
 - 从源码 revision `96cd3f8a467a148b523037e9c96862084032b7be` 构建 `linux/amd64` Worker，并固定南京大学 GHCR 代理镜像 digest `sha256:db860618b2afd0dd40144a6b61b6fa48602054a1bb70308fe088cfaaad7a354f`

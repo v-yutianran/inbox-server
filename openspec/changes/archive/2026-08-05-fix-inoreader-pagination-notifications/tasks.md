@@ -43,4 +43,4 @@
 - [x] 8.3 仅触发一次 Inoreader：预期发现当前 3 条新收藏、`collected=3`、`published=3`、基线变为 B0+3，三个 dispatch job 及其 effect 成功，且只发送一条“已入队”通知
 - [x] 8.4 使用新 run id 再触发一次 Inoreader：预期 `collected=0`、`published=0`，不新增 dispatch、effect、通知或 DLQ，证明去重闭环
 - [x] 8.5 若就绪等待、采集、分发或健康门禁失败，回滚到预检记录的旧镜像 digest，并复核 Worker Ready 与任务领取恢复；不手工回退 baseline，已发生的外部副作用不做自动逆操作
-- [ ] 8.6 补全 `acceptance.md` 的实际证据和结论后，按 Git 交付门禁执行 commit、普通 push 和 PR；本任务不授权 merge
+- [x] 8.6 补全 `acceptance.md` 的实际证据和结论后，按 Git 交付门禁执行 commit、普通 push 和 PR；本任务不授权 merge
