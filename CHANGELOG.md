@@ -2,6 +2,18 @@
 
 ## 2026-08-05
 
+### ops(worker)：完成 Inoreader 修复的 Sealos 生产验收
+
+- 从源码 revision `96cd3f8a467a148b523037e9c96862084032b7be` 构建 `linux/amd64` Worker，并固定南京大学 GHCR 代理镜像 digest `sha256:db860618b2afd0dd40144a6b61b6fa48602054a1bb70308fe088cfaaad7a354f`
+- 仅滚动更新 Sealos Worker；Cloudflare API/Console、D1 schema、`baseline:inoreader` 与历史 DLQ 均未手工修改，Mihomo/WARP sidecar 镜像保持不变
+- 第一次生产 Inoreader 采集为 3/3，权威 baseline 从 570 单调增加到 573，三条 link job、三条 Cubox effect 与通知 effect 均完成；第二次为 0/0，无重复通知或 DLQ 增量
+
+**如何验证**：
+- Dockerfile `--check` 零告警；公共 GHCR 与南京大学代理解析到同一 digest；StatefulSet server-side dry-run 仅包含三个预期字段
+- 新 Pod 三容器 Ready，`/healthz` 与 `/readyz` 均为 200；部署稳定窗口 87 秒、业务后稳定窗口 80 秒均无活动故障
+- 两个目标 collect job 均为一次 `done`，并有 `worker.job.succeeded`/ack；DLQ 保持总计 333、Inoreader collect 94
+- 旧 Worker digest 的回滚 patch 已通过 server-side dry-run；所有门禁通过，因此未实际回滚
+
 ### fix(worker)：等待 Inoreader SPA article 就绪后再采集
 
 - 修复 Inoreader 在 `document.body` 已出现但 article 尚未渲染时提前返回零新增的问题；仅在 Inoreader 登录检查后等待带稳定 key 和标题链接的可提取 article，不修改共享滚动或其它来源
@@ -14,7 +26,7 @@
 - `npm run test --workspace @inbox/worker`（21 files / 99 tests），Worker typecheck 与 build 通过
 - `npm test`（42 files / 218 tests），全 workspace typecheck 与 production build 通过
 - Python 兼容门禁：ruff 通过，pytest 258 passed（9 个既有 warning），mypy 103 source files 通过
-- 未运行自动化浏览器 E2E，未连接真实 Inoreader 或生产 baseline，未部署 Cloudflare/Sealos
+- 合成自动化浏览器 E2E 未运行；生产验证通过 Sealos 中既有 headed Chromium、真实 Inoreader 与 D1 低敏感状态完成
 
 ## 2026-08-04
 

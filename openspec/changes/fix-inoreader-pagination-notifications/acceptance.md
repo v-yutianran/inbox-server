@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 | --- | --- |
 | 变更 | `fix-inoreader-pagination-notifications` |
-| 状态 | 本地修复与门禁通过，生产复验待授权 |
+| 状态 | 本地与生产验收通过，Git 远端交付待当前授权 |
 | 读者 | 开发、评审、发布与运维人员 |
 | 验收范围 | 本地 Worker 门禁、Inoreader SPA 内容就绪、生产单来源采集与去重闭环 |
 | 证据根目录 | 当前功能 worktree |
@@ -15,7 +15,7 @@
 
 验收范围包括 Inoreader SPA 内容就绪、虚拟列表按 article key 累积去重、稳定停止、轮次上限、YouTube/X 默认行为不变、通知“已入队”语义、零新增不通知、既有结构化成功事件，以及生产单来源首次采集与第二次去重闭环。
 
-排除 Cloudflare API/Console、D1 schema、Queue envelope、其它来源、baseline 重置、历史 DLQ 重放和最终交付聚合通知。生产部署、真实 Inoreader 数据和外部目标副作用仅在获得对应授权后执行；计划本身不授权这些操作。
+排除 Cloudflare API/Console、D1 schema、Queue envelope、其它来源、baseline 重置、历史 DLQ 重放和最终交付聚合通知。本次已获授权且仅滚动更新 Sealos Worker、执行两次真实 Inoreader 采集；未改写 Cloudflare、D1 schema、baseline 或 DLQ。
 
 ## 进入与退出条件
 
@@ -46,7 +46,7 @@
 | REQ-001、REQ-003 | 运行时行为可观测 | AC-006 | 复用 `worker.job.succeeded`，summary 可观察 source、collected、published 且不含文章敏感内容 | TC-008 | `queue-processor.test.ts` 随 Worker 全量测试通过 |
 | REQ-004 | Inoreader SPA 内容就绪后再提取 | AC-007 | body 先出现而 article 延迟出现时必须等待可提取条目，禁止误报零新增 | TC-009 | `inoreader-readiness.test.ts` RED/GREEN 通过 |
 | REQ-004 | Inoreader SPA 未就绪时安全失败 | AC-008 | 超时或登录失效必须显式失败，且不更新 baseline、不入队、不通知 | TC-010 | `inoreader-readiness.test.ts` 通过 |
-| REQ-001、REQ-004 | 生产单来源去重闭环 | AC-009 | 首次采集 N 条并使 baseline 单调增加 N，第二次采集为零且无重复副作用 | TC-011 | 待修复部署后执行 |
+| REQ-001、REQ-004 | 生产单来源去重闭环 | AC-009 | 首次采集 N 条并使 baseline 单调增加 N，第二次采集为零且无重复副作用 | TC-011 | Worker job、`worker_state`、effect、DLQ 与结构化日志生产证据通过 |
 
 ## 验收用例
 
@@ -110,11 +110,12 @@
 - 操作：执行 Inoreader collect job。
 - 期望：任务以可分类错误失败，不写 `baseline:inoreader`，不创建 dispatch job，不发送同步通知；其它 browser source 不受影响。
 
-### TC-011 生产单来源两次采集
+### TC-011 生产 Inoreader 两次采集
 
-- 前置：获得生产部署与真实数据复验授权；记录基线 B0、旧镜像 digest、Worker 状态、DLQ 和当前 3 条未入基线收藏。
-- 操作：部署修复后的 Worker，只触发 Inoreader 两次，每次使用不同 run id。
+- 前置：已获得生产部署与真实数据复验授权；权威 `worker_state` 中 `baseline:inoreader` 的 B0=570，旧 Worker digest 为 `sha256:526ace4b…c8646d1`，Worker Ready，DLQ 为 333（Inoreader collect 为 94）。
+- 操作：部署修复后的 Worker；第一次复用 03:20 scheduler 的唯一 Inoreader run，第二次使用不同 run id 直接发布单来源任务。
 - 期望：第一次 `collected=3`、`published=3`、baseline=B0+3，dispatch/effect 成功且只通知一次；第二次 `0/0`，不新增 dispatch、effect、通知或 DLQ。
+- 结果：第一次 3/3，baseline=573，三条 link job 和三条 Cubox effect 均为 done，通知 effect 为 done；第二次 0/0，baseline 保持 573，无通知 effect，DLQ 仍为 333/94。
 
 ## 执行记录
 
@@ -135,6 +136,11 @@
 | 2026-08-05 | Worker 全量与构建 | Worker test、typecheck、build | 通过 | 21 files / 99 tests；共享 `waitForDocumentBody`、`scrollExtract` 与其它来源测试不变 |
 | 2026-08-05 | 全 workspace 与 Python 兼容门禁 | `npm test`、typecheck、build；ruff、pytest、mypy | 通过 | npm 42 files / 218 tests；pytest 258 passed（9 个既有 warning）；mypy 103 source files |
 | 2026-08-05 | GitNexus 修复后范围门禁 | 刷新当前 worktree 索引后执行 `detect-changes --scope all` | 通过 | 风险由相邻符号误映射的 high 收敛为 medium；仅 3 条 Inoreader 采集流程受影响，无 YouTube 或共享滚动流程 |
+| 2026-08-05 | 生产部署预检 | GHCR 构建检查、源站/南京大学代理摘要校验、StatefulSet server-side dry-run | 通过 | Dockerfile 零告警；两个 registry 均解析到 `sha256:db860618…a354f`；dry-run 仅改变 originImageName、source revision 与主 Worker image |
+| 2026-08-05 | Sealos Worker 滚动部署 | 仅 patch `inbox-server-worker-staging` 后等待 rollout、探针、心跳与日志稳定窗口 | 通过 | source revision=`96cd3f8a…32b7be`，三容器 Ready；`/healthz`、`/readyz` 200；WARP 冷启动自恢复一次；部署稳定窗口 87 秒无活动故障 |
+| 2026-08-05 | TC-011 第一次生产采集 | scheduler run `09cd7532-9495-49d8-992e-00310430e770` | 通过 | job `b55064f5-e356-426d-83aa-174ea58402fc` 一次成功，3/3；baseline 570→573；3 个 link job、3 个 Cubox effect 和通知 effect 均 done |
+| 2026-08-05 | TC-011 第二次生产采集 | manual single-source run `e76a953e-77ef-4ec7-8fab-0e344b84c05c` | 通过 | job `0b912405-7d7d-4f5e-9023-3f17ba36bc6e` 一次成功，0/0；baseline=573；无通知 effect；DLQ 零增 |
+| 2026-08-05 | 生产业务后稳定门禁 | 同参数双采样 Sealos 日志/事件并复核当前探针 | 通过 | 80 秒内 warning 计数未增长，active failure=0；历史 readiness 超时最后发生于 19:22:58Z；两目标任务均有 `worker.job.succeeded`/ack |
 
 ## 修复策略与执行顺序
 
@@ -148,9 +154,9 @@
 
 ## 未执行项与阻塞项
 
-- 生产部署：本轮未授权部署；本地修复与门禁已通过，等待独立部署授权。
-- 真实账号复验：此前一次验证已确认旧实现缺陷；修复后的 TC-011 尚未获得当前任务授权。
-- 外部目标最终保存：当前系统没有本次范围内的聚合回执契约，明确排除。
+- Git 远端交付：本轮只授权部署、两次生产复验和失败回滚；本地 commit 由项目规则自动执行，普通 push/PR 仍待当前授权。
+- Cloudflare API/Console 与 D1 schema：明确排除且未修改；本地主目录中的旧管理键返回 401，不影响 Worker 内部控制面与 D1 只读验收。
+- 最终交付聚合通知：当前系统没有本次范围内的跨目标聚合回执契约，明确排除；本次三条 Cubox effect 已单独核对为 done。
 
 ## 残余风险
 
@@ -161,13 +167,13 @@
 
 ## 验收结论
 
-当前结论：**本地修复验收通过，生产验收待授权**。REQ-001～REQ-004 的合成测试、全量回归、类型与构建门禁均通过；TC-009、TC-010 已证明延迟渲染会等待、未就绪会安全失败。TC-011 尚未部署和连接真实生产数据，因此不得归档该 change，也不得宣称线上 Inoreader 流程已恢复。
+当前结论：**本地修复与生产验收通过**。REQ-001～REQ-004 的合成测试、全量回归、类型与构建门禁均通过；TC-009、TC-010 已证明延迟渲染会等待、未就绪会安全失败。TC-011 进一步证明线上首次采集 3/3、权威 baseline 单调增加、Cubox 与通知 effect 完成，紧接的第二次采集为 0/0 且无重复副作用或 DLQ 增量。Worker 在业务完成后稳定 80 秒且当前探针全部 Ready；无需回滚。
 
 ## 覆盖统计
 
 | 指标 | 当前值 | 目标 |
 | --- | --- | --- |
-| 需求覆盖 | 4/4 本地通过 | 4/4 |
-| 验收标准覆盖 | 8/9 本地通过，1/9 生产未执行 | 9/9 |
-| 用例覆盖 | 10/11 本地通过，1/11 生产未执行 | 11/11 |
-| 生产关键路径覆盖 | 0/1 通过 | 1/1 |
+| 需求覆盖 | 4/4 通过 | 4/4 |
+| 验收标准覆盖 | 9/9 通过 | 9/9 |
+| 用例覆盖 | 11/11 通过 | 11/11 |
+| 生产关键路径覆盖 | 1/1 通过 | 1/1 |
