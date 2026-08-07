@@ -2,6 +2,18 @@
 
 ## 2026-08-07
 
+### ops(worker)：重新部署合并修复并跑通线上归档
+
+- 基于 merge revision `bbf71484cf761f8397eaac734921fce28c921d46` 重新构建 Worker，并固定南京大学 GHCR 代理镜像 digest `sha256:55c7c970fa5694759b9f09817dad81e1b31d14687b975af03b3bef92e899a799`
+- 同步 Docker Compose、Sealos 实例与 Sealos 应用模板；Mihomo/WARP sidecar 镜像保持不变
+- 为 PVC 本地归档提交创建并校验 Git bundle 后安全 rebase；逐字节确认冲突版本一致，再普通 push，未 reset、强推或删除文章
+
+**如何验证**：
+- GHCR 源站与南京大学代理 digest 一致；Sealos server-side dry-run、rollout 与三容器 Ready 通过，主 Worker 0 次重启
+- `/healthz`、`/readyz` 均返回 200；线上 `articles_dir=raw/article`、revision 与 15 分钟 Chromium 启动超时均生效
+- 真实任务连续出现 5 个 `worker.job.succeeded`；成功后无新增 `article.archive.failed`、`worker.job.uncertain` 或 `git_pull_failed`
+- PVC HEAD 与远端 `.agents/main` 一致，部署后新增归档提交仅落在 `raw/article`
+
 ### fix(article)：修复 Git 分叉后的归档补交
 
 - 文章 PVC 仓库存在未推送提交且远端 `main` 已前进时，使用安全 rebase 保留双方提交，不再由 `pull --ff-only` 永久阻塞后续归档
