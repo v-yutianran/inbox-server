@@ -13,6 +13,7 @@ describe("worker config", () => {
     const config = parseWorkerConfig({ DISPLAY: ":99" });
 
     expect(config.processingEnabled).toBe(false);
+    expect(config.browserLaunchTimeoutMs).toBe(900_000);
     expect(config.channelsPath).toBe("/app/channels.yaml");
     expect(config.persistenceRoot).toBe("/data");
     expect(config.warpSocksProxyUrl).toBeUndefined();
@@ -21,6 +22,7 @@ describe("worker config", () => {
   it("完整生产配置解析为固定批量和可见性超时", () => {
     const config = parseWorkerConfig({
       BROWSER_PROXY_URL: "http://127.0.0.1:7897",
+      BROWSER_LAUNCH_TIMEOUT_MS: "600000",
       CONTROL_PLANE_URL: "https://api.example.com",
       DISPLAY: ":99",
       WORKER_PROCESSING_ENABLED: "true",
@@ -30,6 +32,7 @@ describe("worker config", () => {
 
     expect(config.processingEnabled).toBe(true);
     expect(config.browserProxyUrl).toBe("http://127.0.0.1:7897");
+    expect(config.browserLaunchTimeoutMs).toBe(600_000);
     expect(config.queueBatchSize).toBe(10);
     expect(config.visibilityTimeoutMs).toBe(300_000);
     expect(config.warpSocksProxyUrl).toBe("socks5://127.0.0.1:40000");

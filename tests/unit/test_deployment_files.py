@@ -92,6 +92,24 @@ def test_typescript_worker_entrypoint_removes_stale_x11_socket() -> None:
     assert 'kill "$xvfb_pid"' in entrypoint
 
 
+def test_sealos_worker_allows_slow_lazy_image_startup() -> None:
+    documents = list(yaml.safe_load_all((ROOT / "deploy/sealos/worker-staging.yaml").read_text()))
+    stateful_set = next(document for document in documents if document["kind"] == "StatefulSet")
+    worker = next(
+        container
+        for container in stateful_set["spec"]["template"]["spec"]["containers"]
+        if container["name"] == "inbox-server-worker-staging"
+    )
+
+    assert worker["startupProbe"]["failureThreshold"] == 240
+    worker_environment = {item["name"]: item.get("value") for item in worker["env"]}
+    assert worker_environment["BROWSER_LAUNCH_TIMEOUT_MS"] == "900000"
+    assert "failureThreshold: 240" in (ROOT / "template/inbox-server-worker/index.yaml").read_text()
+    assert "BROWSER_LAUNCH_TIMEOUT_MS" in (
+        ROOT / "template/inbox-server-worker/index.yaml"
+    ).read_text()
+
+
 def test_entrypoint_links_shared_config_and_uses_fixed_compose_project(tmp_path: Path) -> None:
     deploy_root = tmp_path / "inbox-server"
     release = deploy_root / "releases" / "release-test"

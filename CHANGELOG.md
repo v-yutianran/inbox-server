@@ -4,14 +4,18 @@
 
 ### ops(worker)：部署 raw/article 归档配置
 
-- 基于 PR #52 合并 revision `d5bda0db18cc0b884f4f8c0bd4a860e837bcf7d2`，连同冷重启修复 revision `ed27a9cee1b56daa1b8a249019083069e91989d0` 构建并发布 Worker，固定南京大学 GHCR 代理镜像 digest `sha256:5ab3f4b6838d098bb4a040eef8548d31c63c0e9e1b2ffb1c14331767cebc78d3`
+- 基于已推送 revision `e7c69d453dc135b37dceb9162f7cad59732953da` 构建并发布 Worker，固定南京大学 GHCR 代理镜像 digest `sha256:1d857f2f56609197c4d568a613dc19c6c81492c4c93d2d475efafe9785ce7ad9`
 - 同步 Sealos manifest、Docker Compose 与 Sealos 应用模板；Mihomo/WARP sidecar 镜像、Cloudflare API/Console、历史文章和 DLQ 保持不变
 - 镜像内 `/app/channels.yaml` 的 `article_archive.articles_dir` 已切换为 `raw/article`
 - Worker 入口会在校验 DISPLAY 编号后清理对应的失效 X11 lock 与 socket，并对 Xvfb 执行最多 5 次有界重试，避免 Sealos 快速重启时抽象 socket 尚未释放而持续 `xvfb_failed`
+- Sealos Worker startupProbe 宽限延长到 20 分钟，允许北京节点完成 Chromium 镜像层分页，避免应用代码启动前被反复终止
+- Playwright Chromium 启动超时改为可配置的 `BROWSER_LAUNCH_TIMEOUT_MS`，默认与 Sealos 显式值均为 15 分钟，避免应用内部 180 秒默认超时早于 startupProbe 退出
 
 **如何验证**：
 - TypeScript 230 项测试、typecheck、build 与 Dockerfile `--check` 通过
 - X11 冷重启回归测试先失败后通过，Python lint、unit/integration 与 mypy 通过
+- 慢速镜像分页探针回归测试先失败后通过
+- 浏览器启动超时配置与 launch 参数 4 个回归断言先失败后通过
 - 公共 GHCR 镜像 digest 与构建产物一致，镜像内配置读取为 `raw/article`
 - Sealos server-side dry-run、rollout、三容器 Ready、健康探针与线上容器配置检查通过
 
