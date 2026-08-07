@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 2026-08-07
+
+### ops(worker)：部署 raw/article 归档配置
+
+- 从 PR #52 合并 revision `d5bda0db18cc0b884f4f8c0bd4a860e837bcf7d2` 构建并发布 Worker，固定南京大学 GHCR 代理镜像 digest `sha256:568304296a8669cca756fb641c266c81807c63a3b4e4e9b2c93b6fe9b33e1f09`
+- 同步 Sealos manifest、Docker Compose 与 Sealos 应用模板；Mihomo/WARP sidecar 镜像、Cloudflare API/Console、历史文章和 DLQ 保持不变
+- 镜像内 `/app/channels.yaml` 的 `article_archive.articles_dir` 已切换为 `raw/article`
+- Worker 入口会在校验 DISPLAY 编号后清理对应的失效 X11 lock 与 socket，避免探针重启后持续 `xvfb_failed`
+
+**如何验证**：
+- TypeScript 230 项测试、typecheck、build 与 Dockerfile `--check` 通过
+- X11 冷重启回归测试先失败后通过，Python lint、unit/integration 与 mypy 通过
+- 公共 GHCR 镜像 digest 与构建产物一致，镜像内配置读取为 `raw/article`
+- Sealos server-side dry-run、rollout、三容器 Ready、健康探针与线上容器配置检查通过
+
 ## 2026-08-05
 
 ### fix(article)：将文章归档目录切换到 raw 层

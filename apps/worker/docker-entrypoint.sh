@@ -4,7 +4,13 @@ set -eu
 display="${DISPLAY:-:99}"
 lock_number="${display#:}"
 lock_number="${lock_number%%.*}"
-rm -f "/tmp/.X${lock_number}-lock"
+case "$lock_number" in
+  ''|*[!0-9]*)
+    echo '{"event":"invalid_display"}' >&2
+    exit 1
+    ;;
+esac
+rm -f "/tmp/.X${lock_number}-lock" "/tmp/.X11-unix/X${lock_number}"
 
 Xvfb "$display" -screen 0 1920x1080x24 -ac -nolisten tcp &
 xvfb_pid=$!
