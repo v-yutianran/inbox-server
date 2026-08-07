@@ -87,6 +87,7 @@ async function run(): Promise<void> {
     browser = await launchHeadedBrowser(
       config.display,
       config.browserProxyUrl ?? outboundProxy?.url,
+      config.browserLaunchTimeoutMs,
     );
     state = reduceWorkerHealthState(state, {
       at: Date.now(),

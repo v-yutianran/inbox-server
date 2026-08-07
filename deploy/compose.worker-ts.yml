@@ -4,6 +4,7 @@ services:
     platform: linux/amd64
     restart: unless-stopped
     environment:
+      BROWSER_LAUNCH_TIMEOUT_MS: "900000"
       DISPLAY: :99
       HEALTH_PORT: "8080"
       TZ: Asia/Shanghai

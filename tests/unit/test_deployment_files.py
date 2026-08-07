@@ -102,7 +102,12 @@ def test_sealos_worker_allows_slow_lazy_image_startup() -> None:
     )
 
     assert worker["startupProbe"]["failureThreshold"] == 240
+    worker_environment = {item["name"]: item.get("value") for item in worker["env"]}
+    assert worker_environment["BROWSER_LAUNCH_TIMEOUT_MS"] == "900000"
     assert "failureThreshold: 240" in (ROOT / "template/inbox-server-worker/index.yaml").read_text()
+    assert "BROWSER_LAUNCH_TIMEOUT_MS" in (
+        ROOT / "template/inbox-server-worker/index.yaml"
+    ).read_text()
 
 
 def test_entrypoint_links_shared_config_and_uses_fixed_compose_project(tmp_path: Path) -> None:

@@ -66,6 +66,8 @@ spec:
               drop:
                 - ALL
           env:
+            - name: BROWSER_LAUNCH_TIMEOUT_MS
+              value: "900000"
             - name: DEPLOYMENT_VERSION
               value: sha256:5ab3f4b6838d098bb4a040eef8548d31c63c0e9e1b2ffb1c14331767cebc78d3
             - name: DISPLAY

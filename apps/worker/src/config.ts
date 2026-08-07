@@ -3,6 +3,7 @@ import { z } from "zod";
 const workerConfigSchema = z.object({
   ARTICLE_REPOSITORY_URL: z.string().url().optional(),
   ARTICLE_TEMPLATE_PATH: z.string().min(1).default("/app/templates/article.md.eta"),
+  BROWSER_LAUNCH_TIMEOUT_MS: z.coerce.number().int().positive().default(900_000),
   BROWSER_PROXY_URL: z.string().url().optional(),
   CHANNELS_PATH: z.string().min(1).default("/app/channels.yaml"),
   CONTROL_PLANE_URL: z.string().url().optional(),
@@ -41,6 +42,7 @@ const workerConfigSchema = z.object({
 export interface WorkerConfig {
   readonly articleRepositoryUrl: string | undefined;
   readonly articleTemplatePath: string;
+  readonly browserLaunchTimeoutMs: number;
   readonly browserProxyUrl: string | undefined;
   readonly channelsPath: string;
   readonly controlPlaneUrl: string | undefined;
@@ -70,6 +72,7 @@ export function parseWorkerConfig(
   return {
     articleRepositoryUrl: parsed.ARTICLE_REPOSITORY_URL,
     articleTemplatePath: parsed.ARTICLE_TEMPLATE_PATH,
+    browserLaunchTimeoutMs: parsed.BROWSER_LAUNCH_TIMEOUT_MS,
     browserProxyUrl: parsed.BROWSER_PROXY_URL,
     channelsPath: parsed.CHANNELS_PATH,
     controlPlaneUrl: parsed.CONTROL_PLANE_URL,

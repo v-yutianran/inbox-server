@@ -65,6 +65,8 @@ spec:
               value: https://github.com/v-yutianran/.agents.git
             - name: BROWSER_PROXY_URL
               value: http://127.0.0.1:7897
+            - name: BROWSER_LAUNCH_TIMEOUT_MS
+              value: "900000"
             - name: CHANNELS_PATH
               value: /app/channels.yaml
             - name: CONTROL_PLANE_URL
