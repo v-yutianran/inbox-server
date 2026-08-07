@@ -88,6 +88,8 @@ def test_typescript_worker_entrypoint_removes_stale_x11_socket() -> None:
     entrypoint = (ROOT / "apps/worker/docker-entrypoint.sh").read_text()
 
     assert 'rm -f "/tmp/.X${lock_number}-lock" "/tmp/.X11-unix/X${lock_number}"' in entrypoint
+    assert 'while [ "$xvfb_attempt" -lt 5 ]' in entrypoint
+    assert 'kill "$xvfb_pid"' in entrypoint
 
 
 def test_entrypoint_links_shared_config_and_uses_fixed_compose_project(tmp_path: Path) -> None:

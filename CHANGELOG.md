@@ -4,10 +4,10 @@
 
 ### ops(worker)：部署 raw/article 归档配置
 
-- 从 PR #52 合并 revision `d5bda0db18cc0b884f4f8c0bd4a860e837bcf7d2` 构建并发布 Worker，固定南京大学 GHCR 代理镜像 digest `sha256:568304296a8669cca756fb641c266c81807c63a3b4e4e9b2c93b6fe9b33e1f09`
+- 基于 PR #52 合并 revision `d5bda0db18cc0b884f4f8c0bd4a860e837bcf7d2`，连同冷重启修复 revision `4085aa9769502596fbe642f1a989a8f87b7e9a30` 构建并发布 Worker，固定南京大学 GHCR 代理镜像 digest `sha256:2fa7eb7188e71a7a777570431e2ef7e58791fa56ca7505c9dfc8dcb8288acdd8`
 - 同步 Sealos manifest、Docker Compose 与 Sealos 应用模板；Mihomo/WARP sidecar 镜像、Cloudflare API/Console、历史文章和 DLQ 保持不变
 - 镜像内 `/app/channels.yaml` 的 `article_archive.articles_dir` 已切换为 `raw/article`
-- Worker 入口会在校验 DISPLAY 编号后清理对应的失效 X11 lock 与 socket，避免探针重启后持续 `xvfb_failed`
+- Worker 入口会在校验 DISPLAY 编号后清理对应的失效 X11 lock 与 socket，并对 Xvfb 执行最多 5 次有界重试，避免 Sealos 快速重启时抽象 socket 尚未释放而持续 `xvfb_failed`
 
 **如何验证**：
 - TypeScript 230 项测试、typecheck、build 与 Dockerfile `--check` 通过

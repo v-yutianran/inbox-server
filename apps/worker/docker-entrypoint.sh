@@ -10,20 +10,36 @@ case "$lock_number" in
     exit 1
     ;;
 esac
-rm -f "/tmp/.X${lock_number}-lock" "/tmp/.X11-unix/X${lock_number}"
-
-Xvfb "$display" -screen 0 1920x1080x24 -ac -nolisten tcp &
-xvfb_pid=$!
-
 ready=0
-attempt=0
-while [ "$attempt" -lt 50 ]; do
-  if kill -0 "$xvfb_pid" 2>/dev/null && [ -S "/tmp/.X11-unix/X${lock_number}" ]; then
-    ready=1
+xvfb_attempt=0
+while [ "$xvfb_attempt" -lt 5 ]; do
+  rm -f "/tmp/.X${lock_number}-lock" "/tmp/.X11-unix/X${lock_number}"
+  Xvfb "$display" -screen 0 1920x1080x24 -ac -nolisten tcp &
+  xvfb_pid=$!
+
+  readiness_attempt=0
+  while [ "$readiness_attempt" -lt 50 ]; do
+    if kill -0 "$xvfb_pid" 2>/dev/null && [ -S "/tmp/.X11-unix/X${lock_number}" ]; then
+      ready=1
+      break
+    fi
+    if ! kill -0 "$xvfb_pid" 2>/dev/null; then
+      break
+    fi
+    readiness_attempt=$((readiness_attempt + 1))
+    sleep 0.1
+  done
+
+  if [ "$ready" -eq 1 ]; then
     break
   fi
-  attempt=$((attempt + 1))
-  sleep 0.1
+
+  kill "$xvfb_pid" 2>/dev/null || true
+  wait "$xvfb_pid" 2>/dev/null || true
+  xvfb_attempt=$((xvfb_attempt + 1))
+  if [ "$xvfb_attempt" -lt 5 ]; then
+    sleep 1
+  fi
 done
 
 if [ "$ready" -ne 1 ]; then

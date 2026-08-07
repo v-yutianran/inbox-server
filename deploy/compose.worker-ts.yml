@@ -1,6 +1,6 @@
 services:
   worker:
-    image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:568304296a8669cca756fb641c266c81807c63a3b4e4e9b2c93b6fe9b33e1f09
+    image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:2fa7eb7188e71a7a777570431e2ef7e58791fa56ca7505c9dfc8dcb8288acdd8
     platform: linux/amd64
     restart: unless-stopped
     environment:
