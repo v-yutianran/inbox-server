@@ -115,9 +115,9 @@ spec:
             httpGet:
               path: /healthz
               port: health
-            failureThreshold: 3
+            failureThreshold: 10
             periodSeconds: 30
-            timeoutSeconds: 3
+            timeoutSeconds: 10
           readinessProbe:
             httpGet:
               path: /readyz

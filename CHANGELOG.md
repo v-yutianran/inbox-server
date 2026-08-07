@@ -10,12 +10,14 @@
 - Worker 入口会在校验 DISPLAY 编号后清理对应的失效 X11 lock 与 socket，并对 Xvfb 执行最多 5 次有界重试，避免 Sealos 快速重启时抽象 socket 尚未释放而持续 `xvfb_failed`
 - Sealos Worker startupProbe 宽限延长到 20 分钟，允许北京节点完成 Chromium 镜像层分页，避免应用代码启动前被反复终止
 - Playwright Chromium 启动超时改为可配置的 `BROWSER_LAUNCH_TIMEOUT_MS`，默认与 Sealos 显式值均为 15 分钟，避免应用内部 180 秒默认超时早于 startupProbe 退出
+- Sealos Worker livenessProbe 放宽为连续 10 次、单次 10 秒，readiness 保持快速摘除；避免文章浏览器渲染期间约 50% 的 cgroup full I/O 压力把可恢复阻塞误判为进程死亡
 
 **如何验证**：
 - TypeScript 230 项测试、typecheck、build 与 Dockerfile `--check` 通过
 - X11 冷重启回归测试先失败后通过，Python lint、unit/integration 与 mypy 通过
 - 慢速镜像分页探针回归测试先失败后通过
 - 浏览器启动超时配置与 launch 参数 4 个回归断言先失败后通过
+- I/O 压力下 liveness 宽限部署契约先失败后通过；线上 cgroup `oom=0`、`oom_kill=0`，排除内存杀死
 - 公共 GHCR 镜像 digest 与构建产物一致，镜像内配置读取为 `raw/article`
 - Sealos server-side dry-run、rollout、三容器 Ready、健康探针与线上容器配置检查通过
 
