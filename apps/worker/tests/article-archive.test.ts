@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { promisify } from "node:util";
 
 import type { Browser } from "playwright";
 import { describe, expect, it, vi } from "vitest";
@@ -18,6 +20,22 @@ import {
   renderArticleMarkdown,
 } from "../src/article-archive";
 import type { Channels } from "../src/channels";
+
+const execFileAsync = promisify(execFile);
+
+async function runGit(cwd: string, ...args: string[]): Promise<string> {
+  const result = await execFileAsync("git", args, {
+    cwd,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_AUTHOR_NAME: "Inbox Worker Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Inbox Worker Test",
+    },
+  });
+  return result.stdout;
+}
 
 const template = `---
 title: <%~ it.title_yaml %>
@@ -447,6 +465,195 @@ esac
       expect(result.created).toBe(false);
       expect(commands.some((command) => command.includes(" pull "))).toBe(true);
       expect(commands.some((command) => command.includes(" push "))).toBe(true);
+    } finally {
+      process.env.PATH = previousPath;
+      if (previousGitLog === undefined) delete process.env.GIT_LOG;
+      else process.env.GIT_LOG = previousGitLog;
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("本地文章提交与远端分叉时变基后保留双方提交并推送", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "inbox-article-git-diverged-"));
+    const remoteDirectory = join(directory, "remote.git");
+    const seedDirectory = join(directory, "seed");
+    const repositoryDirectory = join(directory, "repository");
+    const concurrentDirectory = join(directory, "concurrent");
+    const articlePath = "raw/article/20260807-diverged.md";
+
+    try {
+      await runGit(directory, "init", "--bare", "--initial-branch=main", remoteDirectory);
+      await runGit(directory, "clone", remoteDirectory, seedDirectory);
+      await writeFile(join(seedDirectory, "README.md"), "archive\n");
+      await runGit(seedDirectory, "add", "README.md");
+      await runGit(seedDirectory, "commit", "-m", "chore: initialize archive");
+      await runGit(seedDirectory, "push", "origin", "main");
+      await runGit(directory, "clone", remoteDirectory, repositoryDirectory);
+      await runGit(directory, "clone", remoteDirectory, concurrentDirectory);
+
+      await mkdir(join(repositoryDirectory, "raw/article"), { recursive: true });
+      await writeFile(
+        join(repositoryDirectory, articlePath),
+        '---\nsource_url: "https://example.com/diverged"\n---\n\n正文',
+      );
+      await runGit(repositoryDirectory, "add", articlePath);
+      await runGit(repositoryDirectory, "commit", "-m", "docs: local article");
+
+      await writeFile(join(concurrentDirectory, "remote-change.md"), "remote\n");
+      await runGit(concurrentDirectory, "add", "remote-change.md");
+      await runGit(concurrentDirectory, "commit", "-m", "docs: remote change");
+      await runGit(concurrentDirectory, "push", "origin", "main");
+
+      const repository = new GitArticleRepository({
+        articlesDir: "raw/article",
+        askpassPath: "/bin/true",
+        githubToken: "test-token",
+        repositoryDir: repositoryDirectory,
+        repositoryUrl: remoteDirectory,
+      });
+      const result = await repository.save({
+        content: '---\nsource_url: "https://example.com/diverged"\n---\n\n正文',
+        filename: "20260807-diverged.md",
+        sourceUrl: "https://example.com/diverged",
+      });
+
+      const remoteLog = await runGit(
+        directory,
+        "--git-dir",
+        remoteDirectory,
+        "log",
+        "--format=%s",
+        "main",
+      );
+      expect(result).toEqual({ created: false, filename: "20260807-diverged.md" });
+      expect(remoteLog).toContain("docs: local article");
+      expect(remoteLog).toContain("docs: remote change");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("推送遇到远端竞态时先变基再重试", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "inbox-article-git-push-race-"));
+    const binDirectory = join(directory, "bin");
+    const gitLog = join(directory, "git.log");
+    const pushCount = join(directory, "push.count");
+    const repositoryDirectory = join(directory, "repository");
+    const fakeGit = join(binDirectory, "git");
+    const previousPath = process.env.PATH;
+    const previousGitLog = process.env.GIT_LOG;
+    const previousPushCount = process.env.GIT_PUSH_COUNT;
+    await mkdir(join(repositoryDirectory, ".git"), { recursive: true });
+    await mkdir(binDirectory);
+    await writeFile(
+      fakeGit,
+      `#!/bin/sh
+printf '%s\n' "$*" >> "$GIT_LOG"
+case " $* " in
+  *" rev-parse HEAD "*) printf '%s\n' 'current-head' ;;
+  *" ls-remote --heads origin main "*) printf '%s\t%s\n' 'current-head' 'refs/heads/main' ;;
+  *" status --porcelain "*) printf '%s\n' '?? raw/article/20260807-race.md' ;;
+  *" push origin HEAD:main "*)
+    count=$(cat "$GIT_PUSH_COUNT" 2>/dev/null || printf '0')
+    count=$((count + 1))
+    printf '%s' "$count" > "$GIT_PUSH_COUNT"
+    [ "$count" -gt 1 ] || exit 1
+    ;;
+esac
+`,
+      { mode: 0o755 },
+    );
+    process.env.PATH = `${binDirectory}${delimiter}${previousPath ?? ""}`;
+    process.env.GIT_LOG = gitLog;
+    process.env.GIT_PUSH_COUNT = pushCount;
+
+    try {
+      const repository = new GitArticleRepository({
+        articlesDir: "raw/article",
+        askpassPath: "/bin/true",
+        githubToken: "test-token",
+        repositoryDir: repositoryDirectory,
+        repositoryUrl: "https://github.com/example/archive.git",
+      });
+      await repository.save({
+        content: '---\nsource_url: "https://example.com/race"\n---\n\n正文',
+        filename: "20260807-race.md",
+        sourceUrl: "https://example.com/race",
+      });
+
+      const commands = (await readFile(gitLog, "utf8")).trim().split("\n");
+      const firstPush = commands.findIndex((command) => command.includes(" push origin HEAD:main"));
+      const rebase = commands.findIndex((command) => command.includes(" pull --rebase origin main"));
+      const secondPush = commands.reduce(
+        (lastIndex, command, index) =>
+          command.includes(" push origin HEAD:main") ? index : lastIndex,
+        -1,
+      );
+      expect(firstPush).toBeGreaterThan(-1);
+      expect(rebase).toBeGreaterThan(firstPush);
+      expect(secondPush).toBeGreaterThan(rebase);
+    } finally {
+      process.env.PATH = previousPath;
+      if (previousGitLog === undefined) delete process.env.GIT_LOG;
+      else process.env.GIT_LOG = previousGitLog;
+      if (previousPushCount === undefined) delete process.env.GIT_PUSH_COUNT;
+      else process.env.GIT_PUSH_COUNT = previousPushCount;
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("变基冲突时中止操作并保留本地文章", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "inbox-article-git-conflict-"));
+    const binDirectory = join(directory, "bin");
+    const gitLog = join(directory, "git.log");
+    const repositoryDirectory = join(directory, "repository");
+    const articlesDirectory = join(repositoryDirectory, "raw/article");
+    const article = join(articlesDirectory, "20260807-conflict.md");
+    const fakeGit = join(binDirectory, "git");
+    const previousPath = process.env.PATH;
+    const previousGitLog = process.env.GIT_LOG;
+    await mkdir(join(repositoryDirectory, ".git"), { recursive: true });
+    await mkdir(articlesDirectory, { recursive: true });
+    await mkdir(binDirectory);
+    await writeFile(
+      article,
+      '---\nsource_url: "https://example.com/conflict"\n---\n\n本地正文',
+    );
+    await writeFile(
+      fakeGit,
+      `#!/bin/sh
+printf '%s\n' "$*" >> "$GIT_LOG"
+case " $* " in
+  *" rev-parse HEAD "*) printf '%s\n' 'local-head' ;;
+  *" ls-remote --heads origin main "*) printf '%s\t%s\n' 'remote-head' 'refs/heads/main' ;;
+  *" pull --rebase origin main "*) exit 1 ;;
+esac
+`,
+      { mode: 0o755 },
+    );
+    process.env.PATH = `${binDirectory}${delimiter}${previousPath ?? ""}`;
+    process.env.GIT_LOG = gitLog;
+
+    try {
+      const repository = new GitArticleRepository({
+        articlesDir: "raw/article",
+        askpassPath: "/bin/true",
+        githubToken: "test-token",
+        repositoryDir: repositoryDirectory,
+        repositoryUrl: "https://github.com/example/archive.git",
+      });
+      await expect(
+        repository.save({
+          content: '---\nsource_url: "https://example.com/conflict"\n---\n\n新正文',
+          filename: "20260807-conflict.md",
+          sourceUrl: "https://example.com/conflict",
+        }),
+      ).rejects.toThrow("git_pull_failed");
+
+      const commands = await readFile(gitLog, "utf8");
+      expect(commands).toContain(" pull --rebase origin main");
+      expect(commands).toContain(" rebase --abort");
+      expect(await readFile(article, "utf8")).toContain("本地正文");
     } finally {
       process.env.PATH = previousPath;
       if (previousGitLog === undefined) delete process.env.GIT_LOG;

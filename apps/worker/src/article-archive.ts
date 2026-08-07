@@ -330,11 +330,11 @@ export class GitArticleRepository implements ArticleRepository {
   }): Promise<{ readonly created: boolean; readonly filename: string }> {
     const initialized = await this.#ensureRepository();
     if (!initialized && !(await this.#remoteBranchMatchesHead())) {
-      await this.#git("pull", "--ff-only", "origin", this.#branch);
+      await this.#pullRebaseSafely();
     }
     const existing = await this.#findSourceUrl(input.sourceUrl);
     if (existing) {
-      await this.#commitAndPush(join(this.#articlesDir, existing));
+      await this.#commitAndPush(join(this.#repositoryDir, this.#articlesDir, existing));
       return { created: false, filename: existing };
     }
     const directory = join(this.#repositoryDir, this.#articlesDir);
@@ -369,7 +369,7 @@ export class GitArticleRepository implements ArticleRepository {
         path,
       );
     }
-    await this.#git("push", "origin", `HEAD:${this.#branch}`);
+    await this.#pushWithRebaseRetry();
   }
 
   async #ensureRepository(): Promise<boolean> {
@@ -430,12 +430,48 @@ export class GitArticleRepository implements ArticleRepository {
     return remoteBranch.trim().split(/\s+/, 1)[0] === localHead.trim();
   }
 
+  async #pullRebaseSafely(): Promise<void> {
+    const attempts = gitCommandAttempts("pull");
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        await this.#gitWithAttempts(1, "pull", "--rebase", "origin", this.#branch);
+        return;
+      } catch (error) {
+        try {
+          await this.#gitWithAttempts(1, "rebase", "--abort");
+        } catch {
+          // pull 在建立 rebase 状态前失败时没有可中止的操作。
+        }
+        if (attempt === attempts) throw error;
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, attempt * 1_000));
+      }
+    }
+  }
+
+  async #pushWithRebaseRetry(): Promise<void> {
+    const attempts = gitCommandAttempts("push");
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        await this.#gitWithAttempts(1, "push", "origin", `HEAD:${this.#branch}`);
+        return;
+      } catch (error) {
+        if (attempt === attempts) throw error;
+        await this.#pullRebaseSafely();
+      }
+    }
+  }
+
   async #git(...args: string[]): Promise<string> {
+    const command = args[0] ?? "command";
+    return this.#gitWithAttempts(gitCommandAttempts(command), ...args);
+  }
+
+  async #gitWithAttempts(attempts: number, ...args: string[]): Promise<string> {
     const command = args[0] ?? "command";
     return this.#runGit(
       ["-c", `safe.directory=${this.#repositoryDir}`, "-C", this.#repositoryDir, ...args],
       gitCommandTimeoutMs(command),
-      gitCommandAttempts(command),
+      attempts,
       command,
     );
   }

@@ -2,6 +2,18 @@
 
 ## 2026-08-07
 
+### fix(article)：修复 Git 分叉后的归档补交
+
+- 文章 PVC 仓库存在未推送提交且远端 `main` 已前进时，使用安全 rebase 保留双方提交，不再由 `pull --ff-only` 永久阻塞后续归档
+- 既有文章补交改用仓库内绝对目标路径，避免相对 pathspec 被解析到 Worker 当前工作目录之外
+- push 遇到远端竞态时执行有界 rebase 后重试；冲突会主动 abort，且始终禁止强推或覆盖远端历史
+
+**如何验证**：
+- RED：真实裸仓库分叉回归稳定失败为 `git_pull_failed`；push 竞态回归确认重试之间缺少 rebase
+- GREEN：`npm run test --workspace @inbox/worker -- --run tests/article-archive.test.ts`（17 passed，覆盖真实分叉、push 竞态与冲突 abort）
+- Workspace `test`、`typecheck`、`build` 全部通过；Python ruff、261 项 unit/integration 与 mypy 通过
+- OpenSpec strict 15/15、`git diff --check` 通过；GitNexus `detect_changes` 为 LOW，0 条执行流受影响
+
 ### ops(worker)：部署 raw/article 归档配置
 
 - 基于已推送 revision `e7c69d453dc135b37dceb9162f7cad59732953da` 构建并发布 Worker，固定南京大学 GHCR 代理镜像 digest `sha256:1d857f2f56609197c4d568a613dc19c6c81492c4c93d2d475efafe9785ce7ad9`
