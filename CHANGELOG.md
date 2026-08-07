@@ -8,10 +8,12 @@
 - 同步 Sealos manifest、Docker Compose 与 Sealos 应用模板；Mihomo/WARP sidecar 镜像、Cloudflare API/Console、历史文章和 DLQ 保持不变
 - 镜像内 `/app/channels.yaml` 的 `article_archive.articles_dir` 已切换为 `raw/article`
 - Worker 入口会在校验 DISPLAY 编号后清理对应的失效 X11 lock 与 socket，并对 Xvfb 执行最多 5 次有界重试，避免 Sealos 快速重启时抽象 socket 尚未释放而持续 `xvfb_failed`
+- Sealos Worker startupProbe 宽限延长到 20 分钟，允许北京节点完成 Chromium 镜像层分页，避免应用代码启动前被反复终止
 
 **如何验证**：
 - TypeScript 230 项测试、typecheck、build 与 Dockerfile `--check` 通过
 - X11 冷重启回归测试先失败后通过，Python lint、unit/integration 与 mypy 通过
+- 慢速镜像分页探针回归测试先失败后通过
 - 公共 GHCR 镜像 digest 与构建产物一致，镜像内配置读取为 `raw/article`
 - Sealos server-side dry-run、rollout、三容器 Ready、健康探针与线上容器配置检查通过
 
