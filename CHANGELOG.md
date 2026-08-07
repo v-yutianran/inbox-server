@@ -2,6 +2,18 @@
 
 ## 2026-08-07
 
+### fix(article)：修复 Git 分叉后的归档补交
+
+- 文章 PVC 仓库存在未推送提交且远端 `main` 已前进时，使用安全 rebase 保留双方提交，不再由 `pull --ff-only` 永久阻塞后续归档
+- 既有文章补交改用仓库内绝对目标路径，避免相对 pathspec 被解析到 Worker 当前工作目录之外
+- push 遇到远端竞态时执行有界 rebase 后重试；冲突会主动 abort，且始终禁止强推或覆盖远端历史
+
+**如何验证**：
+- RED：真实裸仓库分叉回归稳定失败为 `git_pull_failed`；push 竞态回归确认重试之间缺少 rebase
+- GREEN：`npm run test --workspace @inbox/worker -- --run tests/article-archive.test.ts`（17 passed，覆盖真实分叉、push 竞态与冲突 abort）
+- Workspace `test`、`typecheck`、`build` 全部通过；Python ruff、261 项 unit/integration 与 mypy 通过
+- OpenSpec strict 15/15、`git diff --check` 通过；GitNexus `detect_changes` 为 LOW，0 条执行流受影响
+
 ### ops(worker)：部署 raw/article 归档配置
 
 - 基于已推送 revision `e7c69d453dc135b37dceb9162f7cad59732953da` 构建并发布 Worker，固定南京大学 GHCR 代理镜像 digest `sha256:1d857f2f56609197c4d568a613dc19c6c81492c4c93d2d475efafe9785ce7ad9`
@@ -10,12 +22,14 @@
 - Worker 入口会在校验 DISPLAY 编号后清理对应的失效 X11 lock 与 socket，并对 Xvfb 执行最多 5 次有界重试，避免 Sealos 快速重启时抽象 socket 尚未释放而持续 `xvfb_failed`
 - Sealos Worker startupProbe 宽限延长到 20 分钟，允许北京节点完成 Chromium 镜像层分页，避免应用代码启动前被反复终止
 - Playwright Chromium 启动超时改为可配置的 `BROWSER_LAUNCH_TIMEOUT_MS`，默认与 Sealos 显式值均为 15 分钟，避免应用内部 180 秒默认超时早于 startupProbe 退出
+- Sealos Worker livenessProbe 放宽为连续 10 次、单次 10 秒，readiness 保持快速摘除；避免文章浏览器渲染期间约 50% 的 cgroup full I/O 压力把可恢复阻塞误判为进程死亡
 
 **如何验证**：
 - TypeScript 230 项测试、typecheck、build 与 Dockerfile `--check` 通过
 - X11 冷重启回归测试先失败后通过，Python lint、unit/integration 与 mypy 通过
 - 慢速镜像分页探针回归测试先失败后通过
 - 浏览器启动超时配置与 launch 参数 4 个回归断言先失败后通过
+- I/O 压力下 liveness 宽限部署契约先失败后通过；线上 cgroup `oom=0`、`oom_kill=0`，排除内存杀死
 - 公共 GHCR 镜像 digest 与构建产物一致，镜像内配置读取为 `raw/article`
 - Sealos server-side dry-run、rollout、三容器 Ready、健康探针与线上容器配置检查通过
 

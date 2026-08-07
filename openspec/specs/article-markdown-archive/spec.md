@@ -100,9 +100,17 @@
 - **WHEN** `.agents` 仓库存在与当前文章无关的暂存、未暂存或未跟踪内容
 - **THEN** 系统 MUST 仅把当前文章路径加入本次提交，且 MUST NOT 修改或提交其它内容
 
-#### Scenario: Git 同步、提交或推送临时失败
-- **WHEN** `pull --ff-only`、commit 或 push 失败
-- **THEN** 系统 SHALL 将归档任务判定为失败并按现有重试策略处理，且 MUST NOT 强制推送或覆盖远端历史
+#### Scenario: 本地文章提交与远端分支分叉
+- **WHEN** 本地存在尚未推送的文章提交，且远端分支已包含其它新增提交
+- **THEN** 系统 SHALL 将本地文章提交安全 rebase 到远端分支后推送，并 MUST NOT 强制推送或覆盖远端历史
+
+#### Scenario: Git 同步冲突或提交失败
+- **WHEN** rebase 发生冲突，或 commit 最终失败
+- **THEN** 系统 SHALL 中止未完成的 rebase、保留本地文章提交并将归档任务判定为失败，且 MUST NOT 强制推送或覆盖远端历史
+
+#### Scenario: 推送期间远端再次前进
+- **WHEN** push 因远端在同步后再次新增提交而失败
+- **THEN** 系统 SHALL 在有界次数内重新 rebase 并重试 push，重试耗尽后按现有失败策略处理
 
 #### Scenario: 重试补交中间状态
 - **WHEN** 上一次尝试已写入文件但未提交，或已提交但未推送
