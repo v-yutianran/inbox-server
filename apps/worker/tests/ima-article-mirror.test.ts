@@ -1,0 +1,238 @@
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { createImaArticleMirror } from "../src/ima-article-mirror";
+
+const input = {
+  content: "# 测试文章\n\n正文",
+  filename: "20260812-test.md",
+  sourceUrl: "https://example.com/article?utm_source=test",
+  title: "测试文章",
+};
+
+const credential = {
+  appid: "app-id",
+  bucket_name: "bucket-123",
+  cos_key: "archive/test.md",
+  custom_domain: "",
+  expired_time: 2_000_000_000,
+  region: "ap-guangzhou",
+  secret_id: "temporary-id",
+  secret_key: "temporary-key",
+  start_time: 1_900_000_000,
+  token: "temporary-token",
+};
+
+function response(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify({ code: 0, data, msg: "ok" }), {
+    headers: { "Content-Type": "application/json" },
+    status,
+  });
+}
+
+describe("ima article mirror", () => {
+  const directories: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(directories.splice(0).map((path) => rm(path, { force: true, recursive: true })));
+  });
+
+  async function stateDirectory(): Promise<string> {
+    const directory = await mkdtemp(join(tmpdir(), "inbox-ima-state-"));
+    directories.push(directory);
+    return directory;
+  }
+
+  it("禁用时不发出 ima 或 COS 请求", async () => {
+    const fetcher = vi.fn();
+    const mirror = createImaArticleMirror({ enabled: false, fetcher });
+
+    await expect(mirror.mirror(input)).resolves.toBeUndefined();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("按唯一知识库名称上传 Markdown 并写入无敏完成标记", async () => {
+    const directory = await stateDirectory();
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(response({
+        addable_knowledge_base_list: [{ id: "kb-1", name: "天然的知识库" }],
+        is_end: true,
+        next_cursor: "",
+      }))
+      .mockResolvedValueOnce(response({ results: [{ is_repeated: false, name: input.filename }] }))
+      .mockResolvedValueOnce(response({ cos_credential: credential, media_id: "media-1" }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(response({ media_id: "media-1" }));
+    const log = vi.fn();
+    const mirror = createImaArticleMirror({
+      apiKey: "api-secret",
+      clientId: "client-secret",
+      enabled: true,
+      fetcher,
+      knowledgeBaseName: "天然的知识库",
+      log,
+      now: () => new Date("2026-08-12T12:00:00.000Z"),
+      stateDirectory: directory,
+    });
+
+    await expect(mirror.mirror(input)).resolves.toBeUndefined();
+
+    expect(fetcher).toHaveBeenCalledTimes(5);
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      "https://ima.qq.com/openapi/wiki/v1/get_addable_knowledge_base_list",
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
+      knowledge_base_id: "kb-1",
+      params: [{ media_type: 7, name: input.filename }],
+    });
+    expect(JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body))).toEqual({
+      content_type: "text/markdown",
+      file_ext: "md",
+      file_name: input.filename,
+      file_size: Buffer.byteLength(input.content),
+      knowledge_base_id: "kb-1",
+    });
+    expect(fetcher.mock.calls[3]?.[0]).toBe(
+      "https://bucket-123.cos.ap-guangzhou.myqcloud.com/archive/test.md",
+    );
+    expect(fetcher.mock.calls[3]?.[1]).toEqual(expect.objectContaining({
+      body: Buffer.from(input.content),
+      method: "PUT",
+    }));
+    expect(JSON.parse(String(fetcher.mock.calls[4]?.[1]?.body))).toEqual({
+      file_info: {
+        cos_key: credential.cos_key,
+        file_name: input.filename,
+        file_size: Buffer.byteLength(input.content),
+        last_modify_time: 1_786_536_000,
+        password: "",
+      },
+      knowledge_base_id: "kb-1",
+      media_id: "media-1",
+      media_type: 7,
+      title: input.filename,
+    });
+
+    const files = await readdir(directory);
+    expect(files).toHaveLength(1);
+    const marker = await readFile(join(directory, files[0]!), "utf8");
+    expect(marker).not.toContain(input.sourceUrl);
+    expect(marker).not.toContain(input.content);
+    expect(marker).not.toContain("api-secret");
+    expect(log).toHaveBeenCalledWith("article.ima_mirror.succeeded", {
+      durationBucket: expect.any(String),
+      provider: "ima",
+      result: "succeeded",
+      stage: "complete",
+    });
+  });
+
+  it("已有完成标记时重投跳过所有远程请求", async () => {
+    const directory = await stateDirectory();
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(response({
+        addable_knowledge_base_list: [{ id: "kb-1", name: "天然的知识库" }],
+        is_end: true,
+        next_cursor: "",
+      }))
+      .mockResolvedValueOnce(response({ results: [{ is_repeated: false, name: input.filename }] }))
+      .mockResolvedValueOnce(response({ cos_credential: credential, media_id: "media-1" }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(response({ media_id: "media-1" }));
+    const options = {
+      apiKey: "api-secret",
+      clientId: "client-secret",
+      enabled: true as const,
+      fetcher,
+      knowledgeBaseName: "天然的知识库",
+      stateDirectory: directory,
+    };
+
+    await createImaArticleMirror(options).mirror(input);
+    fetcher.mockClear();
+    await createImaArticleMirror(options).mirror(input);
+
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("知识库名称不唯一时 fail closed", async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({
+      addable_knowledge_base_list: [
+        { id: "kb-1", name: "天然的知识库" },
+        { id: "kb-2", name: "天然的知识库" },
+      ],
+      is_end: true,
+      next_cursor: "",
+    }));
+    const mirror = createImaArticleMirror({
+      apiKey: "api-secret",
+      clientId: "client-secret",
+      enabled: true,
+      fetcher,
+      knowledgeBaseName: "天然的知识库",
+      stateDirectory: await stateDirectory(),
+    });
+
+    await expect(mirror.mirror(input)).rejects.toThrow("ima_knowledge_base_not_unique");
+  });
+
+  it("无本地完成标记的同名文件不覆盖也不自动改名", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(response({
+        addable_knowledge_base_list: [{ id: "kb-1", name: "天然的知识库" }],
+        is_end: true,
+        next_cursor: "",
+      }))
+      .mockResolvedValueOnce(response({ results: [{ is_repeated: true, name: input.filename }] }));
+    const mirror = createImaArticleMirror({
+      apiKey: "api-secret",
+      clientId: "client-secret",
+      enabled: true,
+      fetcher,
+      knowledgeBaseName: "天然的知识库",
+      stateDirectory: await stateDirectory(),
+    });
+
+    await expect(mirror.mirror(input)).rejects.toThrow("ima_duplicate_unverified");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("COS 上传失败时不调用 add_knowledge 且日志不泄露输入", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(response({
+        addable_knowledge_base_list: [{ id: "kb-1", name: "天然的知识库" }],
+        is_end: true,
+        next_cursor: "",
+      }))
+      .mockResolvedValueOnce(response({ results: [{ is_repeated: false, name: input.filename }] }))
+      .mockResolvedValueOnce(response({ cos_credential: credential, media_id: "media-1" }))
+      .mockResolvedValueOnce(new Response("secret upstream body", { status: 500 }));
+    const log = vi.fn();
+    const mirror = createImaArticleMirror({
+      apiKey: "api-secret",
+      clientId: "client-secret",
+      enabled: true,
+      fetcher,
+      knowledgeBaseName: "天然的知识库",
+      log,
+      stateDirectory: await stateDirectory(),
+    });
+
+    await expect(mirror.mirror(input)).rejects.toThrow("ima_cos_upload_failed");
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(input.sourceUrl);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(input.filename);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(input.content);
+    expect(JSON.stringify(log.mock.calls)).not.toContain("api-secret");
+    expect(log).toHaveBeenCalledWith("article.ima_mirror.failed", {
+      durationBucket: expect.any(String),
+      provider: "ima",
+      reason: "cos_upload_failed",
+      result: "failed",
+      stage: "cos_upload",
+    });
+  });
+});

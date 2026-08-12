@@ -8,8 +8,8 @@
   --paper: #fff;
   --warm: #f6f5f4;
   --line: rgba(0, 0, 0, .1);
-  --signal: #0075de;
-  --signal-active: #005bab;
+  --signal: #2f9e44;
+  --signal-active: #27843a;
   --warning: #dd5b00;
   --danger: #e03e3e;
   --card-shadow: rgba(0,0,0,.04) 0 4px 18px, rgba(0,0,0,.027) 0 2px 8px, rgba(0,0,0,.02) 0 .8px 3px, rgba(0,0,0,.01) 0 .2px 1px;
@@ -65,17 +65,21 @@ a:hover { color: var(--signal); }
 .lock-button.astryx-button:hover { color: var(--ink); text-decoration: underline; }
 .notice.astryx-banner { margin: 16px 0 -2px; border: 1px solid rgba(26, 174, 57, .18); border-radius: 8px; background: #f0faf1; font-size: 13px; --color-text-green: #167c2b; --color-success: #167c2b; }
 
-.unlock-shell { display: grid; min-height: 100vh; place-items: center; padding: 24px; background: var(--warm); }
-.unlock-card { width: min(480px, 100%); padding: clamp(28px, 6vw, 48px); background: var(--paper); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--card-shadow); }
-.unlock-card h1 { margin: 10px 0 16px; font-size: clamp(34px, 7vw, 48px); font-weight: 700; line-height: 1.04; letter-spacing: -.04em; }
-.unlock-card > p:not(.eyebrow) { color: var(--muted); line-height: 1.7; }
+.unlock-shell { display: grid; min-height: 100vh; place-items: center; padding: 24px; background: #faf9f6; }
+.unlock-card { width: min(420px, 100%); padding: clamp(28px, 7vw, 44px); background: var(--paper); border: 1px solid rgba(39, 76, 45, .12); border-radius: 18px; box-shadow: rgba(40, 68, 45, .06) 0 16px 42px; }
+.unlock-mark { width: 44px; height: 44px; display: grid; place-items: center; margin-bottom: 24px; color: #fff; background: var(--signal); border-radius: 12px; font-size: 22px; font-weight: 800; }
+.unlock-card h1 { margin: 8px 0 12px; font-size: clamp(32px, 7vw, 42px); font-weight: 700; line-height: 1.08; letter-spacing: -.04em; }
+.unlock-card > p:not(.eyebrow) { color: var(--muted); line-height: 1.65; }
+.unlock-card > .unlock-access-state { margin: 0 0 8px; color: #267339; font-size: 14px; font-weight: 600; }
+.unlock-copy { margin: 0; font-size: 14px; }
 .unlock-card > .unlock-error { color: var(--danger); }
-.unlock-form { display: grid; gap: 10px; margin-top: 30px; }
+.unlock-form { display: grid; gap: 12px; margin-top: 28px; }
 .unlock-form label { font-size: 14px; font-weight: 500; line-height: 1.43; }
 .unlock-form .unlock-input.astryx-text-input { min-height: 46px; border: 1px solid #ddd; border-radius: 4px; background: white; }
-.unlock-form .unlock-input.astryx-text-input:focus-within { border-color: #097fe8; box-shadow: 0 0 0 2px rgba(9, 127, 232, .18); }
+.unlock-form .unlock-input.astryx-text-input:focus-within { border-color: var(--signal); box-shadow: 0 0 0 3px rgba(47, 158, 68, .16); }
 .unlock-form .unlock-input.astryx-text-input input { min-height: 48px; padding-inline: 14px; }
-.unlock-submit.astryx-button { margin-top: 5px; font-weight: 800; }
+.unlock-submit.astryx-button { margin-top: 4px; border-radius: 8px; font-weight: 700; }
+.unlock-provider-note { margin: 24px 0 0; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12px; text-align: center; }
 .error-card { border-top: 4px solid var(--warning); }
 .error-code { color: var(--danger); font-size: 12px; font-weight: 600; letter-spacing: .01em; }
 .error-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }

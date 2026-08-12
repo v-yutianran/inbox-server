@@ -51,6 +51,15 @@ export interface ArticleRepository {
   }): Promise<{ readonly created: boolean; readonly filename: string }>;
 }
 
+export interface ArticleMirror {
+  mirror(input: {
+    readonly content: string;
+    readonly filename: string;
+    readonly sourceUrl: string;
+    readonly title: string;
+  }): Promise<void>;
+}
+
 export interface ArticleCorrelation {
   readonly dedupeKey: string;
   readonly jobId: string;
@@ -124,6 +133,7 @@ export function createArticleArchiver(options: {
   readonly fetcher?: typeof fetch;
   readonly getCredential?: (name: string) => Promise<unknown | null>;
   readonly log?: (event: string, context: Readonly<Record<string, unknown>>) => void;
+  readonly mirror?: ArticleMirror;
   readonly now?: () => Date;
   readonly recordEvent?: (event: {
     readonly filename: string | null;
@@ -266,6 +276,12 @@ export function createArticleArchiver(options: {
         content: markdown,
         filename: buildArchiveFilename(normalized.title, archivedAt),
         sourceUrl: item.url,
+      });
+      await options.mirror?.mirror({
+        content: markdown,
+        filename: saved.filename,
+        sourceUrl: item.url,
+        title: normalized.title,
       });
       await options.recordEvent?.({
         filename: saved.filename,

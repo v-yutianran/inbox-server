@@ -120,6 +120,7 @@ describe("article archive", () => {
     const repository = {
       save: vi.fn().mockResolvedValue({ created: true, filename: "20260802-wechat.md" }),
     };
+    const mirror = { mirror: vi.fn().mockResolvedValue(undefined) };
     const log = vi.fn();
     const browser = { newContext: vi.fn() } as unknown as Browser;
     await writeFile(templatePath, template);
@@ -130,6 +131,7 @@ describe("article archive", () => {
         channels: articleChannels,
         fetcher,
         log,
+        mirror,
         now: () => new Date("2026-08-02T04:00:00.000Z"),
         repository,
         templatePath,
@@ -158,6 +160,12 @@ describe("article archive", () => {
       );
       expect(browser.newContext).not.toHaveBeenCalled();
       expect(repository.save).toHaveBeenCalledOnce();
+      expect(mirror.mirror).toHaveBeenCalledWith({
+        content: expect.stringContaining("微信直取文章"),
+        filename: "20260802-wechat.md",
+        sourceUrl: "https://mp.weixin.qq.com/s/direct",
+        title: "微信直取文章",
+      });
       expect(log).toHaveBeenCalledWith(
         "article.extract.direct.succeeded",
         expect.objectContaining({
@@ -170,6 +178,75 @@ describe("article archive", () => {
         "article.extract.browser.succeeded",
         expect.anything(),
       );
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("Git 保存失败时不调用文章镜像", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "inbox-article-git-failure-"));
+    const templatePath = join(directory, "article.md.eta");
+    const html = `<html><head><title>保存失败文章</title></head><body><article><p>${"这是足够长的正文。".repeat(80)}</p></article></body></html>`;
+    const repository = { save: vi.fn().mockRejectedValue(new Error("git_push_failed")) };
+    const mirror = { mirror: vi.fn() };
+    await writeFile(templatePath, template);
+
+    try {
+      const archive = createArticleArchiver({
+        browser: { newContext: vi.fn() } as unknown as Browser,
+        channels: articleChannels,
+        fetcher: vi.fn().mockResolvedValue(
+          new Response(html, { headers: { "Content-Type": "text/html" } }),
+        ),
+        mirror,
+        repository,
+        templatePath,
+      });
+
+      await expect(
+        archive({
+          itemKind: "article",
+          requestedAt: "2026-08-02T04:00:00.000Z",
+          url: "https://example.com/git-failure",
+        }),
+      ).resolves.toEqual({ outcome: "fail" });
+      expect(mirror.mirror).not.toHaveBeenCalled();
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("Git 已保存但文章镜像失败时返回失败以进入重试", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "inbox-article-mirror-failure-"));
+    const templatePath = join(directory, "article.md.eta");
+    const html = `<html><head><title>镜像失败文章</title></head><body><article><p>${"这是足够长的正文。".repeat(80)}</p></article></body></html>`;
+    const repository = {
+      save: vi.fn().mockResolvedValue({ created: true, filename: "20260802-mirror.md" }),
+    };
+    const mirror = { mirror: vi.fn().mockRejectedValue(new Error("ima_upload_failed")) };
+    await writeFile(templatePath, template);
+
+    try {
+      const archive = createArticleArchiver({
+        browser: { newContext: vi.fn() } as unknown as Browser,
+        channels: articleChannels,
+        fetcher: vi.fn().mockResolvedValue(
+          new Response(html, { headers: { "Content-Type": "text/html" } }),
+        ),
+        mirror,
+        repository,
+        templatePath,
+      });
+
+      await expect(
+        archive({
+          itemKind: "article",
+          requestedAt: "2026-08-02T04:00:00.000Z",
+          url: "https://example.com/mirror-failure",
+        }),
+      ).resolves.toEqual({ outcome: "fail" });
+      expect(repository.save).toHaveBeenCalledOnce();
+      expect(mirror.mirror).toHaveBeenCalledOnce();
     } finally {
       await rm(directory, { force: true, recursive: true });
     }

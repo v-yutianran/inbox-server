@@ -25,9 +25,11 @@ function Unlock({ error, onUnlock }: UnlockProps) {
   return (
     <main className="unlock-shell">
       <section className="unlock-card" aria-labelledby="unlock-title">
-        <p className="eyebrow">INBOX / OPERATIONS</p>
-        <h1 id="unlock-title">连接控制台</h1>
-        <p>管理密钥只保存在当前浏览器会话，关闭标签页后自动清除。</p>
+        <div className="unlock-mark" aria-hidden="true">I</div>
+        <p className="eyebrow">INBOX CONSOLE</p>
+        <h1 id="unlock-title">欢迎回来</h1>
+        <p className="unlock-access-state">你已通过 Cloudflare Access 身份验证</p>
+        <p className="unlock-copy">输入管理 API Key 继续。密钥只保存在当前浏览器会话，关闭标签页后自动清除。</p>
         {error ? <p className="unlock-error" role="alert">{error}</p> : null}
         <form className="unlock-form"
           onSubmit={(event) => {
@@ -48,13 +50,14 @@ function Unlock({ error, onUnlock }: UnlockProps) {
           />
           <Button
             className="ops-button unlock-submit"
-            label="进入控制台"
+            label="继续"
             type="submit"
             variant="primary"
             size="lg"
             width="100%"
           />
         </form>
+        <p className="unlock-provider-note">Google 或邮箱验证码登录由 Cloudflare Access 提供。</p>
       </section>
     </main>
   );

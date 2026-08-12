@@ -16,7 +16,9 @@
 
 ## 访问与认证边界
 
-运维 API 使用请求头 `X-API-Key`。`ADMIN_API_KEY` 未配置时，管理端点返回 `503`；配置错误时返回 `401`。管理 Key 只能由运行环境 Secret 注入，不得写入 manifest、发布证据、日志、Console 构建产物或仓库。
+Console host 使用 Cloudflare Access 作为人的身份层，允许 Google 与 One-time PIN；进入 Console 后仍需请求头 `X-API-Key` 才能调用运维 API。`ADMIN_API_KEY` 未配置时，管理端点返回 `503`；配置错误时返回 `401`。管理 Key 只能由运行环境 Secret 注入，不得写入 manifest、发布证据、日志、Console 构建产物或仓库。
+
+Access application 只保护 `inbox-server-console.pages.dev`，不得把 API 健康或 Worker 内部端点并入同一 application。匿名访问应跳转到 Access 登录页，登录页必须同时提供 Google 与邮箱验证码；Access 登录成功但无 API Key 时只能看到 Console 解锁卡。
 
 以下示例只从当前 shell 环境读取 Key，不打印 Key：
 
@@ -102,10 +104,16 @@ kubectl --context <sealos-context> -n ns-tbs948af describe deployment inbox-serv
 | `article.extract.browser.succeeded` | 文章归档 | headed Playwright 兜底后 Defuddle 提取成功 |
 | `article.extract.failed` | 文章归档 | 两条提取路径都失败 |
 | `article.archive.failed` | 文章归档 | 归档写入或交付失败 |
+| `article.ima_mirror.succeeded` | 文章镜像 | Git 权威归档后完成 ima Markdown 镜像 |
+| `article.ima_mirror.failed` | 文章镜像 | ima 知识库定位、重名检查、COS 上传或导入失败 |
 | `operations.metrics.captured` | API 指标采集 | 一个十分钟窗口的聚合指标写入 D1 |
 | `operations.worker_status.resolved` | API 总览 | 按最新 D1 心跳解析 Worker 状态 |
 
 日志上下文可包含 `deploymentVersion`、`jobId`、`leaseId`、`itemKind`、`source`、`destination`、`outcome` 与 `durationMs`。不得包含 Authorization、Cookie、Token、Password、Secret、文章正文、浏览器 state 或 envelope ciphertext。
+
+ima 镜像默认关闭。启用前必须轮换任何曾暴露的 Key，并在 Sealos Secret `inbox-server-worker-runtime` 中配置 `IMA_OPENAPI_CLIENTID` 与 `IMA_OPENAPI_APIKEY`；manifest 只配置 `IMA_MIRROR_ENABLED`、`IMA_KNOWLEDGE_BASE_NAME`、超时和持久卷状态目录。Git `raw/article` 始终是权威来源，ima 失败只重试镜像，禁止反向覆盖 Git。
+
+启用顺序：先保持 `IMA_MIRROR_ENABLED=false` 发布并验证 Worker；再写入轮换后的 Secret，以合成 Markdown 验证目标知识库、COS PUT、完成标记和重投零请求；最后改为 `true` 并执行完整文章链路。回滚只把开关恢复为 `false`，不删除 Git 文章、ima 知识或完成标记。
 
 ### 聚合指标
 

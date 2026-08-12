@@ -74,6 +74,12 @@ spec:
               value: :99
             - name: HEALTH_PORT
               value: "8080"
+            - name: IMA_MIRROR_ENABLED
+              value: "false"
+            - name: IMA_STATE_DIRECTORY
+              value: /data/ima-mirror
+            - name: IMA_TIMEOUT_MS
+              value: "30000"
             - name: TZ
               value: Asia/Shanghai
           ports:

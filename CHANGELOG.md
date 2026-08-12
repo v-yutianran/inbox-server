@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## 2026-08-12
+
+### feat(console)：增加 Access 身份边界并优化管理解锁页
+
+- Console 锁定态改为暖白、绿色、窄卡片的单主操作布局，补充 Cloudflare Access 已认证状态与 Google/邮箱验证码托管说明
+- 保留现有 `X-API-Key`、sessionStorage 和错误恢复行为；Google 与邮箱入口仍由 Cloudflare Access 托管，不在 React 中伪造
+- 新增 ADR-0007，明确 Access 负责人的身份，API Key 继续负责管理操作授权
+
+**如何验证**：
+- RED：聚焦测试仅新标题、辅助说明与按钮文案失败
+- GREEN：Console 7/7 聚焦、15/15 全量测试，typecheck 与 Vite production build 通过
+- Access application 尚未写入线上：当前 Wrangler OAuth 只有 Account Access read，不能安全创建或修改应用
+
+### feat(worker)：在 Git 归档后增加可选 ima Markdown 镜像
+
+- 新增 ima OpenAPI/COS 适配器，严格执行知识库唯一定位、重名预检、创建媒体、COS PUT、添加知识与原子完成标记
+- Git `raw/article` 保持唯一权威来源；Git 失败零 ima 请求，ima 失败保留 Git 结果并复用文章任务重试/DLQ
+- 镜像默认关闭，Sealos manifest 与应用模板只保存非秘密开关、目标名称、超时和持久卷状态目录，凭据仅引用现有 runtime Secret 环境变量
+- 日志只产生低基数成功/失败事件，不包含完整 URL、文件名、正文、知识库 ID、响应 body 或凭据
+
+**如何验证**：
+- RED：归档新增 2 项镜像契约失败，ima adapter 因工厂不存在失败；GREEN：Worker 聚焦 29/29
+- Workspace 全量：API 66、Console 15、Worker 120、Domain 8、Release 30，typecheck/build 全通过
+- Python 兼容层：ruff 通过，unit/integration 261 passed（9 条既有 warning），mypy 103 个源文件无问题
+- 当前 OpenSpec change strict valid，三份设计 gate valid，YAML、文档审计、diff 与秘密扫描通过
+- 生产 ima 验收尚未执行：本机没有轮换后的 Key，且 Kubernetes context 是 OrbStack 而非 Sealos
+
+- [详细记录](./docs/changelog/2026-08-12.md)
+
 ## 2026-08-07
 
 ### ops(worker)：重新部署合并修复并跑通线上归档
