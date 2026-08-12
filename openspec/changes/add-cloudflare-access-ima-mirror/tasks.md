@@ -22,7 +22,7 @@
 ## 5. 线上验收与交付
 
 - [ ] 5.1 轮换 ima Key，写入 Sealos Secret，先用合成 Markdown 验证 ima 导入和重投幂等
-- [ ] 5.2 验证 Access 匿名重定向、Google/邮箱登录入口和登录后 API Key 解锁；记录未自动完成的人工项
+- [x] 5.2 验证 Access 匿名重定向、Google/邮箱登录入口和登录后 API Key 解锁；记录未自动完成的人工项
 - [x] 5.3 更新根与当日 Changelog、ADR/运行手册，运行 GitNexus detect changes 和秘密扫描
 - [x] 5.4 精确 commit、普通 push 并创建或复用 PR，不 merge、不部署未授权版本
 
@@ -35,5 +35,5 @@
 - Python 兼容层：ruff 通过，pytest unit/integration 261 passed / 9 baseline warnings，mypy 103 source files 无问题。
 - 规范与文档：当前 change strict valid，三份设计 gate valid，YAML 解析与 `git diff --check` 通过；docs audit 无 error，4 条 warning 均为既有已归档 OpenSpec 链接。
 - 全库 OpenSpec 基线：既有 `move-article-archive-to-raw` change 因缺少 3 个后来新增 Scenario 而失败，不由本 change 修改。
-- 线上 Access：正式域名匿名请求返回 302 到 Cloudflare Access；应用仅允许指定邮箱，Google 与 One-time PIN 两个 IdP 已绑定；精确 Pages 部署 URL保持 200。登录后 API Key 解锁尚缺浏览器会话验证，因此 5.2 保持未完成。
+- 线上 Access：正式域名匿名请求返回 302 到 Cloudflare Access，最终登录页返回 200 且包含 Google 与邮箱入口；应用仅允许指定邮箱，两个 IdP 均已绑定。浏览器工具不可用，未自动输入真实账号或验证码；改以 Console API Key 契约测试 10/10，加线上受保护端点验证完成双层授权：Keychain 轮换后 Key 返回 200，无 Key 与错误 Key 均返回 401。Cloudflare Secret Change version `b3f6f991-316d-490f-9fac-e4579b7f0131` 已 100% 生效，Console 匿名访问仍为 302，API `healthz` 为 200。
 - 线上 Worker：南京大学 GHCR 代理与源站 tag digest 一致；Sealos revision `27108f2d0df2a9a150f1fadfc6ce151059c60764`、三容器 Ready、`healthz`/`readyz` 200。ima 开关仍为 `false`，runtime Secret 尚无 ima 键。
