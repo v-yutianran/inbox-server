@@ -21,6 +21,7 @@
 - [0004：采用 TypeScript、Cloudflare 与 Docker Worker 混合架构](./0004-typescript-cloudflare-docker-worker.md) — console 与 API 迁入 Cloudflare，headed Playwright worker 继续以 Sealos Docker 服务运行。
 - [0005：Cloudflare Queues 先落 D1 再由 Sealos 领取](./0005-stage-cloudflare-queues-in-d1.md) — Queue consumer 先持久化 D1 租约，Sealos 不持有 Cloudflare 个人令牌。
 - [0006：使用 WARP Sidecar 提供受控出站网络](./0006-warp-egress-sidecar.md) — 官方 WARP 与本地 DoH/CONNECT 适配器为 Sealos worker 提供不依赖本机代理的出站能力。
+- [0007：使用 Cloudflare Access 保护运维 Console](./0007-cloudflare-access-console-authentication.md) — Google/邮箱验证码负责人的身份，现有 API Key 继续负责管理操作授权。
 
 ## 生产运维边界
 

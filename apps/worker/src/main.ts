@@ -20,6 +20,7 @@ import {
 import { abortableDelay, runHeartbeatLoop } from "./heartbeat.js";
 import { closeHealthServer, startHealthServer } from "./health-server.js";
 import { createJobHandler } from "./job-handler.js";
+import { createImaArticleMirror } from "./ima-article-mirror.js";
 import { createNotifier } from "./notifications.js";
 import {
   createRuntimeMetrics,
@@ -141,6 +142,16 @@ async function run(): Promise<void> {
       });
       const channels = await loadChannels(config.channelsPath);
       await controlPlane.putState("channels:safe", safeChannelSummary(channels));
+      const mirror = createImaArticleMirror({
+        apiKey: config.imaApiKey,
+        clientId: config.imaClientId,
+        enabled: config.imaMirrorEnabled,
+        fetcher: externalFetch,
+        knowledgeBaseName: config.imaKnowledgeBaseName,
+        log: workerLog,
+        stateDirectory: config.imaStateDirectory,
+        timeoutMs: config.imaTimeoutMs,
+      });
       const archive = channels.article_archive.enabled
         ? createArticleArchiver({
             browser,
@@ -148,6 +159,7 @@ async function run(): Promise<void> {
             fetcher: externalFetch,
             getCredential: (name) => controlPlane.getCredential(name),
             log: workerLog,
+            mirror,
             recordEvent: (event) => controlPlane.recordArticleEvent(event),
             repository: new GitArticleRepository({
               articlesDir: channels.article_archive.articles_dir,

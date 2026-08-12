@@ -13,6 +13,12 @@ const workerConfigSchema = z.object({
   HEALTH_PORT: z.coerce.number().int().min(1).max(65_535).default(8_080),
   HEALTH_STALE_AFTER_MS: z.coerce.number().int().positive().default(90_000),
   HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+  IMA_KNOWLEDGE_BASE_NAME: z.string().min(1).optional(),
+  IMA_MIRROR_ENABLED: z.enum(["true", "false"]).default("false"),
+  IMA_OPENAPI_APIKEY: z.string().min(1).optional(),
+  IMA_OPENAPI_CLIENTID: z.string().min(1).optional(),
+  IMA_STATE_DIRECTORY: z.string().min(1).optional(),
+  IMA_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   OUTBOUND_PROXY_PORT: z.coerce.number().int().min(1).max(65_535).default(40_001),
   OUTBOUND_PROXY_READY_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   PERSISTENCE_ROOT: z.string().min(1).default("/data"),
@@ -28,13 +34,25 @@ const workerConfigSchema = z.object({
     return parsed.protocol === "socks5:" && Boolean(parsed.hostname) && Boolean(parsed.port);
   }, "WARP_SOCKS_PROXY_URL must use socks5://host:port").optional(),
 }).superRefine((value, context) => {
-  if (value.WORKER_PROCESSING_ENABLED !== "true") return;
-  for (const key of [
-    "CONTROL_PLANE_URL",
-    "WORKER_SERVICE_TOKEN",
-  ] as const) {
-    if (!value[key]) {
-      context.addIssue({ code: "custom", message: `${key} is required`, path: [key] });
+  if (value.WORKER_PROCESSING_ENABLED === "true") {
+    for (const key of [
+      "CONTROL_PLANE_URL",
+      "WORKER_SERVICE_TOKEN",
+    ] as const) {
+      if (!value[key]) {
+        context.addIssue({ code: "custom", message: `${key} is required`, path: [key] });
+      }
+    }
+  }
+  if (value.IMA_MIRROR_ENABLED === "true") {
+    for (const key of [
+      "IMA_KNOWLEDGE_BASE_NAME",
+      "IMA_OPENAPI_APIKEY",
+      "IMA_OPENAPI_CLIENTID",
+    ] as const) {
+      if (!value[key]) {
+        context.addIssue({ code: "custom", message: `${key} is required`, path: [key] });
+      }
     }
   }
 });
@@ -52,6 +70,12 @@ export interface WorkerConfig {
   readonly healthPort: number;
   readonly healthStaleAfterMs: number;
   readonly heartbeatIntervalMs: number;
+  readonly imaApiKey: string | undefined;
+  readonly imaClientId: string | undefined;
+  readonly imaKnowledgeBaseName: string | undefined;
+  readonly imaMirrorEnabled: boolean;
+  readonly imaStateDirectory: string;
+  readonly imaTimeoutMs: number;
   readonly outboundProxyPort: number;
   readonly outboundProxyReadyTimeoutMs: number;
   readonly persistenceRoot: string;
@@ -82,6 +106,12 @@ export function parseWorkerConfig(
     healthPort: parsed.HEALTH_PORT,
     healthStaleAfterMs: parsed.HEALTH_STALE_AFTER_MS,
     heartbeatIntervalMs: parsed.HEARTBEAT_INTERVAL_MS,
+    imaApiKey: parsed.IMA_OPENAPI_APIKEY,
+    imaClientId: parsed.IMA_OPENAPI_CLIENTID,
+    imaKnowledgeBaseName: parsed.IMA_KNOWLEDGE_BASE_NAME,
+    imaMirrorEnabled: parsed.IMA_MIRROR_ENABLED === "true",
+    imaStateDirectory: parsed.IMA_STATE_DIRECTORY ?? `${parsed.PERSISTENCE_ROOT}/ima-mirror`,
+    imaTimeoutMs: parsed.IMA_TIMEOUT_MS,
     outboundProxyPort: parsed.OUTBOUND_PROXY_PORT,
     outboundProxyReadyTimeoutMs: parsed.OUTBOUND_PROXY_READY_TIMEOUT_MS,
     persistenceRoot: parsed.PERSISTENCE_ROOT,

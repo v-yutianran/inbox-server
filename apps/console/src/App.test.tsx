@@ -73,9 +73,12 @@ test("没有会话 API Key 时只显示解锁界面", () => {
 
   render(<App />);
 
-  expect(screen.getByRole("heading", { name: "连接控制台" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "欢迎回来" })).toBeInTheDocument();
+  expect(screen.getByText("你已通过 Cloudflare Access 身份验证")).toBeInTheDocument();
+  expect(screen.getByText("Google 或邮箱验证码登录由 Cloudflare Access 提供。"))
+    .toBeInTheDocument();
   expect(screen.getByLabelText("管理 API Key")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "进入控制台" })).toHaveClass("astryx-button");
+  expect(screen.getByRole("button", { name: "继续" })).toHaveClass("astryx-button");
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
@@ -85,7 +88,7 @@ test("有效 API Key 仅写入 sessionStorage 并加载汇总", async () => {
   render(<App />);
 
   await user.type(screen.getByLabelText("管理 API Key"), "secret-key");
-  await user.click(screen.getByRole("button", { name: "进入控制台" }));
+  await user.click(screen.getByRole("button", { name: "继续" }));
 
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
   expect(fetchMock).toHaveBeenCalledWith(
@@ -106,7 +109,7 @@ test("错误 API Key 返回解锁界面并显示原因", async () => {
   render(<App />);
 
   await user.type(screen.getByLabelText("管理 API Key"), "wrong-key");
-  await user.click(screen.getByRole("button", { name: "进入控制台" }));
+  await user.click(screen.getByRole("button", { name: "继续" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent("API Key 无效，请重新输入");
   expect(sessionStorage.getItem(API_KEY_STORAGE)).toBeNull();
