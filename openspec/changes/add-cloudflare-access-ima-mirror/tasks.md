@@ -6,7 +6,7 @@
 ## 2. GREEN：实现 Console 与 Cloudflare Access
 
 - [x] 2.1 最小调整 `App.tsx` 与样式，形成滴答式克制登录卡并让聚焦测试通过
-- [ ] 2.2 配置 Access application、Google/One-time PIN IdP、允许策略与 login design，并保留 API Key 第二层授权
+- [x] 2.2 配置 Access application、Google/One-time PIN IdP、允许策略与 login design，并保留 API Key 第二层授权
 
 ## 3. GREEN：实现 ima Markdown 镜像
 
@@ -35,3 +35,5 @@
 - Python 兼容层：ruff 通过，pytest unit/integration 261 passed / 9 baseline warnings，mypy 103 source files 无问题。
 - 规范与文档：当前 change strict valid，三份设计 gate valid，YAML 解析与 `git diff --check` 通过；docs audit 无 error，4 条 warning 均为既有已归档 OpenSpec 链接。
 - 全库 OpenSpec 基线：既有 `move-article-archive-to-raw` change 因缺少 3 个后来新增 Scenario 而失败，不由本 change 修改。
+- 线上 Access：正式域名匿名请求返回 302 到 Cloudflare Access；应用仅允许指定邮箱，Google 与 One-time PIN 两个 IdP 已绑定；精确 Pages 部署 URL保持 200。登录后 API Key 解锁尚缺浏览器会话验证，因此 5.2 保持未完成。
+- 线上 Worker：南京大学 GHCR 代理与源站 tag digest 一致；Sealos revision `27108f2d0df2a9a150f1fadfc6ce151059c60764`、三容器 Ready、`healthz`/`readyz` 200。ima 开关仍为 `false`，runtime Secret 尚无 ima 键。
