@@ -2,6 +2,17 @@
 
 ## 2026-08-12
 
+### ops(access)：完成管理 Key 轮换与线上双层授权验收
+
+- 轮换 Cloudflare API 的 `ADMIN_API_KEY`，新值只保存于 macOS Keychain 与 Cloudflare Worker Secret，未写入仓库、日志或文档
+- Cloudflare Secret Change version `b3f6f991-316d-490f-9fac-e4579b7f0131` 已承载 100% 流量；不需要重新上传源码或覆盖其它 bindings
+- ima 镜像不属于本次 Key 轮换，仍因缺少安全可用的轮换后凭据保持关闭
+
+**如何验证**：
+- Console 匿名访问返回 Access 302；最终登录页返回 200 并包含 Google 与邮箱入口
+- Keychain 中轮换后的管理 Key 请求受保护端点返回 200；无 Key 与错误 Key 均返回 401；API `healthz` 返回 200
+- 浏览器工具不可用，未自动输入真实账号或邮箱验证码；Console API Key 契约测试 10/10 作为页面解锁行为的自动化证据
+
 ### ops(cloud)：部署 Console Access 与最新 Worker
 
 - Console production 已部署合并提交 `27108f2d0df2a9a150f1fadfc6ce151059c60764`；正式域名启用 Cloudflare Access，仅允许指定邮箱，并提供 Google 与邮箱一次性验证码入口
