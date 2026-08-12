@@ -24,7 +24,7 @@
 - [ ] 5.1 轮换 ima Key，写入 Sealos Secret，先用合成 Markdown 验证 ima 导入和重投幂等
 - [ ] 5.2 验证 Access 匿名重定向、Google/邮箱登录入口和登录后 API Key 解锁；记录未自动完成的人工项
 - [x] 5.3 更新根与当日 Changelog、ADR/运行手册，运行 GitNexus detect changes 和秘密扫描
-- [ ] 5.4 精确 commit、普通 push 并创建或复用 PR，不 merge、不部署未授权版本
+- [x] 5.4 精确 commit、普通 push 并创建或复用 PR，不 merge、不部署未授权版本
 
 ## 实施证据
 
