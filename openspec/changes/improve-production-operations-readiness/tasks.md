@@ -17,6 +17,9 @@
 - [x] 2.6 GREEN：实现独立 `rehearse-legacy` CAC CLI、强隔离执行器与固定合成 Compose 资产
 - [x] 2.7 REFACTOR：在唯一临时 project/network/volume 完成迁移任务 6.4 的旧 Docker Compose 回滚演练，读回备份、Cloudflare 版本、三容器 digest、D1 兼容性、RTO 和零残留证据
 - [ ] 2.8 验证连续 24 小时无探针超时，WARP 冷启动与 Worker 停止/恢复事件符合预期
+  - 2026-08-13 RED：线上目标 revision 的 Worker 连续 5 次以 `xvfb_failed` 退出；同 digest 在本机相同 UID/GID 与安全限制下可创建 X11 socket。
+  - 2026-08-13 GREEN/REFACTOR：单次 X11 socket 就绪窗口从 5 秒扩至 30 秒；subprocess 行为测试覆盖 6 秒慢启动与永久失败低基数事件，`uv run pytest tests/unit/test_deployment_files.py -q` 为 9 passed。
+  - 仍需新镜像线上三容器 Ready、健康端点、IMA 合成链路与连续 24 小时观察，任务保持未完成。
 
 ## 3. P0 队列、DLQ 与隔离 canary
 

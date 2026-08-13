@@ -2,6 +2,16 @@
 
 ## 2026-08-13
 
+### fix(worker)：放宽 Xvfb 冷启动就绪窗口
+
+- Worker entrypoint 单次等待 X11 socket 的窗口从 5 秒扩大到 30 秒，保留最多 5 次重试、PID 1 交接和既有失败语义。
+- 新增真实 subprocess 行为测试，覆盖慢于 5 秒才创建 socket 时继续启动 Worker，以及永久失败时非零退出并仅输出低基数 `xvfb_failed` 事件。
+
+**如何验证**：
+- RED：聚焦测试稳定失败于现有 5 秒窗口并输出 `xvfb_failed`。
+- GREEN/REFACTOR：`uv run pytest tests/unit/test_deployment_files.py -q`（9 passed）。
+- Python 263/263、TypeScript 242/242、typecheck/build、OpenSpec strict、linux/amd64 镜像构建与 GitNexus LOW 全部通过；线上部署证据见 `docs/changelog/2026-08-13.md`。
+
 ### fix(worker)：按 IMA 真实字段识别月份文件夹
 
 - `get_knowledge_list` 改用 `title` 匹配 `YYYYMM`，并把返回的 `media_id` 作为后续请求的 `folder_id`

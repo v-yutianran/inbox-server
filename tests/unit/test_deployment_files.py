@@ -92,6 +92,90 @@ def test_typescript_worker_entrypoint_removes_stale_x11_socket() -> None:
     assert 'kill "$xvfb_pid"' in entrypoint
 
 
+def test_typescript_worker_entrypoint_waits_for_slow_xvfb_socket(tmp_path: Path) -> None:
+    """资源受限节点上 Xvfb 超过五秒才就绪时仍应启动 Worker。"""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    invocation_marker = tmp_path / "xvfb-invoked"
+    worker_marker = tmp_path / "worker-started"
+    display_number = "199"
+    socket_path = Path(f"/tmp/.X11-unix/X{display_number}")
+    lock_path = Path(f"/tmp/.X{display_number}-lock")
+    socket_path.parent.mkdir(mode=0o1777, parents=True, exist_ok=True)
+
+    fake_xvfb = fake_bin / "Xvfb"
+    fake_xvfb.write_text(
+        """#!/bin/sh
+if [ -e "$FAKE_XVFB_INVOKED" ]; then
+  exit 1
+fi
+touch "$FAKE_XVFB_INVOKED"
+exec python3 -c 'import os, socket, time
+time.sleep(6)
+server = socket.socket(socket.AF_UNIX)
+server.bind(os.environ["FAKE_XVFB_SOCKET"])
+time.sleep(1)'
+"""
+    )
+    fake_xvfb.chmod(0o755)
+
+    fake_node = fake_bin / "node"
+    fake_node.write_text("#!/bin/sh\ntouch \"$FAKE_WORKER_STARTED\"\n")
+    fake_node.chmod(0o755)
+
+    environment = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "DISPLAY": f":{display_number}",
+        "FAKE_XVFB_INVOKED": str(invocation_marker),
+        "FAKE_XVFB_SOCKET": str(socket_path),
+        "FAKE_WORKER_STARTED": str(worker_marker),
+    }
+    try:
+        result = subprocess.run(
+            ["sh", str(ROOT / "apps/worker/docker-entrypoint.sh")],
+            cwd=ROOT,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=40,
+        )
+    finally:
+        socket_path.unlink(missing_ok=True)
+        lock_path.unlink(missing_ok=True)
+
+    assert result.returncode == 0, result.stderr
+    assert worker_marker.exists()
+
+
+def test_typescript_worker_entrypoint_reports_xvfb_failure(tmp_path: Path) -> None:
+    """Xvfb 永久失败时应以稳定低基数事件退出。"""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_xvfb = fake_bin / "Xvfb"
+    fake_xvfb.write_text("#!/bin/sh\nexit 1\n")
+    fake_xvfb.chmod(0o755)
+
+    environment = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "DISPLAY": ":198",
+    }
+    result = subprocess.run(
+        ["sh", str(ROOT / "apps/worker/docker-entrypoint.sh")],
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+    assert result.returncode != 0
+    assert result.stderr.strip().splitlines()[-1] == '{"event":"xvfb_failed"}'
+
+
 def test_sealos_worker_allows_slow_lazy_image_startup() -> None:
     documents = list(yaml.safe_load_all((ROOT / "deploy/sealos/worker-staging.yaml").read_text()))
     stateful_set = next(document for document in documents if document["kind"] == "StatefulSet")

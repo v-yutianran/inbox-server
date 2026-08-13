@@ -18,7 +18,7 @@ while [ "$xvfb_attempt" -lt 5 ]; do
   xvfb_pid=$!
 
   readiness_attempt=0
-  while [ "$readiness_attempt" -lt 50 ]; do
+  while [ "$readiness_attempt" -lt 300 ]; do
     if kill -0 "$xvfb_pid" 2>/dev/null && [ -S "/tmp/.X11-unix/X${lock_number}" ]; then
       ready=1
       break
