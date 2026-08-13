@@ -112,7 +112,7 @@ tags: ["inoreader", "技术"]
       .mockResolvedValueOnce(response({
         current_path: [],
         is_end: true,
-        knowledge_list: [{ folder_id: imaFolderId, name: "202608" }],
+        knowledge_list: [{ media_id: imaFolderId, media_type: 0, parent_folder_id: "", title: "202608" }],
         next_cursor: "",
       }))
       .mockResolvedValueOnce(response({ results: [{ is_repeated: false, name: input.filename }] }))
@@ -226,7 +226,7 @@ tags: ["inoreader", "技术"]
         is_end: true,
         next_cursor: "",
       }))
-      .mockResolvedValueOnce(response({ current_path: [], is_end: true, knowledge_list: [{ folder_id: imaFolderId, name: "202608" }], next_cursor: "" }))
+      .mockResolvedValueOnce(response({ current_path: [], is_end: true, knowledge_list: [{ media_id: imaFolderId, media_type: 0, parent_folder_id: "", title: "202608" }], next_cursor: "" }))
       .mockResolvedValueOnce(response({ results: [{ is_repeated: false, name: input.filename }] }))
       .mockResolvedValueOnce(response({ cos_credential: credential, media_id: "media-1" }))
       .mockResolvedValueOnce(new Response(null, { status: 200 }))
@@ -275,7 +275,7 @@ tags: ["inoreader", "技术"]
         is_end: true,
         next_cursor: "",
       }))
-      .mockResolvedValueOnce(response({ current_path: [], is_end: true, knowledge_list: [{ folder_id: imaFolderId, name: "202608" }], next_cursor: "" }))
+      .mockResolvedValueOnce(response({ current_path: [], is_end: true, knowledge_list: [{ media_id: imaFolderId, media_type: 0, parent_folder_id: "", title: "202608" }], next_cursor: "" }))
       .mockResolvedValueOnce(response({ results: [{ is_repeated: true, name: input.filename }] }));
     const mirror = createImaArticleMirror({
       apiKey: "api-secret",
@@ -297,7 +297,7 @@ tags: ["inoreader", "技术"]
         is_end: true,
         next_cursor: "",
       }))
-      .mockResolvedValueOnce(response({ current_path: [], is_end: true, knowledge_list: [{ folder_id: imaFolderId, name: "202608" }], next_cursor: "" }))
+      .mockResolvedValueOnce(response({ current_path: [], is_end: true, knowledge_list: [{ media_id: imaFolderId, media_type: 0, parent_folder_id: "", title: "202608" }], next_cursor: "" }))
       .mockResolvedValueOnce(response({ results: [{ is_repeated: false, name: input.filename }] }))
       .mockResolvedValueOnce(response({ cos_credential: credential, media_id: "media-1" }))
       .mockResolvedValueOnce(new Response("secret upstream body", { status: 500 }));

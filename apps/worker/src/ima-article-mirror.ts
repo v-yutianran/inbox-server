@@ -212,7 +212,7 @@ async function findUniqueMonthFolder(options: {
   do {
     const page = await imaRequest<{
       is_end: boolean;
-      knowledge_list: Array<{ folder_id?: string; name?: string }>;
+      knowledge_list: Array<{ media_id?: string; title?: string }>;
       next_cursor: string;
     }>({
       apiKey: options.apiKey,
@@ -225,8 +225,8 @@ async function findUniqueMonthFolder(options: {
     });
     matches.push(
       ...page.knowledge_list
-        .filter((item) => item.name === options.month && item.folder_id?.startsWith("folder_"))
-        .map((item) => item.folder_id!),
+        .filter((item) => item.title === options.month && item.media_id?.startsWith("folder_"))
+        .map((item) => item.media_id!),
     );
     if (page.is_end) break;
     cursor = page.next_cursor;

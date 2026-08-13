@@ -34,6 +34,9 @@
 
 ## 实施证据
 
+- ima 文件夹字段契约 RED：线上只读诊断确认 `get_knowledge_list` 的唯一 `202608` 条目使用 `title`/`media_id`；将测试夹具改为真实响应后，聚焦测试 9 项中 4 项精确失败于 `ima_month_folder_not_unique`。
+- ima 文件夹字段契约 GREEN：`findUniqueMonthFolder` 最小改为按 `title` 匹配、返回 `media_id`，同一聚焦测试 9/9；唯一匹配与 `folder_` fail closed 语义保持不变。
+- ima 文件夹字段契约 REFACTOR：先构建 `@inbox/domain` 后，Worker 123/123、TypeScript 全工作区 242/242、Python unit/integration 261/261、workspace typecheck/build、ruff、mypy 103 个源文件、OpenSpec strict 16/16 与 diff 检查均通过；Python 保留 9 条既有 warning。
 - RED：`npm run test --workspace @inbox/worker -- --run tests/article-archive.test.ts`，19 项中新增 2 项按“未调用 mirror / mirror 失败仍返回 ok”失败；Git 失败零镜像用例直接通过。
 - ima 元数据 RED：`npm run test --workspace @inbox/worker -- --run tests/ima-article-mirror.test.ts`，8 项中新增 2 项因 `renderImaMarkdownCopy` 不存在而失败，既有 6 项通过。
 - ima 元数据 GREEN：同命令 8/8；`npm run typecheck --workspace @inbox/worker` 通过；COS body 与两处文件大小均锁定为转换后的 ima 副本，完成标记仍不保存正文。
