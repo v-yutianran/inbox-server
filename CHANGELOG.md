@@ -2,6 +2,17 @@
 
 ## 2026-08-13
 
+### fix(worker)：让控制面请求复用 WARP 出口
+
+- Worker 的心跳、状态、凭据和任务队列请求改为复用已就绪的 `externalFetch`，与文章及 IMA 请求走同一 Undici `ProxyAgent`，避免 Node 22 原生 `fetch` 绕过 Sealos 代理后持续报 `fetch failed`。
+- 保持控制面协议、重试语义、mihomo/WARP 配置、PVC、Secret 和日志字段不变；未采用 Node 22 不支持的 `NODE_USE_ENV_PROXY`。
+
+**如何验证**：
+- RED：部署组合根测试精确失败于 `createWorkerControlPlane` 未注入 `externalFetch`。
+- GREEN/REFACTOR：部署契约 10/10、Heartbeat/Queue 聚焦测试 6/6、Python 264/264、TypeScript 242/242、ruff、mypy、全 workspace typecheck/build 均通过；线上部署结果见当日详细记录。
+
+- [详细记录](./docs/changelog/2026-08-13.md)
+
 ### fix(worker)：放宽 Xvfb 冷启动就绪窗口
 
 - Worker entrypoint 单次等待 X11 socket 的窗口从 5 秒扩大到 30 秒，保留最多 5 次重试、PID 1 交接和既有失败语义。

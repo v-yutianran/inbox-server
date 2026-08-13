@@ -211,6 +211,15 @@ def test_sealos_worker_tolerates_transient_io_pressure_after_startup() -> None:
     assert "timeoutSeconds: 10" in template
 
 
+def test_typescript_worker_routes_control_plane_through_outbound_proxy() -> None:
+    """心跳、状态和队列请求必须复用已就绪的 WARP HTTP 出口。"""
+    main = (ROOT / "apps/worker/src/main.ts").read_text()
+
+    assert "serviceToken,\n        externalFetch," in main
+    assert "const queue = createControlPlaneQueueClient(\n        {" in main
+    assert "        externalFetch,\n      );" in main
+
+
 def test_entrypoint_links_shared_config_and_uses_fixed_compose_project(tmp_path: Path) -> None:
     deploy_root = tmp_path / "inbox-server"
     release = deploy_root / "releases" / "release-test"
