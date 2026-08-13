@@ -4,14 +4,36 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createImaArticleMirror } from "../src/ima-article-mirror";
+import {
+  createImaArticleMirror,
+  renderImaMarkdownCopy,
+} from "../src/ima-article-mirror";
 
 const input = {
-  content: "# 测试文章\n\n正文",
+  content: `---
+title: "测试文章"
+source_url: "https://example.com/article"
+archived_at: "2026-08-13T12:00:00.000Z"
+author: ""
+published_at: ""
+tags: ["inoreader"]
+---
+
+正文`,
   filename: "20260812-test.md",
   sourceUrl: "https://example.com/article?utm_source=test",
   title: "测试文章",
 };
+
+const imaContent = `# 测试文章
+
+## 文章信息
+
+- 来源：[原文链接](https://example.com/article)
+- 归档时间：2026-08-13T12:00:00.000Z
+- 标签：inoreader
+
+正文`;
 
 const credential = {
   appid: "app-id",
@@ -45,6 +67,38 @@ describe("ima article mirror", () => {
     directories.push(directory);
     return directory;
   }
+
+  it("仅为 ima 副本移除 frontmatter 并把元数据渲染为正文", () => {
+    const content = `---
+title: "测试文章"
+source_url: "https://example.com/article"
+archived_at: "2026-08-13T12:00:00.000Z"
+author: "测试作者"
+published_at: "2026-08-12"
+tags: ["inoreader", "技术"]
+---
+
+正文内容`;
+
+    expect(renderImaMarkdownCopy(content)).toBe(`# 测试文章
+
+## 文章信息
+
+- 来源：[原文链接](https://example.com/article)
+- 归档时间：2026-08-13T12:00:00.000Z
+- 作者：测试作者
+- 发布时间：2026-08-12
+- 标签：inoreader、技术
+
+正文内容`);
+    expect(content).toContain("source_url:");
+  });
+
+  it("没有合法 frontmatter 时保持 ima 副本原文", () => {
+    const content = "# 标题\n\n正文里有 --- 分隔符";
+
+    expect(renderImaMarkdownCopy(content)).toBe(content);
+  });
 
   it("禁用时不发出 ima 或 COS 请求", async () => {
     const fetcher = vi.fn();
@@ -92,21 +146,21 @@ describe("ima article mirror", () => {
       content_type: "text/markdown",
       file_ext: "md",
       file_name: input.filename,
-      file_size: Buffer.byteLength(input.content),
+      file_size: Buffer.byteLength(imaContent),
       knowledge_base_id: "kb-1",
     });
     expect(fetcher.mock.calls[3]?.[0]).toBe(
       "https://bucket-123.cos.ap-guangzhou.myqcloud.com/archive/test.md",
     );
     expect(fetcher.mock.calls[3]?.[1]).toEqual(expect.objectContaining({
-      body: Buffer.from(input.content),
+      body: Buffer.from(imaContent),
       method: "PUT",
     }));
     expect(JSON.parse(String(fetcher.mock.calls[4]?.[1]?.body))).toEqual({
       file_info: {
         cos_key: credential.cos_key,
         file_name: input.filename,
-        file_size: Buffer.byteLength(input.content),
+        file_size: Buffer.byteLength(imaContent),
         last_modify_time: 1_786_536_000,
         password: "",
       },

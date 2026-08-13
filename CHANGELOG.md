@@ -2,6 +2,18 @@
 
 ## 2026-08-13
 
+### fix(worker)：为 ima 转换可检索的文章元数据
+
+- 本地 Git 归档继续保留原始 YAML frontmatter；仅在 COS 上传前生成 ima 专用 Markdown 副本
+- ima 副本把标题、来源、归档时间、作者、发布时间与标签移到正文顶部“文章信息”区块，无法识别 frontmatter 时保持原文
+- ima 上传大小改为转换后字节数，完成标记仍摘要原始归档内容，远程调用与日志字段不变
+
+**如何验证**：
+- RED：ima 聚焦测试 8 项中新增 2 项因转换函数不存在而失败，既有 6 项通过
+- GREEN：ima 聚焦测试 8/8；TypeScript 全量 241 项、Python unit/integration 261 项、typecheck、build、ruff、mypy 与 OpenSpec strict 均通过
+
+- [详细记录](./docs/changelog/2026-08-13.md)
+
 ### ops(worker)：启用并验收线上 ima Markdown 镜像
 
 - 在 Sealos 创建仅含 ima OpenAPI 两个凭据键的独立 Opaque Secret，Worker 通过 `envFrom` 引用该 Secret，并将 `IMA_MIRROR_ENABLED` 切换为 `true`

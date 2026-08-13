@@ -2,6 +2,7 @@
 
 - [x] 1.1 为 Console 锁定态的可访问结构、文案和现有 API Key 行为补充失败测试，并记录 RED 命令与原因
 - [x] 1.2 为 ima 禁用、Git 成功后调用、失败重试、完成标记和脱敏日志补充失败测试，并记录 RED 命令与原因
+- [x] 1.3 为 ima 副本移除 frontmatter、正文元数据渲染与无 frontmatter 保持原文补充失败测试，并记录 RED 命令与原因
 
 ## 2. GREEN：实现 Console 与 Cloudflare Access
 
@@ -13,11 +14,13 @@
 - [x] 3.1 新增 ima OpenAPI/COS 适配器、配置解析和本地原子完成标记
 - [x] 3.2 在 Git 归档成功后组合可选镜像，并复用现有重试/DLQ 边界
 - [x] 3.3 更新 Sealos 模板的 Secret 引用和非秘密配置，不提交凭据
+- [x] 3.4 在 COS 上传前生成 ima 专用 Markdown 副本，本地 Git 内容与完成标记摘要保持不变
 
 ## 4. REFACTOR：收敛边界与回归
 
 - [x] 4.1 收敛类型化错误、超时、低基数 reason code 与敏感字段过滤并保持聚焦测试通过
 - [x] 4.2 运行 Console/Worker 聚焦测试、全工作区 test/typecheck/build 与 OpenSpec 校验
+- [x] 4.3 运行 ima 聚焦测试与适用全量门禁，更新当日 Changelog、GitNexus 变更检测和秘密扫描
 
 ## 5. 线上验收与交付
 
@@ -29,6 +32,10 @@
 ## 实施证据
 
 - RED：`npm run test --workspace @inbox/worker -- --run tests/article-archive.test.ts`，19 项中新增 2 项按“未调用 mirror / mirror 失败仍返回 ok”失败；Git 失败零镜像用例直接通过。
+- ima 元数据 RED：`npm run test --workspace @inbox/worker -- --run tests/ima-article-mirror.test.ts`，8 项中新增 2 项因 `renderImaMarkdownCopy` 不存在而失败，既有 6 项通过。
+- ima 元数据 GREEN：同命令 8/8；`npm run typecheck --workspace @inbox/worker` 通过；COS body 与两处文件大小均锁定为转换后的 ima 副本，完成标记仍不保存正文。
+- ima 元数据 REFACTOR：TypeScript 全量测试 API 66、Console 15、Worker 122、Domain 8、Release 30 全通过；`npm run typecheck`、`npm run build`、Python ruff、261 项 unit/integration 与 mypy 103 个源文件均通过。
+- ima 元数据门禁：OpenSpec strict valid、`git diff --check`、冲突标记检查与秘密扫描通过；GitNexus 对 `createImaArticleMirror` 的隔离 HEAD 索引 upstream impact 为 LOW，最终 detect changes 风险为 low。
 - GREEN：同命令 19/19；`npm run test --workspace @inbox/worker -- --run tests/ima-article-mirror.test.ts` 6/6；配置与三文件聚焦测试合计 29/29。
 - Console RED：`npm run test --workspace @inbox/console -- --run src/App.test.tsx` 仅新锁定页契约失败；GREEN 7/7，既有 sessionStorage 与 API Key 行为保持通过。
 - 全量：先构建 `@inbox/domain` 后 `npm test`（API 66、Console 15、Worker 120、Domain 8、Release 30）、`npm run typecheck`、`npm run build` 全通过。

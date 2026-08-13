@@ -36,6 +36,8 @@ Google 与邮箱入口由 Cloudflare Access 托管，React 页面只在 Access �
 
 适配器依次执行：知识库定位、同名预检、创建媒体、使用临时 COS 凭据 PUT 原始 Markdown、添加知识、记录完成。仅使用 Node 标准库和现有 `undici`，不把本地下载 Skill 复制到生产包。知识库 ID 在启动后按名称解析并缓存；名称必须唯一，否则 fail closed。重名时视为已镜像，仅当同名条目可由本地完成标记或可验证列表确认；不自动改名制造重复。
 
+ima OpenAPI 不把 Markdown YAML frontmatter 映射为结构化元数据，因此适配器在 COS 上传前通过纯函数生成 ima 专用副本：只识别文章模板开头的 frontmatter，移除边界并把已知非空字段渲染为标题与“文章信息”列表，正文保持不变。本地 Git 权威文件、传入的原始内容和基于原始内容的完成标记摘要均不修改；无法识别 frontmatter 时按原文上传，避免误删普通 Markdown。
+
 ### 5. 镜像完成状态使用本地不可逆摘要文件
 
 在现有持久卷的文章归档状态目录保存 `sha256(normalizedSourceUrl)` 完成标记，内容只含 ima knowledge ID、文件内容摘要和完成时间，不含原始 URL、文章正文或凭据。写入采用临时文件加原子 rename。这样在 Git 已成功、Queue 重投时可跳过 ima，且不需要修改 Cloudflare D1 schema。备选的只靠 ima 文件名重名无法区分同标题不同 URL。
