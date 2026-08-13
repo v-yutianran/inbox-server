@@ -2,6 +2,17 @@
 
 ## 2026-08-13
 
+### fix(worker)：按 IMA 真实字段识别月份文件夹
+
+- `get_knowledge_list` 改用 `title` 匹配 `YYYYMM`，并把返回的 `media_id` 作为后续请求的 `folder_id`
+- 保留月份目录缺失、重名或标识非法时的 fail closed 行为，不创建、覆盖或回退到知识库根目录
+
+**如何验证**：
+- 线上只读诊断确认 75 条返回项均使用 `title`/`media_id`，唯一 `202608` 位于 `title`；RED 9 项中 4 项失败于旧字段契约，GREEN 9/9
+- Worker 全量、workspace typecheck/build、Python 兼容门禁与 OpenSpec strict 结果见当日详细记录
+
+- [详细记录](./docs/changelog/2026-08-13.md)
+
 ### feat(worker)：调整 ima 月份归档格式
 
 - ima 文件名移除本地归档使用的 `YYYYMMDD-` 前缀，并通过真实 `folder_id` 归档到知识库根目录唯一的 `YYYYMM` 月份文件夹

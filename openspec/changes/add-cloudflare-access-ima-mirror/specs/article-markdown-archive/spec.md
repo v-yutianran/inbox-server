@@ -45,7 +45,7 @@
 
 #### Scenario: ima 副本按月份归档
 - **WHEN** 本地 Git 归档文件名为 `YYYYMMDD-<名称>.md` 且系统准备镜像到 ima
-- **THEN** 系统 SHALL 精确定位 ima 根目录下唯一的 `YYYYMM` 文件夹，使用 `<名称>.md` 作为文件名并通过 `folder_id` 归入该月份文件夹
+- **THEN** 系统 SHALL 按 `get_knowledge_list` 返回的 `title` 精确定位 ima 根目录下唯一的 `YYYYMM` 文件夹，使用 `<名称>.md` 作为文件名，并将该条目的 `media_id` 作为后续请求的 `folder_id` 归入该月份文件夹
 
 #### Scenario: ima 月份文件夹不可用
 - **WHEN** ima 根目录下不存在目标 `YYYYMM` 文件夹或存在多个同名文件夹
