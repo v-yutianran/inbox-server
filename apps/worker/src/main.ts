@@ -116,7 +116,11 @@ async function run(): Promise<void> {
     } else {
       const controlPlaneUrl = required(config.controlPlaneUrl, "CONTROL_PLANE_URL");
       const serviceToken = required(config.workerServiceToken, "WORKER_SERVICE_TOKEN");
-      const controlPlane = createWorkerControlPlane(controlPlaneUrl, serviceToken);
+      const controlPlane = createWorkerControlPlane(
+        controlPlaneUrl,
+        serviceToken,
+        externalFetch,
+      );
       let latestBacklogCount = 0;
       heartbeatTask = runHeartbeatLoop({
         controlPlane,
@@ -134,12 +138,15 @@ async function run(): Promise<void> {
         signal: abortController.signal,
         workerId: config.workerId,
       });
-      const queue = createControlPlaneQueueClient({
-        batchSize: config.queueBatchSize,
-        controlPlaneUrl,
-        serviceToken,
-        visibilityTimeoutMs: config.visibilityTimeoutMs,
-      });
+      const queue = createControlPlaneQueueClient(
+        {
+          batchSize: config.queueBatchSize,
+          controlPlaneUrl,
+          serviceToken,
+          visibilityTimeoutMs: config.visibilityTimeoutMs,
+        },
+        externalFetch,
+      );
       const channels = await loadChannels(config.channelsPath);
       await controlPlane.putState("channels:safe", safeChannelSummary(channels));
       const mirror = createImaArticleMirror({
