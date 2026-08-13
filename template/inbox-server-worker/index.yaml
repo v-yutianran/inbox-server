@@ -28,7 +28,7 @@ kind: StatefulSet
 metadata:
   name: ${{ defaults.app_name }}
   annotations:
-    originImageName: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:55c7c970fa5694759b9f09817dad81e1b31d14687b975af03b3bef92e899a799
+    originImageName: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:f69074ec53a0a477b1901d907e8509ebe035481bde30ac388d028b159c771be3
     deploy.cloud.sealos.io/minReplicas: "1"
     deploy.cloud.sealos.io/maxReplicas: "1"
   labels:
@@ -58,7 +58,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: ${{ defaults.app_name }}
-          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:55c7c970fa5694759b9f09817dad81e1b31d14687b975af03b3bef92e899a799
+          image: ghcr.nju.edu.cn/v-yutianran/inbox-server-worker@sha256:f69074ec53a0a477b1901d907e8509ebe035481bde30ac388d028b159c771be3
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -69,7 +69,7 @@ spec:
             - name: BROWSER_LAUNCH_TIMEOUT_MS
               value: "900000"
             - name: DEPLOYMENT_VERSION
-              value: sha256:55c7c970fa5694759b9f09817dad81e1b31d14687b975af03b3bef92e899a799
+              value: sha256:f69074ec53a0a477b1901d907e8509ebe035481bde30ac388d028b159c771be3
             - name: DISPLAY
               value: :99
             - name: HEALTH_PORT

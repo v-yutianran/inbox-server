@@ -18,6 +18,18 @@
 
 ## 2026-08-12
 
+### ops(cloud)：部署 Console Access 与最新 Worker
+
+- Console production 已部署合并提交 `27108f2d0df2a9a150f1fadfc6ce151059c60764`；正式域名启用 Cloudflare Access，仅允许指定邮箱，并提供 Google 与邮箱一次性验证码入口
+- Worker 已固定南京大学 GHCR 代理镜像 digest `sha256:f69074ec53a0a477b1901d907e8509ebe035481bde30ac388d028b159c771be3`，Sealos source revision 同步到合并提交；Mihomo/WARP 镜像保持不变
+- ima 非秘密配置已上线但开关保持 `false`；轮换凭据未写入 runtime Secret，未执行 ima 在线验收
+
+**如何验证**：
+- Console 15/15 测试、typecheck 与 production build 通过；Pages production source 为 `27108f2`，匿名正式域名返回 Access 302，精确部署 URL返回 200
+- Worker 120/120 测试、typecheck 与 build 通过；源站/南京大学代理 digest 一致，Sealos rollout 完成且三容器 Ready，`healthz`/`readyz` 均为 200
+- WARP 冷启动时由 startupProbe 自动重启 1 次后恢复 Connected；最终健康模型确认 browser、Mihomo、WARP 均可接收工作
+- Access 登录后的 API Key 解锁与 ima 合成 Markdown/幂等仍待在线验证
+
 ### feat(console)：增加 Access 身份边界并优化管理解锁页
 
 - Console 锁定态改为暖白、绿色、窄卡片的单主操作布局，补充 Cloudflare Access 已认证状态与 Google/邮箱验证码托管说明
@@ -27,7 +39,7 @@
 **如何验证**：
 - RED：聚焦测试仅新标题、辅助说明与按钮文案失败
 - GREEN：Console 7/7 聚焦、15/15 全量测试，typecheck 与 Vite production build 通过
-- Access application 尚未写入线上：当前 Wrangler OAuth 只有 Account Access read，不能安全创建或修改应用
+- Access application 已通过 Cloudflare API 写入并传播；登录后的 API Key 解锁尚缺浏览器会话验证
 
 ### feat(worker)：在 Git 归档后增加可选 ima Markdown 镜像
 
@@ -41,7 +53,7 @@
 - Workspace 全量：API 66、Console 15、Worker 120、Domain 8、Release 30，typecheck/build 全通过
 - Python 兼容层：ruff 通过，unit/integration 261 passed（9 条既有 warning），mypy 103 个源文件无问题
 - 当前 OpenSpec change strict valid，三份设计 gate valid，YAML、文档审计、diff 与秘密扫描通过
-- 生产 ima 验收尚未执行：本机没有轮换后的 Key，且 Kubernetes context 是 OrbStack 而非 Sealos
+- 生产 ima 验收尚未执行：Sealos runtime Secret 尚无轮换后的 ima Key，开关保持关闭
 
 - [详细记录](./docs/changelog/2026-08-12.md)
 
