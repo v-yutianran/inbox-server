@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2026-08-13
+
+### ops(worker)：启用并验收线上 ima Markdown 镜像
+
+- 在 Sealos 创建仅含 ima OpenAPI 两个凭据键的独立 Opaque Secret，Worker 通过 `envFrom` 引用该 Secret，并将 `IMA_MIRROR_ENABLED` 切换为 `true`
+- 保持 mihomo、WARP 和其它 Worker 配置不变；StatefulSet generation 47 已完成滚动并收敛到同一 revision
+- 使用不含个人数据的合成 Markdown 完成真实 ima 导入与同源重投幂等验证
+
+**如何验证**：
+- Secret 两个预期键均存在且非空；不读取或输出键值
+- 三个容器均 Ready，`/healthz`、`/readyz` 均返回 200，browser、mihomo、warp 均可接收工作
+- 首次导入产生 5 次远程请求和 `article.ima_mirror.succeeded`；相同来源第二次产生 0 次远程请求
+- 冷启动期间 mihomo 与 WARP 各重启 1 次后自行恢复；主 Worker 未重启，最终 rollout 成功
+
+- [详细记录](./docs/changelog/2026-08-13.md)
+
 ## 2026-08-12
 
 ### feat(console)：增加 Access 身份边界并优化管理解锁页

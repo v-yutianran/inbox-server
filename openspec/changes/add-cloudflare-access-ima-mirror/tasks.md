@@ -21,7 +21,7 @@
 
 ## 5. 线上验收与交付
 
-- [ ] 5.1 轮换 ima Key，写入 Sealos Secret，先用合成 Markdown 验证 ima 导入和重投幂等
+- [x] 5.1 轮换 ima Key，写入 Sealos Secret，先用合成 Markdown 验证 ima 导入和重投幂等
 - [ ] 5.2 验证 Access 匿名重定向、Google/邮箱登录入口和登录后 API Key 解锁；记录未自动完成的人工项
 - [x] 5.3 更新根与当日 Changelog、ADR/运行手册，运行 GitNexus detect changes 和秘密扫描
 - [x] 5.4 精确 commit、普通 push 并创建或复用 PR，不 merge、不部署未授权版本
@@ -35,3 +35,5 @@
 - Python 兼容层：ruff 通过，pytest unit/integration 261 passed / 9 baseline warnings，mypy 103 source files 无问题。
 - 规范与文档：当前 change strict valid，三份设计 gate valid，YAML 解析与 `git diff --check` 通过；docs audit 无 error，4 条 warning 均为既有已归档 OpenSpec 链接。
 - 全库 OpenSpec 基线：既有 `move-article-archive-to-raw` change 因缺少 3 个后来新增 Scenario 而失败，不由本 change 修改。
+- 线上 ima 验收：Sealos 独立 Opaque Secret 仅包含两个预期键且均非空；Worker generation 47 引用该 Secret 并启用镜像，StatefulSet revision 收敛、三容器 Ready，`/healthz` 与 `/readyz` 均返回 200。
+- 真实合成 Markdown 首次镜像产生 5 次远程请求并记录 `article.ima_mirror.succeeded`；相同来源 URL 第二次镜像产生 0 次远程请求，证明持久化完成标记生效。验收输出未包含凭据、正文、文件名、知识库 ID 或响应正文。
