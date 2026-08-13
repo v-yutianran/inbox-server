@@ -41,7 +41,15 @@
 
 #### Scenario: ima 副本适配元数据
 - **WHEN** 本地 Git 归档 Markdown 包含 YAML frontmatter 且系统准备镜像到 ima
-- **THEN** 系统 SHALL 保持本地 Git 文件不变，仅在 ima 副本中移除 frontmatter，并把标题、来源、归档时间、作者、发布时间与标签中存在的值渲染为正文顶部可检索的 Markdown 文章信息
+- **THEN** 系统 SHALL 保持本地 Git 文件不变，仅在 ima 副本中移除 frontmatter、保留标题与正文，并在正文底部追加来源链接，且 MUST NOT 生成“文章信息”区块
+
+#### Scenario: ima 副本按月份归档
+- **WHEN** 本地 Git 归档文件名为 `YYYYMMDD-<名称>.md` 且系统准备镜像到 ima
+- **THEN** 系统 SHALL 精确定位 ima 根目录下唯一的 `YYYYMM` 文件夹，使用 `<名称>.md` 作为文件名并通过 `folder_id` 归入该月份文件夹
+
+#### Scenario: ima 月份文件夹不可用
+- **WHEN** ima 根目录下不存在目标 `YYYYMM` 文件夹或存在多个同名文件夹
+- **THEN** 系统 SHALL 使本次镜像失败并复用现有重试与 DLQ 边界，且 MUST NOT 退回根目录或把月份编码进文件名
 
 #### Scenario: ima 镜像失败
 - **WHEN** Git 权威归档已成功但 ima 网络、凭据、配额、重名策略或导入步骤失败

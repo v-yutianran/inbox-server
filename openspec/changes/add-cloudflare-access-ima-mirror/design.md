@@ -34,9 +34,11 @@ Google 与邮箱入口由 Cloudflare Access 托管，React 页面只在 Access �
 
 ### 4. ima 适配器直接实现官方六步上传契约
 
-适配器依次执行：知识库定位、同名预检、创建媒体、使用临时 COS 凭据 PUT 原始 Markdown、添加知识、记录完成。仅使用 Node 标准库和现有 `undici`，不把本地下载 Skill 复制到生产包。知识库 ID 在启动后按名称解析并缓存；名称必须唯一，否则 fail closed。重名时视为已镜像，仅当同名条目可由本地完成标记或可验证列表确认；不自动改名制造重复。
+适配器依次执行：知识库定位、月份文件夹定位、同名预检、创建媒体、使用临时 COS 凭据 PUT ima 专用 Markdown、添加知识、记录完成。仅使用 Node 标准库和现有 `undici`，不把本地下载 Skill 复制到生产包。知识库 ID 在启动后按名称解析并缓存；名称必须唯一，否则 fail closed。月份从本地归档文件名的 `YYYYMMDD-` 前缀提取，适配器通过 `get_knowledge_list` 在知识库根目录精确定位唯一同名 `YYYYMM` 文件夹，并将其 `folder_id` 同时传给重名预检和添加知识；上传文件名及 ima 标题移除日期前缀。重名时视为已镜像，仅当同名条目可由本地完成标记或可验证列表确认；不自动改名制造重复。
 
-ima OpenAPI 不把 Markdown YAML frontmatter 映射为结构化元数据，因此适配器在 COS 上传前通过纯函数生成 ima 专用副本：只识别文章模板开头的 frontmatter，移除边界并把已知非空字段渲染为标题与“文章信息”列表，正文保持不变。本地 Git 权威文件、传入的原始内容和基于原始内容的完成标记摘要均不修改；无法识别 frontmatter 时按原文上传，避免误删普通 Markdown。
+ima OpenAPI 不把 Markdown YAML frontmatter 映射为结构化元数据，因此适配器在 COS 上传前通过纯函数生成 ima 专用副本：只识别文章模板开头的 frontmatter，移除边界，保留标题与正文，并仅在正文底部追加来源链接，不生成“文章信息”区块。本地 Git 权威文件、传入的原始内容和基于原始内容的完成标记摘要均不修改；无法识别 frontmatter 时按原文上传，避免误删普通 Markdown。
+
+ima OpenAPI 当前没有创建文件夹接口，因此月份文件夹必须预先在知识库根目录创建。目标月份文件夹缺失、重名或返回非 `folder_` 标识时，镜像步骤 fail closed 并进入既有重试/DLQ，禁止退回知识库根目录或把月份编码进文件名。
 
 ### 5. 镜像完成状态使用本地不可逆摘要文件
 
@@ -52,6 +54,7 @@ ima OpenAPI 不把 Markdown YAML frontmatter 映射为结构化元数据，因�
 - [ima OpenAPI 或 Skill 契约变化] → 封装单一适配器、固定请求超时与 reason code；失败进入现有重试/DLQ，不污染 Git。
 - [Git 已成功而 ima 持续失败会使任务对外失败] → Git 幂等保证重试安全；Console/DLQ 明确区分 ima 阶段，修复凭据后可重放。
 - [同名文件无法证明内容一致] → 以本地 source 摘要完成标记为主要幂等依据；首次碰到无标记同名时 fail closed，不静默覆盖或自动改名。
+- [进入新月份前未预建 ima 文件夹] → 明确返回稳定 `folder_not_unique` 原因码并进入既有重试/DLQ；运维创建唯一 `YYYYMM` 文件夹后可安全重放。
 - [Cloudflare 托管登录页可定制范围有限] → 以 login design 能力对齐颜色、logo 与文案；具体控件布局服从 Access 的可访问实现。
 
 ## Migration Plan
