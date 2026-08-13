@@ -21,6 +21,9 @@
 - [x] 4.1 收敛类型化错误、超时、低基数 reason code 与敏感字段过滤并保持聚焦测试通过
 - [x] 4.2 运行 Console/Worker 聚焦测试、全工作区 test/typecheck/build 与 OpenSpec 校验
 - [x] 4.3 运行 ima 聚焦测试与适用全量门禁，更新当日 Changelog、GitNexus 变更检测和秘密扫描
+- [x] 4.4 RED：锁定 ima 无日期前缀、月份目录与正文底部来源契约
+- [x] 4.5 GREEN：最小调整 ima 副本文件名和正文转换并通过聚焦测试
+- [x] 4.6 REFACTOR：运行适用全量门禁，更新 Changelog、检测影响并完成 Git 交付
 
 ## 5. 线上验收与交付
 
@@ -36,6 +39,9 @@
 - ima 元数据 GREEN：同命令 8/8；`npm run typecheck --workspace @inbox/worker` 通过；COS body 与两处文件大小均锁定为转换后的 ima 副本，完成标记仍不保存正文。
 - ima 元数据 REFACTOR：TypeScript 全量测试 API 66、Console 15、Worker 122、Domain 8、Release 30 全通过；`npm run typecheck`、`npm run build`、Python ruff、261 项 unit/integration 与 mypy 103 个源文件均通过。
 - ima 元数据门禁：OpenSpec strict valid、`git diff --check`、冲突标记检查与秘密扫描通过；GitNexus 对 `createImaArticleMirror` 的隔离 HEAD 索引 upstream impact 为 LOW，最终 detect changes 风险为 low。
+- ima 月份归档 RED：`npm run test --workspace @inbox/worker -- --run tests/ima-article-mirror.test.ts`，8 项中 2 项分别因旧“文章信息”区块和旧日期前缀文件名失败，其余 6 项通过。
+- ima 月份归档 GREEN：同命令 9/9；锁定知识库根目录唯一 `YYYYMM` 文件夹、无日期前缀文件名、`folder_id` 请求字段、正文底部来源与文件夹缺失/不唯一 fail closed。
+- ima 月份归档 REFACTOR：先构建 `@inbox/domain` 后，Worker 123/123、TypeScript 全工作区 242/242、Python unit/integration 261/261 均通过；workspace typecheck/build、ruff、mypy 103 个源文件和 OpenSpec strict 均通过。Python 保留 9 条既有 warning。
 - GREEN：同命令 19/19；`npm run test --workspace @inbox/worker -- --run tests/ima-article-mirror.test.ts` 6/6；配置与三文件聚焦测试合计 29/29。
 - Console RED：`npm run test --workspace @inbox/console -- --run src/App.test.tsx` 仅新锁定页契约失败；GREEN 7/7，既有 sessionStorage 与 API Key 行为保持通过。
 - 全量：先构建 `@inbox/domain` 后 `npm test`（API 66、Console 15、Worker 120、Domain 8、Release 30）、`npm run typecheck`、`npm run build` 全通过。

@@ -43,13 +43,6 @@ class ImaMirrorError extends Error {
   }
 }
 
-const IMA_METADATA_LABELS = {
-  source_url: "来源",
-  archived_at: "归档时间",
-  author: "作者",
-  published_at: "发布时间",
-} as const;
-
 export function renderImaMarkdownCopy(content: string): string {
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/.exec(content);
   if (!match) return content;
@@ -61,20 +54,11 @@ export function renderImaMarkdownCopy(content: string): string {
   }
   if (!isRecord(metadata)) return content;
   const title = stringMetadata(metadata.title);
-  const details = Object.entries(IMA_METADATA_LABELS).flatMap(([key, label]) => {
-    const value = stringMetadata(metadata[key]);
-    if (!value) return [];
-    return [`- ${label}：${key === "source_url" ? `[原文链接](${value})` : value}`];
-  });
-  const tags = Array.isArray(metadata.tags)
-    ? metadata.tags.map(stringMetadata).filter((value): value is string => Boolean(value))
-    : [];
-  if (tags.length > 0) details.push(`- 标签：${tags.join("、")}`);
-  if (!title && details.length === 0) return content;
-  const sections = [title ? `# ${title}` : "", details.length ? `## 文章信息\n\n${details.join("\n")}` : ""]
-    .filter(Boolean);
+  const sourceUrl = stringMetadata(metadata.source_url);
+  if (!title && !sourceUrl) return content;
   const body = match[2]!.trimStart();
-  return [...sections, body].filter(Boolean).join("\n\n");
+  const source = sourceUrl ? `来源：[原文链接](${sourceUrl})` : "";
+  return [title ? `# ${title}` : "", body, source].filter(Boolean).join("\n\n");
 }
 
 export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
@@ -105,12 +89,22 @@ export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
           timeoutMs,
         });
         const imaContent = renderImaMarkdownCopy(input.content);
+        const { filename: imaFilename, month } = buildImaLocation(input.filename);
+        const folderId = await findUniqueMonthFolder({
+          apiKey,
+          clientId,
+          fetcher,
+          knowledgeBaseId,
+          month,
+          timeoutMs,
+        });
         const fileSize = Buffer.byteLength(imaContent);
         const repeated = await imaRequest<{ results: Array<{ is_repeated: boolean }> }>({
           apiKey,
           body: {
+            folder_id: folderId,
             knowledge_base_id: knowledgeBaseId,
-            params: [{ media_type: MARKDOWN_MEDIA_TYPE, name: input.filename }],
+            params: [{ media_type: MARKDOWN_MEDIA_TYPE, name: imaFilename }],
           },
           clientId,
           fetcher,
@@ -133,7 +127,7 @@ export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
           body: {
             content_type: "text/markdown",
             file_ext: "md",
-            file_name: input.filename,
+            file_name: imaFilename,
             file_size: fileSize,
             knowledge_base_id: knowledgeBaseId,
           },
@@ -154,15 +148,16 @@ export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
           body: {
             file_info: {
               cos_key: media.cos_credential.cos_key,
-              file_name: input.filename,
+              file_name: imaFilename,
               file_size: fileSize,
               last_modify_time: Math.floor(now().getTime() / 1_000),
               password: "",
             },
+            folder_id: folderId,
             knowledge_base_id: knowledgeBaseId,
             media_id: media.media_id,
             media_type: MARKDOWN_MEDIA_TYPE,
-            title: input.filename,
+            title: imaFilename,
           },
           clientId,
           fetcher,
@@ -196,6 +191,50 @@ export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
       }
     },
   };
+}
+
+function buildImaLocation(filename: string): { readonly filename: string; readonly month: string } {
+  const match = /^(\d{6})\d{2}-(.+)$/.exec(filename);
+  if (!match) throw new ImaMirrorError("ima_archive_filename_invalid", "folder", "invalid_filename");
+  return { filename: match[2]!, month: match[1]! };
+}
+
+async function findUniqueMonthFolder(options: {
+  readonly apiKey: string;
+  readonly clientId: string;
+  readonly fetcher: typeof fetch;
+  readonly knowledgeBaseId: string;
+  readonly month: string;
+  readonly timeoutMs: number;
+}): Promise<string> {
+  const matches: string[] = [];
+  let cursor = "";
+  do {
+    const page = await imaRequest<{
+      is_end: boolean;
+      knowledge_list: Array<{ folder_id?: string; name?: string }>;
+      next_cursor: string;
+    }>({
+      apiKey: options.apiKey,
+      body: { cursor, knowledge_base_id: options.knowledgeBaseId, limit: 50 },
+      clientId: options.clientId,
+      fetcher: options.fetcher,
+      operation: "get_knowledge_list",
+      stage: "folder",
+      timeoutMs: options.timeoutMs,
+    });
+    matches.push(
+      ...page.knowledge_list
+        .filter((item) => item.name === options.month && item.folder_id?.startsWith("folder_"))
+        .map((item) => item.folder_id!),
+    );
+    if (page.is_end) break;
+    cursor = page.next_cursor;
+  } while (cursor);
+  if (matches.length !== 1) {
+    throw new ImaMirrorError("ima_month_folder_not_unique", "folder", "folder_not_unique");
+  }
+  return matches[0]!;
 }
 
 async function findUniqueKnowledgeBase(options: {

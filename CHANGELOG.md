@@ -2,6 +2,18 @@
 
 ## 2026-08-13
 
+### feat(worker)：调整 ima 月份归档格式
+
+- ima 文件名移除本地归档使用的 `YYYYMMDD-` 前缀，并通过真实 `folder_id` 归档到知识库根目录唯一的 `YYYYMM` 月份文件夹
+- ima 副本不再生成“文章信息”区块，只保留标题与正文，并在正文底部追加来源链接；本地 Git 权威文件保持不变
+- 月份文件夹缺失、重名或标识非法时 fail closed，禁止静默退回知识库根目录；ima OpenAPI 不支持创建文件夹，月份目录需预先创建
+
+**如何验证**：
+- RED：ima 聚焦测试 8 项中 2 项按旧“文章信息”区块与日期前缀文件名失败；GREEN：聚焦测试 9/9
+- 先构建 `@inbox/domain` 后，Worker 123 项、TypeScript 全工作区 242 项、Python 261 项、typecheck、build、ruff、mypy 与 OpenSpec strict 均通过
+
+- [详细记录](./docs/changelog/2026-08-13.md)
+
 ### fix(worker)：为 ima 转换可检索的文章元数据
 
 - 本地 Git 归档继续保留原始 YAML frontmatter；仅在 COS 上传前生成 ima 专用 Markdown 副本
