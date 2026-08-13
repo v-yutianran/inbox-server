@@ -211,6 +211,19 @@ def test_sealos_worker_tolerates_transient_io_pressure_after_startup() -> None:
     assert "timeoutSeconds: 10" in template
 
 
+def test_sealos_warp_has_cpu_budget_for_daemon_watchdog() -> None:
+    documents = list(yaml.safe_load_all((ROOT / "deploy/sealos/worker-staging.yaml").read_text()))
+    stateful_set = next(document for document in documents if document["kind"] == "StatefulSet")
+    warp = next(
+        container
+        for container in stateful_set["spec"]["template"]["spec"]["containers"]
+        if container["name"] == "warp-egress"
+    )
+
+    assert warp["resources"]["requests"]["cpu"] == "250m"
+    assert warp["resources"]["limits"]["cpu"] == "1"
+
+
 def test_typescript_worker_routes_control_plane_through_outbound_proxy() -> None:
     """心跳、状态和队列请求必须复用已就绪的 WARP HTTP 出口。"""
     main = (ROOT / "apps/worker/src/main.ts").read_text()

@@ -2,6 +2,17 @@
 
 ## 2026-08-13
 
+### fix(deploy)：提高 WARP sidecar CPU 预算
+
+- 将 Sealos Worker StatefulSet 中 `warp-egress` 的 CPU request 从 `50m` 提高到 `250m`、limit 从 `250m` 提高到 `1`，避免 CPU 饥饿导致 daemon watchdog 卡死、SOCKS5 超时并连带中断心跳与 IMA 请求。
+- 新增部署契约测试锁定 CPU 预算；保持内存、镜像、探针、Secret、PVC、副本和业务配置不变。
+
+**如何验证**：
+- RED 精确失败于 request 实际为 `50m`；GREEN 同一测试 1/1，REFACTOR 部署契约 11/11。
+- Python 265/265、TypeScript 242/242、ruff、mypy、typecheck 和 build 均通过；线上热修复后 Worker、mihomo、WARP 三容器 Ready，心跳和队列消费恢复。24 小时稳定性仍待观察。
+
+- [详细记录](./docs/changelog/2026-08-13.md)
+
 ### fix(worker)：让控制面请求复用 WARP 出口
 
 - Worker 的心跳、状态、凭据和任务队列请求改为复用已就绪的 `externalFetch`，与文章及 IMA 请求走同一 Undici `ProxyAgent`，避免 Node 22 原生 `fetch` 绕过 Sealos 代理后持续报 `fetch failed`。
