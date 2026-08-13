@@ -39,6 +39,10 @@
 - **WHEN** Git 权威归档已成功且 ima 凭据、目标知识库和上传流程均有效
 - **THEN** 系统 SHALL 完成重名预检、文件上传与知识导入，并 SHALL 记录不含内容、完整 URL 或凭据的成功事件
 
+#### Scenario: ima 副本适配元数据
+- **WHEN** 本地 Git 归档 Markdown 包含 YAML frontmatter 且系统准备镜像到 ima
+- **THEN** 系统 SHALL 保持本地 Git 文件不变，仅在 ima 副本中移除 frontmatter，并把标题、来源、归档时间、作者、发布时间与标签中存在的值渲染为正文顶部可检索的 Markdown 文章信息
+
 #### Scenario: ima 镜像失败
 - **WHEN** Git 权威归档已成功但 ima 网络、凭据、配额、重名策略或导入步骤失败
 - **THEN** 系统 SHALL 保留 Git 成功结果，将本次任务判定为可重试失败并复用现有文章任务重试与 DLQ 边界，且 MUST NOT 重复创建 Git 文章

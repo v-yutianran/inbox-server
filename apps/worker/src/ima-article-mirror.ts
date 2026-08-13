@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parse } from "yaml";
 
 import type { ArticleMirror } from "./article-archive.js";
 
@@ -42,6 +43,40 @@ class ImaMirrorError extends Error {
   }
 }
 
+const IMA_METADATA_LABELS = {
+  source_url: "来源",
+  archived_at: "归档时间",
+  author: "作者",
+  published_at: "发布时间",
+} as const;
+
+export function renderImaMarkdownCopy(content: string): string {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/.exec(content);
+  if (!match) return content;
+  let metadata: unknown;
+  try {
+    metadata = parse(match[1]!);
+  } catch {
+    return content;
+  }
+  if (!isRecord(metadata)) return content;
+  const title = stringMetadata(metadata.title);
+  const details = Object.entries(IMA_METADATA_LABELS).flatMap(([key, label]) => {
+    const value = stringMetadata(metadata[key]);
+    if (!value) return [];
+    return [`- ${label}：${key === "source_url" ? `[原文链接](${value})` : value}`];
+  });
+  const tags = Array.isArray(metadata.tags)
+    ? metadata.tags.map(stringMetadata).filter((value): value is string => Boolean(value))
+    : [];
+  if (tags.length > 0) details.push(`- 标签：${tags.join("、")}`);
+  if (!title && details.length === 0) return content;
+  const sections = [title ? `# ${title}` : "", details.length ? `## 文章信息\n\n${details.join("\n")}` : ""]
+    .filter(Boolean);
+  const body = match[2]!.trimStart();
+  return [...sections, body].filter(Boolean).join("\n\n");
+}
+
 export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
   if (!options.enabled) return { mirror: async () => undefined };
   const apiKey = required(options.apiKey, "ima_api_key_missing");
@@ -69,7 +104,8 @@ export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
           knowledgeBaseName,
           timeoutMs,
         });
-        const fileSize = Buffer.byteLength(input.content);
+        const imaContent = renderImaMarkdownCopy(input.content);
+        const fileSize = Buffer.byteLength(imaContent);
         const repeated = await imaRequest<{ results: Array<{ is_repeated: boolean }> }>({
           apiKey,
           body: {
@@ -108,7 +144,7 @@ export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
           timeoutMs,
         });
         await uploadToCos({
-          content: Buffer.from(input.content),
+          content: Buffer.from(imaContent),
           credential: media.cos_credential,
           fetcher,
           timeoutMs,
@@ -340,6 +376,14 @@ function sourceFingerprint(sourceUrl: string): string {
 function required(value: string | undefined, message: string): string {
   if (!value?.trim()) throw new ImaMirrorError(message, "configuration", "configuration_missing");
   return value.trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringMetadata(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function durationBucket(durationMs: number): string {

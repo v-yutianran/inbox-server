@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## 2026-08-13
+
+### fix(worker)：为 ima 转换可检索的文章元数据
+
+- 本地 Git 归档继续保留原始 YAML frontmatter；仅在 COS 上传前生成 ima 专用 Markdown 副本
+- ima 副本把标题、来源、归档时间、作者、发布时间与标签移到正文顶部“文章信息”区块，无法识别 frontmatter 时保持原文
+- ima 上传大小改为转换后字节数，完成标记仍摘要原始归档内容，远程调用与日志字段不变
+
+**如何验证**：
+- RED：ima 聚焦测试 8 项中新增 2 项因转换函数不存在而失败，既有 6 项通过
+- GREEN：ima 聚焦测试 8/8；TypeScript 全量 241 项、Python unit/integration 261 项、typecheck、build、ruff、mypy 与 OpenSpec strict 均通过
+
+- [详细记录](./docs/changelog/2026-08-13.md)
+
+### ops(worker)：启用并验收线上 ima Markdown 镜像
+
+- 在 Sealos 创建仅含 ima OpenAPI 两个凭据键的独立 Opaque Secret，Worker 通过 `envFrom` 引用该 Secret，并将 `IMA_MIRROR_ENABLED` 切换为 `true`
+- 保持 mihomo、WARP 和其它 Worker 配置不变；StatefulSet generation 47 已完成滚动并收敛到同一 revision
+- 使用不含个人数据的合成 Markdown 完成真实 ima 导入与同源重投幂等验证
+
+**如何验证**：
+- Secret 两个预期键均存在且非空；不读取或输出键值
+- 三个容器均 Ready，`/healthz`、`/readyz` 均返回 200，browser、mihomo、warp 均可接收工作
+- 首次导入产生 5 次远程请求和 `article.ima_mirror.succeeded`；相同来源第二次产生 0 次远程请求
+- 冷启动期间 mihomo 与 WARP 各重启 1 次后自行恢复；主 Worker 未重启，最终 rollout 成功
+
+- [详细记录](./docs/changelog/2026-08-13.md)
+
 ## 2026-08-12
 
 ### ops(cloud)：部署 Console Access 与最新 Worker
