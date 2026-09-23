@@ -14,7 +14,8 @@
 - GitNexus 全 scope 检测为 medium、2 flows；索引结果为 lower-bound，结合源码核对确认直接入口。
 - 已 push commit `930072cefa6c05f6466c78f2e8211a85b65a7bf1`；linux/amd64 Worker 镜像的 GHCR/NJU manifest digest 一致（`sha256:007b1143...9512`）。Sealos generation 57 的 current/update revision 均为 `inbox-server-worker-staging-5f9d967b5`，readyReplicas 为 1；Pod 三容器 Ready、restart 0，运行时开关为 `false`、deploymentVersion 为 `930072`，`/healthz` 与 `/readyz` 均为 200，browser/mihomo/warp 均 ready。
 - NJU blob 拉取返回 500，导致首次 rollout 超时；切换 StatefulSet 与未就绪 Pod 到同 digest 的 GHCR 源站后，Pod 由 StatefulSet 自动重建，第二次 rollout 成功。未执行实际 Pod delete。
-- 最近 10 分钟日志未见 `telegram_notification_failed` 或 `email_notification_failed`；未发送合成通知，尚无人工 Telegram 送达确认。另观察到一条 inoreader collect-source permanent dead_lettered，尚未证实与本功能相关。
+- 最近 10 分钟日志未见 `telegram_notification_failed` 或 `email_notification_failed`；用户人工确认 Telegram 已送达且未收到对应邮件，未发送合成通知。另观察到一条 inoreader collect-source permanent dead_lettered，尚未证实与本功能相关。
+- OpenSpec 13/13 项任务已完成并归档至 `openspec/changes/archive/2026-09-23-disable-sealos-email-notifications`；主 `notification-report` 规格已同步。`openspec validate --specs` 为 13 pass/0 fail，含 4 条既有 overview Purpose warning。
 
 - [详细记录](./docs/changelog/2026-09-23.md)
 
