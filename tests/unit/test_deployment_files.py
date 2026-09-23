@@ -203,7 +203,19 @@ def test_sealos_worker_disables_email_notifications() -> None:
         if container["name"] == "inbox-server-worker-staging"
     )
 
+    expected_worker_image = (
+        "ghcr.io/v-yutianran/inbox-server-worker"
+        "@sha256:007b1143c6ca414352001f07dcb4bf03532836e35cd4cb741efa9793b8629512"
+    )
     worker_environment = {item["name"]: item.get("value") for item in worker["env"]}
+    assert worker["image"] == expected_worker_image
+    assert stateful_set["metadata"]["annotations"]["originImageName"] == expected_worker_image
+    assert (
+        stateful_set["spec"]["template"]["metadata"]["annotations"][
+            "inbox.yutianran.cn/source-revision"
+        ]
+        == "930072cefa6c05f6466c78f2e8211a85b65a7bf1"
+    )
     assert worker_environment.get("EMAIL_NOTIFICATIONS_ENABLED") == "false"
 
 

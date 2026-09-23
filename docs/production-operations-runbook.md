@@ -163,11 +163,13 @@ npm run release -- rollback --manifest <release-manifest.json> --confirm <planHa
 
 Worker 未设置 `EMAIL_NOTIFICATIONS_ENABLED` 时默认启用邮件通知；当前 Sealos Worker 在 `deploy/sealos/worker-staging.yaml` 中显式设为 `false`。上线后核对新 Sealos revision 的开关值，并确认 `/healthz`、`/readyz` 和组件健康。回滚到不识别此开关的旧镜像时，若 SMTP 凭据仍存在，邮件通知可能恢复；回滚前先核对目标镜像行为。
 
+本次邮件通知变更采用一次性 Sealos Worker 专项发布例外：首个补丁更新主 Worker 镜像 digest、source revision 和 `EMAIL_NOTIFICATIONS_ENABLED=false`，预检与 manifest inspect 均通过；首次实际 rollout 在节点拉取 blob 时遇到南京大学 GHCR 代理 HTTP 500。恢复补丁仅将主 Worker `image` 与 `originImageName` 的仓库地址改为 `ghcr.io`，digest、source revision、邮件开关及 sidecar 均保持不变；最终 rollout 为 1/1 Ready，`/healthz` 与 `/readyz` 均返回 200。
+
 release manifest 必须满足：
 
 - `sourceCommit` 与 Console commit 是完整 40 位 Git SHA。
 - API 使用 Cloudflare 不可变 version，Console 使用已构建 artifact。
-- Worker、mihomo、WARP 镜像均为南京大学 GHCR 代理的 `@sha256:<digest>`，禁止 tag。
+- 主 Worker 镜像使用 `ghcr.io` 源站，mihomo 与 WARP 镜像使用南京大学 GHCR 代理；三者均固定为 `@sha256:<digest>`，禁止 tag。
 - Sealos context 不能是 `orbstack`、`docker-desktop`、`minikube` 或 `kind-*`。
 - Secret 只保存名称和版本引用，禁止保存原值。
 

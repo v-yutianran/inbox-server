@@ -10,9 +10,11 @@
 **如何验证**：
 - RED：配置测试 6 项中 3 项、通知测试 4 项中 2 项、部署测试 12 项中 1 项按目标行为失败；实现后配置 6/6、通知 4/4、部署 12/12，组合聚焦测试 10/10。
 - TypeScript workspace 246/246；`npm run typecheck`、`npm run build`、Worker typecheck/build 通过。首次 `npm test` 因 `@inbox/domain/dist` 未生成而有模块加载失败，先构建 Domain 后原样重跑通过。
-- Python：ruff、mypy 通过；unit/integration 266 passed/9 warnings。OpenSpec validate 通过；docs audit exit 0，报告 5 条既有 warning。
+- Python：ruff、mypy 通过；unit/integration 266 passed/8 warnings。OpenSpec validate 通过；docs audit exit 0，报告 5 条既有 warning。
 - GitNexus 全 scope 检测为 medium、2 flows；索引结果为 lower-bound，结合源码核对确认直接入口。
-- 未运行 E2E、真实 Telegram、push 或部署；线上 StatefulSet 当前 1/1 Ready、revision `6fd4695b7c`，尚未配置邮件开关，发布路径待确定。
+- 已 push commit `930072cefa6c05f6466c78f2e8211a85b65a7bf1`；linux/amd64 Worker 镜像的 GHCR/NJU manifest digest 一致（`sha256:007b1143...9512`）。Sealos generation 57 的 current/update revision 均为 `inbox-server-worker-staging-5f9d967b5`，readyReplicas 为 1；Pod 三容器 Ready、restart 0，运行时开关为 `false`、deploymentVersion 为 `930072`，`/healthz` 与 `/readyz` 均为 200，browser/mihomo/warp 均 ready。
+- NJU blob 拉取返回 500，导致首次 rollout 超时；切换 StatefulSet 与未就绪 Pod 到同 digest 的 GHCR 源站后，Pod 由 StatefulSet 自动重建，第二次 rollout 成功。未执行实际 Pod delete。
+- 最近 10 分钟日志未见 `telegram_notification_failed` 或 `email_notification_failed`；未发送合成通知，尚无人工 Telegram 送达确认。另观察到一条 inoreader collect-source permanent dead_lettered，尚未证实与本功能相关。
 
 - [详细记录](./docs/changelog/2026-09-23.md)
 
