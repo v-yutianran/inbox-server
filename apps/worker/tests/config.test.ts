@@ -13,12 +13,24 @@ describe("worker config", () => {
     const config = parseWorkerConfig({ DISPLAY: ":99" });
 
     expect(config.processingEnabled).toBe(false);
+    expect(config.emailNotificationsEnabled).toBe(true);
     expect(config.browserLaunchTimeoutMs).toBe(900_000);
     expect(config.channelsPath).toBe("/app/channels.yaml");
     expect(config.persistenceRoot).toBe("/data");
     expect(config.imaMirrorEnabled).toBe(false);
     expect(config.imaStateDirectory).toBe("/data/ima-mirror");
     expect(config.warpSocksProxyUrl).toBeUndefined();
+  });
+
+  it("邮件通知开关可显式关闭", () => {
+    expect(parseWorkerConfig({ DISPLAY: ":99", EMAIL_NOTIFICATIONS_ENABLED: "false" })
+      .emailNotificationsEnabled).toBe(false);
+  });
+
+  it("拒绝非布尔字符串的邮件通知开关", () => {
+    expect(() =>
+      parseWorkerConfig({ DISPLAY: ":99", EMAIL_NOTIFICATIONS_ENABLED: "yes" }),
+    ).toThrow();
   });
 
   it("启用 ima 镜像时要求完整凭据和知识库名称", () => {

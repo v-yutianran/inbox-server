@@ -194,6 +194,19 @@ def test_sealos_worker_allows_slow_lazy_image_startup() -> None:
     ).read_text()
 
 
+def test_sealos_worker_disables_email_notifications() -> None:
+    documents = list(yaml.safe_load_all((ROOT / "deploy/sealos/worker-staging.yaml").read_text()))
+    stateful_set = next(document for document in documents if document["kind"] == "StatefulSet")
+    worker = next(
+        container
+        for container in stateful_set["spec"]["template"]["spec"]["containers"]
+        if container["name"] == "inbox-server-worker-staging"
+    )
+
+    worker_environment = {item["name"]: item.get("value") for item in worker["env"]}
+    assert worker_environment.get("EMAIL_NOTIFICATIONS_ENABLED") == "false"
+
+
 def test_sealos_worker_tolerates_transient_io_pressure_after_startup() -> None:
     documents = list(yaml.safe_load_all((ROOT / "deploy/sealos/worker-staging.yaml").read_text()))
     stateful_set = next(document for document in documents if document["kind"] == "StatefulSet")

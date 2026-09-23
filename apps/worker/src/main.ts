@@ -187,7 +187,11 @@ async function run(): Promise<void> {
         channels,
         controlPlane,
         fetcher: externalFetch,
-        notify: createNotifier({ channels, fetcher: externalFetch }),
+        notify: createNotifier({
+          channels,
+          emailNotificationsEnabled: config.emailNotificationsEnabled,
+          fetcher: externalFetch,
+        }),
         stagingDir: config.stagingDir,
       });
       while (!abortController.signal.aborted) {

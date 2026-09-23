@@ -28,7 +28,13 @@ describe("notifications", () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     const sendMail = vi.fn().mockRejectedValue(new Error("smtp unavailable"));
     const warn = vi.fn();
-    const notify = createNotifier({ channels, fetcher, sendMail, warn });
+    const notify = createNotifier({
+      channels,
+      emailNotificationsEnabled: true,
+      fetcher,
+      sendMail,
+      warn,
+    });
 
     await expect(
       notify({ collected: 3, published: 2, source: "telegram" }),
@@ -53,5 +59,43 @@ describe("notifications", () => {
       }),
     );
     expect(warn).toHaveBeenCalledWith("email_notification_failed", "smtp unavailable");
+  });
+
+  it("邮件关闭时只发送 Telegram", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const sendMail = vi.fn().mockResolvedValue(undefined);
+    const notify = createNotifier({
+      channels,
+      emailNotificationsEnabled: false,
+      fetcher,
+      sendMail,
+      warn: vi.fn(),
+    });
+
+    await notify({ collected: 3, published: 2, source: "telegram" });
+
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("邮件关闭且 Telegram 失败时只记录告警，不回退 SMTP", async () => {
+    const fetcher = vi.fn().mockRejectedValue(new Error("telegram unavailable"));
+    const sendMail = vi.fn().mockResolvedValue(undefined);
+    const warn = vi.fn();
+    const notify = createNotifier({
+      channels,
+      emailNotificationsEnabled: false,
+      fetcher,
+      sendMail,
+      warn,
+    });
+
+    await expect(
+      notify({ collected: 3, published: 2, source: "telegram" }),
+    ).resolves.toBeUndefined();
+
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(sendMail).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith("telegram_notification_failed", "telegram unavailable");
   });
 });

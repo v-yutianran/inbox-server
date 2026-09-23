@@ -8,6 +8,7 @@ const workerConfigSchema = z.object({
   CHANNELS_PATH: z.string().min(1).default("/app/channels.yaml"),
   CONTROL_PLANE_URL: z.string().url().optional(),
   DISPLAY: z.string().min(1),
+  EMAIL_NOTIFICATIONS_ENABLED: z.enum(["true", "false"]).default("true"),
   GITHUB_ASKPASS_PATH: z.string().min(1).default("/usr/local/bin/inbox-github-askpass"),
   GITHUB_TOKEN: z.string().min(1).optional(),
   HEALTH_PORT: z.coerce.number().int().min(1).max(65_535).default(8_080),
@@ -65,6 +66,7 @@ export interface WorkerConfig {
   readonly channelsPath: string;
   readonly controlPlaneUrl: string | undefined;
   readonly display: string;
+  readonly emailNotificationsEnabled: boolean;
   readonly githubAskpassPath: string;
   readonly githubToken: string | undefined;
   readonly healthPort: number;
@@ -101,6 +103,7 @@ export function parseWorkerConfig(
     channelsPath: parsed.CHANNELS_PATH,
     controlPlaneUrl: parsed.CONTROL_PLANE_URL,
     display: parsed.DISPLAY,
+    emailNotificationsEnabled: parsed.EMAIL_NOTIFICATIONS_ENABLED === "true",
     githubAskpassPath: parsed.GITHUB_ASKPASS_PATH,
     githubToken: parsed.GITHUB_TOKEN,
     healthPort: parsed.HEALTH_PORT,

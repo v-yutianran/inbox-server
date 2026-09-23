@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2026-09-23
+
+### feat(worker)：按配置关闭 Sealos SMTP 通知
+
+- Worker 新增 `EMAIL_NOTIFICATIONS_ENABLED`，默认启用且严格接受 `true`/`false`；关闭时跳过 SMTP，Telegram 独立发送，失败不会触发邮件回退。
+- Sealos Worker 清单显式关闭邮件，SMTP 能力和其它环境的默认双通道行为保留；运维手册补充开关与旧镜像回滚风险。
+
+**如何验证**：
+- RED：配置测试 6 项中 3 项、通知测试 4 项中 2 项、部署测试 12 项中 1 项按目标行为失败；实现后配置 6/6、通知 4/4、部署 12/12，组合聚焦测试 10/10。
+- TypeScript workspace 246/246；`npm run typecheck`、`npm run build`、Worker typecheck/build 通过。首次 `npm test` 因 `@inbox/domain/dist` 未生成而有模块加载失败，先构建 Domain 后原样重跑通过。
+- Python：ruff、mypy 通过；unit/integration 266 passed/9 warnings。OpenSpec validate 通过；docs audit exit 0，报告 5 条既有 warning。
+- GitNexus 全 scope 检测为 medium、2 flows；索引结果为 lower-bound，结合源码核对确认直接入口。
+- 未运行 E2E、真实 Telegram、push 或部署；线上 StatefulSet 当前 1/1 Ready、revision `6fd4695b7c`，尚未配置邮件开关，发布路径待确定。
+
+- [详细记录](./docs/changelog/2026-09-23.md)
+
 ## 2026-08-13
 
 ### fix(deploy)：提高 WARP sidecar CPU 预算

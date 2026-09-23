@@ -34,6 +34,7 @@ export function formatCollectionNotification(summary: CollectionNotification): s
 
 export function createNotifier(options: {
   readonly channels: Channels;
+  readonly emailNotificationsEnabled: boolean;
   readonly fetcher?: typeof fetch;
   readonly sendMail?: SendMail;
   readonly warn?: Warn;
@@ -62,7 +63,7 @@ export function createNotifier(options: {
     const user = readOptionalString(notification, "smtp_user");
     const password = readOptionalString(notification, "smtp_pass");
     const recipient = readOptionalString(notification, "email_to");
-    if (user && password && recipient) {
+    if (options.emailNotificationsEnabled && user && password && recipient) {
       tasks.push(
         sendMail({
           body: message,

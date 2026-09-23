@@ -75,6 +75,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.annotations['inbox.yutianran.cn/source-revision']
+            - name: EMAIL_NOTIFICATIONS_ENABLED
+              value: "false"
             - name: DISPLAY
               value: :99
             - name: HEALTH_PORT

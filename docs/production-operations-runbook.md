@@ -161,6 +161,8 @@ npm run release -- rollback --manifest <release-manifest.json> --confirm <planHa
 
 发布顺序固定为：预检 → 备份证据 → expand migration → API → Console → Sealos manifest 与 rollout → 隔离 canary → 稳定窗口验证。任一步失败立即停止；D1 不做破坏性 down migration，应用回退依赖 expand/contract 兼容窗口。
 
+Worker 未设置 `EMAIL_NOTIFICATIONS_ENABLED` 时默认启用邮件通知；当前 Sealos Worker 在 `deploy/sealos/worker-staging.yaml` 中显式设为 `false`。上线后核对新 Sealos revision 的开关值，并确认 `/healthz`、`/readyz` 和组件健康。回滚到不识别此开关的旧镜像时，若 SMTP 凭据仍存在，邮件通知可能恢复；回滚前先核对目标镜像行为。
+
 release manifest 必须满足：
 
 - `sourceCommit` 与 Console commit 是完整 40 位 Git SHA。
