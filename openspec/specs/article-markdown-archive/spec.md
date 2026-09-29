@@ -86,11 +86,11 @@
 - **THEN** 系统 SHALL 保留远程图片 URL，且 MUST NOT 下载图片、改写为本地资源或内嵌二进制内容
 
 ### Requirement: Git 仓库归档与原始 URL 幂等交付
-系统 SHALL 将 Markdown 保存到宿主机 `~/.agents/.wiki-vault/raw/article`，并 MUST 在每次成功创建或补交文章后提交当前文章文件并推送 `.agents` 仓库远端。
+系统 SHALL 将 Markdown 保存到宿主机 `~/.agents/sources/article`，并 MUST 在每次成功创建或补交文章后提交当前文章文件并推送 `.agents` 仓库远端。
 
 #### Scenario: 归档新文章并推送
 - **WHEN** Markdown 已通过正文验收，且仓库中不存在 frontmatter `source_url` 与原始 URL 精确相同的文章
-- **THEN** 系统 SHALL 原子写入 `.wiki-vault/raw/article/<安全文件名>`、仅提交该文章路径并立即 push
+- **THEN** 系统 SHALL 原子写入 `sources/article/<安全文件名>`、仅提交该文章路径并立即 push
 
 #### Scenario: 原始 URL 已存在
 - **WHEN** 仓库中已有文章的 frontmatter `source_url` 与原始 URL 精确相同

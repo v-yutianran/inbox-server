@@ -14,4 +14,4 @@ Git 仓库交付方式保持不变；新文章的权威写入目录从 `referenc
 
 ## 后续决定（2026-09-29）
 
-随个人知识库采用 obsidian-wiki 默认结构，不可变来源统一位于 Vault 外的 `.agents/sources/`，文章唯一写入目录改为 `sources/article/`。Git 仓库交付和 URL 幂等语义继续沿用；旧目录已迁移且不双写。见 [move-article-archive-to-sources OpenSpec 变更](../../openspec/changes/move-article-archive-to-sources/proposal.md)。
+随个人知识库采用 obsidian-wiki 默认结构，不可变来源统一位于 Vault 外的 `.agents/sources/`，文章唯一写入目录改为 `sources/article/`。Git 仓库交付和 URL 幂等语义继续沿用；旧目录已迁移且不双写。见 [move-article-archive-to-sources OpenSpec 变更](../../openspec/changes/archive/2026-09-29-move-article-archive-to-sources/proposal.md)。

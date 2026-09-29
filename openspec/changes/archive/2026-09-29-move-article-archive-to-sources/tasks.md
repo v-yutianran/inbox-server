@@ -10,4 +10,4 @@
 
 - [x] 2.1 从线上渠道 Secret 版本 1 仅替换 `articles_dir` 生成版本 2，逐字节读回验证；版本 1 保留，`.agents` 远端为迁移提交 `3c0b5e73`。
 - [x] 2.2 Cloud Run 原镜像 digest 的新修订版 `inbox-server-worker-wiki-sources-0929` Ready，挂载版本 2、`/readyz` 200 且承接 100% 流量；远端旧目录 0 篇、新目录 6,779 篇。真实新文章写入待自然任务观察。
-- [ ] 2.3 更新当日 Changelog、运行 `openspec validate` 与 GitNexus `detect_changes`，精确提交并推送本仓库变更。
+- [x] 2.3 当日 Changelog 已记录 RED/GREEN/REFACTOR、全量门禁与线上结果；`openspec validate move-article-archive-to-sources --strict`、docs audit、暂存区 `git diff --check` 通过；GitNexus 暂存范围 21 文件/25 符号、低风险，索引仍落后一笔。精确提交 `ec67450` 已推送。
