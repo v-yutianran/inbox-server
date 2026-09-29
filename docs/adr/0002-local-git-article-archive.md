@@ -11,3 +11,7 @@ status: accepted
 ## 后续决定（2026-08-05）
 
 Git 仓库交付方式保持不变；新文章的权威写入目录从 `references/article` 调整为 `raw/article`。历史文件不在本次变更中移动或删除，也不增加旧目录 fallback 或双写；详见 [move-article-archive-to-raw OpenSpec 变更](../../openspec/changes/move-article-archive-to-raw/proposal.md)。
+
+## 后续决定（2026-09-29）
+
+随个人知识库采用 obsidian-wiki 默认结构，不可变来源统一位于 Vault 外的 `.agents/sources/`，文章唯一写入目录改为 `sources/article/`。Git 仓库交付和 URL 幂等语义继续沿用；旧目录已迁移且不双写。见 [move-article-archive-to-sources OpenSpec 变更](../../openspec/changes/move-article-archive-to-sources/proposal.md)。

@@ -59,11 +59,15 @@
 - **THEN** 系统 SHALL 将任务判定为失败并应用独立归档重试策略
 
 ### Requirement: Obsidian 安全 Markdown
-系统 SHALL 生成带稳定且可被 YAML 解析器读取的 Obsidian Properties 的 Markdown，文件名 MUST 使用 Asia/Shanghai 归档日期并移除全部空白和特殊字符。
+系统 SHALL 生成带稳定且可被 YAML 解析器读取的 Obsidian Properties 的 Markdown，文件名 MUST 使用 Asia/Shanghai 归档日期、移除全部空白和特殊字符，且含扩展名与碰撞指纹后 MUST 不超过 180 个 UTF-8 字节。
 
 #### Scenario: 生成文件名
 - **WHEN** 标题为可归档文章标题且归档日期为某一自然日
 - **THEN** 文件名 SHALL 为 `YYYYMMDD-文章标题.md`，且 MUST 不包含空格、其它空白或 Obsidian 不安全特殊字符
+
+#### Scenario: 超长中文标题
+- **WHEN** 安全标题使文件名超过 180 个 UTF-8 字节
+- **THEN** 系统 SHALL 在完整 Unicode 字符边界截断标题，且最终文件名 MUST 不超过 180 个 UTF-8 字节
 
 #### Scenario: 标题清洗后为空
 - **WHEN** 标题经 Unicode 规范化和安全字符清洗后为空
@@ -82,11 +86,11 @@
 - **THEN** 系统 SHALL 保留远程图片 URL，且 MUST NOT 下载图片、改写为本地资源或内嵌二进制内容
 
 ### Requirement: Git 仓库归档与原始 URL 幂等交付
-系统 SHALL 将 Markdown 保存到宿主机 `~/.agents/raw/article`，并 MUST 在每次成功创建或补交文章后提交当前文章文件并推送 `.agents` 仓库远端。
+系统 SHALL 将 Markdown 保存到宿主机 `~/.agents/.wiki-vault/raw/article`，并 MUST 在每次成功创建或补交文章后提交当前文章文件并推送 `.agents` 仓库远端。
 
 #### Scenario: 归档新文章并推送
 - **WHEN** Markdown 已通过正文验收，且仓库中不存在 frontmatter `source_url` 与原始 URL 精确相同的文章
-- **THEN** 系统 SHALL 原子写入 `raw/article/<安全文件名>`、仅提交该文章路径并立即 push
+- **THEN** 系统 SHALL 原子写入 `.wiki-vault/raw/article/<安全文件名>`、仅提交该文章路径并立即 push
 
 #### Scenario: 原始 URL 已存在
 - **WHEN** 仓库中已有文章的 frontmatter `source_url` 与原始 URL 精确相同
@@ -94,7 +98,7 @@
 
 #### Scenario: 同名文章来自不同 URL
 - **WHEN** 安全文件名已存在但其 `source_url` 与当前原始 URL 不同
-- **THEN** 系统 SHALL 在文件名中追加原始 URL 的稳定短指纹并创建新文件，且 MUST NOT 覆盖已有文章
+- **THEN** 系统 SHALL 在文件名中追加原始 URL 的稳定短指纹并创建新文件，最终文件名 MUST 不超过 180 个 UTF-8 字节，且 MUST NOT 覆盖已有文章
 
 #### Scenario: 保留无关工作区改动
 - **WHEN** `.agents` 仓库存在与当前文章无关的暂存、未暂存或未跟踪内容

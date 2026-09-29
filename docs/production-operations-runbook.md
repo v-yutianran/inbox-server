@@ -111,7 +111,7 @@ kubectl --context <sealos-context> -n ns-tbs948af describe deployment inbox-serv
 
 日志上下文可包含 `deploymentVersion`、`jobId`、`leaseId`、`itemKind`、`source`、`destination`、`outcome` 与 `durationMs`。不得包含 Authorization、Cookie、Token、Password、Secret、文章正文、浏览器 state 或 envelope ciphertext。
 
-ima 镜像默认关闭。启用前必须轮换任何曾暴露的 Key，并在 Sealos Secret `inbox-server-worker-runtime` 中配置 `IMA_OPENAPI_CLIENTID` 与 `IMA_OPENAPI_APIKEY`；manifest 只配置 `IMA_MIRROR_ENABLED`、`IMA_KNOWLEDGE_BASE_NAME`、超时和持久卷状态目录。Git `raw/article` 始终是权威来源，ima 失败只重试镜像，禁止反向覆盖 Git。
+ima 镜像默认关闭。启用前必须轮换任何曾暴露的 Key，并在 Sealos Secret `inbox-server-worker-runtime` 中配置 `IMA_OPENAPI_CLIENTID` 与 `IMA_OPENAPI_APIKEY`；manifest 只配置 `IMA_MIRROR_ENABLED`、`IMA_KNOWLEDGE_BASE_NAME`、超时和持久卷状态目录。Git `sources/article` 始终是权威来源，ima 失败只重试镜像，禁止反向覆盖 Git。
 
 启用顺序：先保持 `IMA_MIRROR_ENABLED=false` 发布并验证 Worker；再写入轮换后的 Secret，以合成 Markdown 验证目标知识库、COS PUT、完成标记和重投零请求；最后改为 `true` 并执行完整文章链路。回滚只把开关恢复为 `false`，不删除 Git 文章、ima 知识或完成标记。
 

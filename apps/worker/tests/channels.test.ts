@@ -39,7 +39,7 @@ credentials: {}
     });
     const summary = safeChannelSummary(channels);
 
-    expect(channels.article_archive.articles_dir).toBe(".wiki-vault/raw/article");
+    expect(channels.article_archive.articles_dir).toBe("sources/article");
     expect(channels.sources.telegram?.config.bot_token).toBe("telegram-secret");
     expect(summary.sources.zhihu).toEqual({
       credential_name: "zhihu_creds",
