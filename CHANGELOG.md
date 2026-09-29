@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 2026-09-29
+
+### feat(article)：归档切换到 wiki Vault 并限制文件名长度
+
+- TypeScript Worker、Python 兼容运行时、示例和本机配置改为 `.wiki-vault/raw/article`；文件名含碰撞指纹最多 180 个 UTF-8 字节。验证细节见 [当日记录](docs/changelog/2026-09-29.md)。
+- 本地实现与验证完成；尚未 push、部署或执行 Android 实机 pull。
+
 ## 2026-09-23
 
 ### feat(worker)：按配置关闭 Sealos SMTP 通知

@@ -79,9 +79,9 @@ def test_archive_filename_has_deterministic_fallback_and_length_limit() -> None:
     assert first.startswith("20260716-examplecom-")
     assert first.endswith(".md")
     assert " " not in first
-    assert len(
-        build_archive_filename("https://example.com/a", "很长" * 200, moment)
-    ) <= 120
+    long_name = build_archive_filename("https://example.com/a", "很长" * 200, moment)
+    assert len(long_name) <= 120
+    assert len(long_name.encode("utf-8")) <= 171
 
 
 def test_normalize_archive_metadata_keeps_stable_frontmatter_fields() -> None:

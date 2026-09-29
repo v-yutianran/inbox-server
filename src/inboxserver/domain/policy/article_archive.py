@@ -136,11 +136,19 @@ def build_archive_filename(url: str, title: str, moment: datetime | None = None)
     prefix = f"{archive_date(moment)}-"
     suffix = ".md"
     max_stem_length = MAX_FILENAME_LENGTH - len(prefix) - len(suffix)
-    safe_title = sanitize_title(title)[:max_stem_length]
-    if not safe_title:
+    candidate = sanitize_title(title)
+    if not candidate:
         host = sanitize_title(urlparse(url).hostname or "article") or "article"
         digest = url_fingerprint(url)
-        safe_title = f"{host}-{digest}"[:max_stem_length]
+        candidate = f"{host}-{digest}"
+    remaining_bytes = 171 - len(f"{prefix}{suffix}".encode())
+    safe_title = ""
+    for character in candidate[:max_stem_length]:
+        character_bytes = len(character.encode())
+        if character_bytes > remaining_bytes:
+            break
+        safe_title += character
+        remaining_bytes -= character_bytes
     return f"{prefix}{safe_title}{suffix}"
 
 

@@ -119,11 +119,18 @@ export function buildArchiveFilename(title: string, archivedAt: Date): string {
   }).formatToParts(archivedAt);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   const date = `${values.year}${values.month}${values.day}`;
-  const safeTitle = title
+  const normalizedTitle = title
     .normalize("NFKC")
     .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 100) || "untitled";
+    .replace(/^-+|-+$/g, "") || "untitled";
+  let safeTitle = "";
+  let bytes = Buffer.byteLength(`${date}-.md`, "utf8");
+  for (const character of normalizedTitle) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (bytes + characterBytes > 171) break;
+    safeTitle += character;
+    bytes += characterBytes;
+  }
   return `${date}-${safeTitle}.md`;
 }
 

@@ -401,6 +401,12 @@ describe("article archive", () => {
     ).toBe("20260801-标题-路径-测试.md");
   });
 
+  it("长中文标题预留碰撞指纹后仍不超过 180 个 UTF-8 字节", () => {
+    const filename = buildArchiveFilename("中文".repeat(100), new Date("2026-09-29T00:00:00Z"));
+    expect(Buffer.byteLength(filename, "utf8")).toBeLessThanOrEqual(171);
+    expect(Buffer.byteLength(`${filename.slice(0, -3)}-12345678.md`, "utf8")).toBeLessThanOrEqual(180);
+  });
+
   it("首次初始化仓库使用浅克隆减少 WARP 出口传输量", () => {
     expect(
       buildInitialCloneArgs({
