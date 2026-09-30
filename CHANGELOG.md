@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 2026-09-30
+
+- 修复 Browser Run 远程会话清理，空闲兜底缩短为 60 秒；测试、真实 E2E 和生产补丁验证见 [当日记录](docs/changelog/2026-09-30.md)。
+
 ## 2026-09-29
 
 ### feat(article)：归档切换到 wiki Vault 并限制文件名长度
