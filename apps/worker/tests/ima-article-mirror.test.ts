@@ -218,6 +218,55 @@ tags: ["inoreader", "技术"]
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["created", "present", "rejected", "duplicate", "unconfirmed"] as const)(
+    "月份目录自动创建并读回，冲突或失败阻止上传：%s", async (scenario) => {
+      let listed = 0;
+      const fetcher = vi.fn(async (url: string | URL | Request) => {
+        const operation = String(url).split("/").at(-1);
+        if (operation === "get_addable_knowledge_base_list") return response({
+          addable_knowledge_base_list: [{ id: "kb-1", name: "天然的知识库" }], is_end: true,
+        });
+        if (operation === "get_knowledge_list") {
+          const folder = { media_id: imaFolderId, title: "202608" };
+          const count = scenario === "duplicate" ? 2
+            : scenario === "present" || (scenario === "created" && listed > 0) ? 1 : 0;
+          listed += 1;
+          return response({ knowledge_list: Array.from({ length: count }, () => folder), is_end: true });
+        }
+        if (operation === "create_folder") return new Response(JSON.stringify({
+          code: scenario === "rejected" ? 51 : 0,
+        }), { status: 200 });
+        if (operation === "check_repeated_names") return response({ results: [{ is_repeated: false }] });
+        if (operation === "create_media") return response({ cos_credential: credential, media_id: "media-1" });
+        return response({});
+      });
+      const mirror = createImaArticleMirror({
+        apiKey: "api-secret", clientId: "client-secret", enabled: true,
+        fetcher: fetcher as typeof fetch, knowledgeBaseName: "天然的知识库",
+        stateDirectory: await stateDirectory(),
+        webHeaders: { cookie: "web-cookie", "x-ima-cookie": "web-session", "x-ima-bkn": "123" },
+        webKnowledgeBaseId: "web-kb-1",
+      });
+
+      if (scenario === "created" || scenario === "present") await mirror.mirror(input);
+      else await expect(mirror.mirror(input)).rejects.toThrow();
+      const create = fetcher.mock.calls.filter(([url]) => String(url).endsWith("/create_folder"));
+      expect(create).toHaveLength(scenario === "present" || scenario === "duplicate" ? 0 : 1);
+      if (create.length) {
+        const request = (fetcher.mock.calls as unknown as Array<[unknown, RequestInit]>).find(
+          ([url]) => String(url).endsWith("/create_folder"),
+        )![1];
+        expect(JSON.parse(String(request.body))).toEqual({
+          folder_id: "web-kb-1", knowledge_base_id: "web-kb-1", title: "202608",
+        });
+        expect(request.headers).not.toHaveProperty("ima-openapi-apikey");
+        expect(request.redirect).toBe("error");
+      }
+      const uploaded = fetcher.mock.calls.some(([url]) => String(url).endsWith("/create_media"));
+      expect(uploaded).toBe(scenario === "created" || scenario === "present");
+    },
+  );
+
   it("已有完成标记时重投跳过所有远程请求", async () => {
     const directory = await stateDirectory();
     const fetcher = vi.fn()
@@ -245,6 +294,47 @@ tags: ["inoreader", "技术"]
     await createImaArticleMirror(options).mirror(input);
 
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("云端完成标记跨实例保留，状态写失败不误报成功", async () => {
+    const states = new Map<string, unknown>();
+    const stateStore = {
+      getState: async (key: string) => states.get(key) ?? null,
+      putState: vi.fn(async (key: string, value: unknown) => { states.set(key, value); }),
+    };
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      const operation = String(url).split("/").at(-1);
+      if (operation === "get_addable_knowledge_base_list") return response({
+        addable_knowledge_base_list: [{ id: "kb-1", name: "天然的知识库" }], is_end: true,
+      });
+      if (operation === "get_knowledge_list") return response({
+        knowledge_list: [{ media_id: imaFolderId, title: "202608" }], is_end: true,
+      });
+      if (operation === "check_repeated_names") return response({ results: [{ is_repeated: false }] });
+      if (operation === "create_media") return response({ cos_credential: credential, media_id: "media-1" });
+      return response({});
+    });
+    const log = vi.fn();
+    const options = {
+      apiKey: "api-secret", clientId: "client-secret", enabled: true,
+      fetcher: fetcher as typeof fetch, knowledgeBaseName: "天然的知识库", log, stateStore,
+    };
+
+    await createImaArticleMirror({ ...options, stateDirectory: await stateDirectory() }).mirror(input);
+    expect(states.size).toBe(1);
+    expect(JSON.stringify([...states])).not.toContain(input.sourceUrl);
+    fetcher.mockClear();
+    await createImaArticleMirror({ ...options, stateDirectory: await stateDirectory() }).mirror(input);
+    expect(fetcher).not.toHaveBeenCalled();
+
+    states.clear();
+    log.mockClear();
+    stateStore.putState.mockRejectedValueOnce(new Error("state unavailable"));
+    await expect(createImaArticleMirror({
+      ...options, stateDirectory: await stateDirectory(),
+    }).mirror(input)).rejects.toThrow();
+    expect(states.size).toBe(0);
+    expect(log).not.toHaveBeenCalledWith("article.ima_mirror.succeeded", expect.anything());
   });
 
   it("知识库名称不唯一时 fail closed", async () => {

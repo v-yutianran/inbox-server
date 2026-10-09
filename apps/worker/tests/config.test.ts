@@ -70,6 +70,8 @@ describe("worker config", () => {
       IMA_OPENAPI_APIKEY: "api-key",
       IMA_OPENAPI_CLIENTID: "client-id",
       IMA_TIMEOUT_MS: "45000",
+      IMA_WEB_HEADERS: JSON.stringify({ cookie: "web-cookie", "x-ima-cookie": "web-session", "x-ima-bkn": "123" }),
+      IMA_WEB_KNOWLEDGE_BASE_ID: "web-kb-1",
       PERSISTENCE_ROOT: "/data",
     });
 
@@ -77,6 +79,9 @@ describe("worker config", () => {
     expect(config.imaKnowledgeBaseName).toBe("天然的知识库");
     expect(config.imaTimeoutMs).toBe(45_000);
     expect(config.imaStateDirectory).toBe("/data/ima-mirror");
+    expect(config.imaWebHeaders).toHaveProperty("cookie", "web-cookie");
+    expect(config.imaWebKnowledgeBaseId).toBe("web-kb-1");
+    expect(() => parseWorkerConfig({ DISPLAY: ":99", IMA_WEB_HEADERS: "invalid JSON" })).toThrow();
   });
 
   it("完整生产配置解析为固定批量和可见性超时", () => {

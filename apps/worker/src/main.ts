@@ -208,7 +208,10 @@ async function run(): Promise<void> {
         knowledgeBaseName: config.imaKnowledgeBaseName,
         log: workerLog,
         stateDirectory: config.imaStateDirectory,
+        ...(config.runMode === "webhook" ? { stateStore: controlPlane } : {}),
         timeoutMs: config.imaTimeoutMs,
+        webHeaders: config.imaWebHeaders,
+        webKnowledgeBaseId: config.imaWebKnowledgeBaseId,
       });
       const articleRepository = channels.article_archive.enabled
         ? new GitArticleRepository({

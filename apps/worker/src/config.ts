@@ -24,6 +24,18 @@ const workerConfigSchema = z.object({
   IMA_OPENAPI_CLIENTID: z.string().min(1).optional(),
   IMA_STATE_DIRECTORY: z.string().min(1).optional(),
   IMA_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  IMA_WEB_KNOWLEDGE_BASE_ID: z.string().min(1).optional(),
+  IMA_WEB_HEADERS: z.string().transform((value, context) => {
+    try { return JSON.parse(value) as unknown; }
+    catch {
+      context.addIssue({ code: "custom", message: "invalid ima web headers JSON" });
+      return z.NEVER;
+    }
+  }).pipe(z.object({
+    cookie: z.string().min(1),
+    "x-ima-cookie": z.string().min(1),
+    "x-ima-bkn": z.string().min(1),
+  })).optional(),
   K_SERVICE: z.string().min(1).optional(),
   OUTBOUND_PROXY_PORT: z.coerce.number().int().min(1).max(65_535).default(40_001),
   OUTBOUND_PROXY_READY_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
@@ -147,6 +159,8 @@ export interface WorkerConfig {
   readonly imaMirrorEnabled: boolean;
   readonly imaStateDirectory: string;
   readonly imaTimeoutMs: number;
+  readonly imaWebHeaders: Readonly<Record<string, string>> | undefined;
+  readonly imaWebKnowledgeBaseId: string | undefined;
   readonly outboundProxyPort: number;
   readonly outboundProxyReadyTimeoutMs: number;
   readonly persistenceRoot: string;
@@ -193,6 +207,8 @@ export function parseWorkerConfig(
     imaMirrorEnabled: parsed.IMA_MIRROR_ENABLED === "true",
     imaStateDirectory: parsed.IMA_STATE_DIRECTORY ?? `${parsed.PERSISTENCE_ROOT}/ima-mirror`,
     imaTimeoutMs: parsed.IMA_TIMEOUT_MS,
+    imaWebHeaders: parsed.IMA_WEB_HEADERS,
+    imaWebKnowledgeBaseId: parsed.IMA_WEB_KNOWLEDGE_BASE_ID,
     outboundProxyPort: parsed.OUTBOUND_PROXY_PORT,
     outboundProxyReadyTimeoutMs: parsed.OUTBOUND_PROXY_READY_TIMEOUT_MS,
     persistenceRoot: parsed.PERSISTENCE_ROOT,

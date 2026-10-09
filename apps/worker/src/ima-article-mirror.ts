@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 
 import type { ArticleMirror } from "./article-archive.js";
+import type { WorkerControlPlane } from "./worker-control-plane.js";
 
 const IMA_API_BASE_URL = "https://ima.qq.com/openapi/wiki/v1";
 const MARKDOWN_MEDIA_TYPE = 7;
@@ -19,7 +20,10 @@ interface ImaOptions {
   readonly log?: Log;
   readonly now?: () => Date;
   readonly stateDirectory?: string | undefined;
+  readonly stateStore?: Pick<WorkerControlPlane, "getState" | "putState">;
   readonly timeoutMs?: number;
+  readonly webHeaders?: Readonly<Record<string, string>> | undefined;
+  readonly webKnowledgeBaseId?: string | undefined;
 }
 
 interface CosCredential {
@@ -79,8 +83,12 @@ export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
     async mirror(input): Promise<void> {
       const startedAt = Date.now();
       try {
-        const markerPath = join(stateDirectory, `${sourceFingerprint(input.sourceUrl)}.json`);
-        if (await markerExists(markerPath)) return;
+        const fingerprint = sourceFingerprint(input.sourceUrl);
+        const markerPath = join(stateDirectory, `${fingerprint}.json`);
+        const stateKey = `ima-mirror:${fingerprint}`;
+        if (options.stateStore
+          ? await options.stateStore.getState(stateKey) !== null
+          : await markerExists(markerPath)) return;
         knowledgeBaseId ??= await findUniqueKnowledgeBase({
           apiKey,
           clientId,
@@ -97,6 +105,8 @@ export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
           knowledgeBaseId,
           month,
           timeoutMs,
+          webHeaders: options.webHeaders,
+          webKnowledgeBaseId: options.webKnowledgeBaseId,
         });
         const fileSize = Buffer.byteLength(imaContent);
         const repeated = await imaRequest<{ results: Array<{ is_repeated: boolean }> }>({
@@ -165,11 +175,13 @@ export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
           stage: "add_knowledge",
           timeoutMs,
         });
-        await writeMarker(markerPath, {
+        const marker = {
           completedAt: now().toISOString(),
           contentDigest: sha256(input.content),
           knowledgeId: sha256(knowledgeBaseId),
-        });
+        };
+        if (options.stateStore) await options.stateStore.putState(stateKey, marker);
+        else await writeMarker(markerPath, marker);
         options.log?.("article.ima_mirror.succeeded", {
           durationBucket: durationBucket(Date.now() - startedAt),
           provider: "ima",
@@ -206,6 +218,8 @@ async function findUniqueMonthFolder(options: {
   readonly knowledgeBaseId: string;
   readonly month: string;
   readonly timeoutMs: number;
+  readonly webHeaders?: Readonly<Record<string, string>> | undefined;
+  readonly webKnowledgeBaseId?: string | undefined;
 }): Promise<string> {
   const matches: string[] = [];
   let cursor = "";
@@ -231,6 +245,40 @@ async function findUniqueMonthFolder(options: {
     if (page.is_end) break;
     cursor = page.next_cursor;
   } while (cursor);
+  if (matches.length === 0 && options.webHeaders) {
+    const webKnowledgeBaseId = required(options.webKnowledgeBaseId, "ima_web_knowledge_base_missing");
+    const headers = Object.fromEntries(["cookie", "x-ima-cookie", "x-ima-bkn"].map(
+      (key) => [key, required(options.webHeaders![key], "ima_web_credentials_missing")],
+    ));
+    let response: Response;
+    try {
+      response = await options.fetcher("https://ima.qq.com/cgi-bin/knowledge_tab_writer/create_folder", {
+        body: JSON.stringify({
+          folder_id: webKnowledgeBaseId, knowledge_base_id: webKnowledgeBaseId, title: options.month,
+        }),
+        headers: {
+          ...headers,
+          "Content-Type": "application/json",
+          "from_browser_ima": "1",
+          "extension_version": "999.999.999",
+          Referer: "https://ima.qq.com/wikis",
+        },
+        method: "POST",
+        redirect: "error",
+        signal: AbortSignal.timeout(options.timeoutMs),
+      });
+    } catch {
+      throw new ImaMirrorError("ima_folder_create_failed", "folder", "network_failed");
+    }
+    if (!response.ok) throw new ImaMirrorError("ima_folder_create_failed", "folder", "http_failed");
+    let payload: unknown;
+    try { payload = await response.json(); }
+    catch { throw new ImaMirrorError("ima_folder_create_failed", "folder", "invalid_response"); }
+    if (!isRecord(payload) || payload.code !== 0) {
+      throw new ImaMirrorError("ima_folder_create_failed", "folder", "api_rejected");
+    }
+    return findUniqueMonthFolder({ ...options, webHeaders: undefined });
+  }
   if (matches.length !== 1) {
     throw new ImaMirrorError("ima_month_folder_not_unique", "folder", "folder_not_unique");
   }
