@@ -4,9 +4,14 @@ import { z } from "zod";
 
 import { parseQueueJob, sourceNames, type QueueJob } from "@inbox/domain";
 
-import type { ApiBindings } from "./auth.js";
+import { getPostgresConnectionString, type ApiBindings } from "./auth.js";
 import { createQueueProducer, type QueueProducer } from "./queue-producer.js";
 import { operationsSnapshots, syncJobs } from "./schema.js";
+import { createHyperdrivePostgresPool } from "./postgres-connection.js";
+import { createPostgresOperationsService } from "./operations-postgres.js";
+import { createWorkerHeartbeatCache } from "./heartbeat-cache.js";
+
+export const SCHEDULER_INTERVAL_SECONDS = 3_600;
 
 const queueStatsSchema = z
   .object({
@@ -177,11 +182,27 @@ interface OperationsServiceOptions {
 }
 
 export function createOperationsServiceFromBindings(bindings: ApiBindings): OperationsService {
+  const connectionString = getPostgresConnectionString(bindings);
+  const producer = createQueueProducer(bindings.JOBS);
+  const schedulerEnabled = bindings.SCHEDULE_ENABLED === "true";
+  const shadowMode = resolveCollectionShadowMode(bindings.SYNC_PUBLISH_ENABLED);
+  if (connectionString !== null) {
+    return createPostgresOperationsService({
+      pool: createHyperdrivePostgresPool({ connectionString }),
+      producer,
+      heartbeatCache: createWorkerHeartbeatCache(
+        bindings.UPSTASH_REST_URL,
+        bindings.UPSTASH_REST_TOKEN,
+      ),
+      schedulerEnabled,
+      shadowMode,
+    });
+  }
   return createD1OperationsService({
     database: bindings.DB,
-    producer: createQueueProducer(bindings.JOBS),
-    schedulerEnabled: bindings.SCHEDULE_ENABLED === "true",
-    shadowMode: resolveCollectionShadowMode(bindings.SYNC_PUBLISH_ENABLED),
+    producer,
+    schedulerEnabled,
+    shadowMode,
   });
 }
 
@@ -333,7 +354,7 @@ export function normalizeOverviewStatus(
   const heartbeatAge = now.getTime() - heartbeatAt;
   const workerOnline =
     overview.worker.online && heartbeatAge >= -30_000 && heartbeatAge <= 90_000;
-  const intervalMs = overview.scheduler.interval_seconds * 1_000;
+  const intervalMs = SCHEDULER_INTERVAL_SECONDS * 1_000;
   const nextRunAt = schedulerEnabled
     ? new Date((Math.floor(now.getTime() / intervalMs) + 1) * intervalMs).toISOString()
     : null;
@@ -343,6 +364,7 @@ export function normalizeOverviewStatus(
     scheduler: {
       ...overview.scheduler,
       enabled: schedulerEnabled,
+      interval_seconds: SCHEDULER_INTERVAL_SECONDS,
       next_run_at: nextRunAt,
     },
     worker: { ...overview.worker, online: workerOnline },
@@ -370,7 +392,11 @@ function emptyOverview(now: Date, schedulerEnabled: boolean): OperationsOverview
       link: emptyQueue,
       text: emptyQueue,
     },
-    scheduler: { enabled: schedulerEnabled, interval_seconds: 600, next_run_at: null },
+    scheduler: {
+      enabled: schedulerEnabled,
+      interval_seconds: SCHEDULER_INTERVAL_SECONDS,
+      next_run_at: null,
+    },
     server: { online: true },
     status: "ok",
     sync_jobs: [],

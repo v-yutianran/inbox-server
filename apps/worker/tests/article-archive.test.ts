@@ -189,6 +189,7 @@ describe("article archive", () => {
     const html = `<html><head><title>保存失败文章</title></head><body><article><p>${"这是足够长的正文。".repeat(80)}</p></article></body></html>`;
     const repository = { save: vi.fn().mockRejectedValue(new Error("git_push_failed")) };
     const mirror = { mirror: vi.fn() };
+    const recordEvent = vi.fn().mockResolvedValue(undefined);
     await writeFile(templatePath, template);
 
     try {
@@ -199,6 +200,7 @@ describe("article archive", () => {
           new Response(html, { headers: { "Content-Type": "text/html" } }),
         ),
         mirror,
+        recordEvent,
         repository,
         templatePath,
       });
@@ -209,14 +211,82 @@ describe("article archive", () => {
           requestedAt: "2026-08-02T04:00:00.000Z",
           url: "https://example.com/git-failure",
         }),
-      ).resolves.toEqual({ outcome: "fail" });
+      ).resolves.toEqual({ outcome: "fail", reasonCode: "git_push_failed" });
       expect(mirror.mirror).not.toHaveBeenCalled();
+      expect(recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "git_push_failed", status: "uncertain" }),
+      );
     } finally {
       await rm(directory, { force: true, recursive: true });
     }
   });
 
-  it("Git 已保存但文章镜像失败时返回失败以进入重试", async () => {
+  it("知乎 API 在归档写入前拒绝时记录安全状态码并明确标记失败阶段", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "inbox-article-zhihu-rejected-"));
+    const templatePath = join(directory, "article.md.eta");
+    const responseBody = "private upstream response body";
+    const sourceUrl = "https://www.zhihu.com/question/123/answer/456";
+    const page = {
+      evaluate: vi.fn().mockResolvedValue({ body: responseBody, status: 503 }),
+      goto: vi.fn().mockResolvedValue(undefined),
+    };
+    const context = {
+      addCookies: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      newPage: vi.fn().mockResolvedValue(page),
+    };
+    const browser = { newContext: vi.fn().mockResolvedValue(context) } as unknown as Browser;
+    const repository = { save: vi.fn() };
+    const log = vi.fn();
+    const recordEvent = vi.fn().mockRejectedValue(new Error("private audit failure"));
+    await writeFile(templatePath, template);
+
+    try {
+      const archive = createArticleArchiver({
+        browser,
+        channels: {
+          ...articleChannels,
+          sources: { zhihu: { config: { credential_name: "zhihu" } } },
+        } as unknown as Channels,
+        getCredential: vi.fn().mockResolvedValue({ z_c0: "test-cookie" }),
+        log,
+        recordEvent,
+        repository,
+        templatePath,
+      });
+
+      await expect(
+        archive({ itemKind: "article", requestedAt: "2026-08-02T04:00:00.000Z", url: sourceUrl }),
+      ).resolves.toEqual({
+        failurePhase: "before_write",
+        outcome: "fail",
+        reasonCode: "zhihu_api_rejected",
+        status: 503,
+      });
+
+      expect(repository.save).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith(
+        "article.archive.failed",
+        expect.objectContaining({ errorCode: "zhihu_api_rejected", upstreamStatus: 503 }),
+      );
+      expect(log).toHaveBeenCalledWith(
+        "article.archive.event_record_failed",
+        expect.objectContaining({ status: "failed" }),
+      );
+      expect(recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "zhihu_api_rejected", status: "failed" }),
+      );
+      const serializedLogs = JSON.stringify(log.mock.calls);
+      expect(serializedLogs).not.toContain(responseBody);
+      expect(serializedLogs).not.toContain(sourceUrl);
+      expect(serializedLogs).not.toContain("test-cookie");
+      expect(serializedLogs).not.toContain("private audit failure");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("Git 已保存但文章镜像失败时保留 uncertain 人工核对状态", async () => {
     const directory = await mkdtemp(join(tmpdir(), "inbox-article-mirror-failure-"));
     const templatePath = join(directory, "article.md.eta");
     const html = `<html><head><title>镜像失败文章</title></head><body><article><p>${"这是足够长的正文。".repeat(80)}</p></article></body></html>`;
@@ -224,6 +294,7 @@ describe("article archive", () => {
       save: vi.fn().mockResolvedValue({ created: true, filename: "20260802-mirror.md" }),
     };
     const mirror = { mirror: vi.fn().mockRejectedValue(new Error("ima_upload_failed")) };
+    const recordEvent = vi.fn().mockResolvedValue(undefined);
     await writeFile(templatePath, template);
 
     try {
@@ -234,6 +305,7 @@ describe("article archive", () => {
           new Response(html, { headers: { "Content-Type": "text/html" } }),
         ),
         mirror,
+        recordEvent,
         repository,
         templatePath,
       });
@@ -244,9 +316,12 @@ describe("article archive", () => {
           requestedAt: "2026-08-02T04:00:00.000Z",
           url: "https://example.com/mirror-failure",
         }),
-      ).resolves.toEqual({ outcome: "fail" });
+      ).resolves.toEqual({ outcome: "fail", reasonCode: "ima_upload_failed" });
       expect(repository.save).toHaveBeenCalledOnce();
       expect(mirror.mirror).toHaveBeenCalledOnce();
+      expect(recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "ima_upload_failed", status: "uncertain" }),
+      );
     } finally {
       await rm(directory, { force: true, recursive: true });
     }

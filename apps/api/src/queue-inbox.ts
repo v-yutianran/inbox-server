@@ -1,3 +1,7 @@
+import { getPostgresConnectionString, type ApiBindings } from "./auth.js";
+import { createHyperdrivePostgresPool } from "./postgres-connection.js";
+import { createQueueInboxPostgresService } from "./queue-inbox-postgres.js";
+
 export interface InboxLease {
   readonly attempts: number;
   readonly body: unknown;
@@ -33,8 +37,14 @@ export interface QueueInboxService {
 }
 
 export function createQueueInboxServiceFromBindings(
-  bindings: Pick<ApiBindings, "DB">,
+  bindings: ApiBindings,
 ): QueueInboxService {
+  const connectionString = getPostgresConnectionString(bindings);
+  if (connectionString !== null) {
+    return createQueueInboxPostgresService({
+      pool: createHyperdrivePostgresPool({ connectionString }),
+    });
+  }
   return createQueueInboxService({ database: bindings.DB });
 }
 
@@ -166,4 +176,3 @@ function assertDistinctLeases(settlement: InboxSettlement): void {
     }
   }
 }
-import type { ApiBindings } from "./auth.js";

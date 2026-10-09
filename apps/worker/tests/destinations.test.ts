@@ -81,4 +81,53 @@ describe("destinations", () => {
     expect(init?.method).toBe("PUT");
     expect(init?.headers).toEqual(expect.objectContaining({ Authorization: expect.stringMatching(/^Basic /) }));
   });
+
+  it("坚果云可从对象存储读取跨实例附件", async () => {
+    const attachmentStore = {
+      download: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+      upload: vi.fn(),
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 201 }));
+
+    await expect(
+      deliverJianguoyun(
+        { password: "secret", user: "user@example.com" },
+        {
+          itemKind: "file",
+          objectKey: "telegram/2fd785d7-47aa-4357-a59f-5039c0434c25",
+          remoteName: "a.pdf",
+        },
+        fetcher,
+        attachmentStore,
+      ),
+    ).resolves.toEqual({ outcome: "ok" });
+    expect(attachmentStore.download).toHaveBeenCalledWith(
+      "telegram/2fd785d7-47aa-4357-a59f-5039c0434c25",
+    );
+    expect(new Uint8Array(fetcher.mock.calls[0]?.[1]?.body as ArrayBuffer)).toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
+  });
+
+  it("对象存储读取失败时不发出坚果云上传", async () => {
+    const attachmentStore = {
+      download: vi.fn().mockRejectedValue(new Error("gcs_object_download_failed")),
+      upload: vi.fn(),
+    };
+    const fetcher = vi.fn();
+
+    await expect(
+      deliverJianguoyun(
+        { password: "secret", user: "user@example.com" },
+        {
+          itemKind: "file",
+          objectKey: "telegram/2fd785d7-47aa-4357-a59f-5039c0434c25",
+          remoteName: "a.pdf",
+        },
+        fetcher,
+        attachmentStore,
+      ),
+    ).rejects.toThrow("gcs_object_download_failed");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
 });

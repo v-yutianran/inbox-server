@@ -50,6 +50,15 @@ describe("article retry control plane", () => {
     });
   }
 
+  it("拒绝在 D1 中写入仅 PostgreSQL 支持的 Inoreader session 凭据", async () => {
+    const controlPlane = service();
+
+    await expect(
+      controlPlane.saveInoreaderSessionCredential({ cookies: [], origins: [] }),
+    ).rejects.toThrow("Inoreader session credential import requires PostgreSQL");
+    expect(sqlite.prepare("SELECT name FROM credentials").all()).toEqual([]);
+  });
+
   it("批量限速拒绝时不部分扣减并返回最晚 retryAt", async () => {
     const controlPlane = service();
     await controlPlane.consumeRateLimits([

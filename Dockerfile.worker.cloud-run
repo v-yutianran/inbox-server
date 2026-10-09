@@ -1,0 +1,54 @@
+FROM node:22.17.0-bookworm-slim@sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0 AS build
+
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+WORKDIR /app
+
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY packages/domain/package.json packages/domain/package.json
+RUN npm ci \
+    --workspace @inbox/worker \
+    --workspace @inbox/domain \
+    --include-workspace-root=false
+
+COPY apps/worker apps/worker
+COPY packages/domain packages/domain
+RUN npm run build --workspace @inbox/domain \
+    && npm run build --workspace @inbox/worker \
+    && npm prune --omit=dev \
+        --workspace @inbox/worker \
+        --workspace @inbox/domain \
+        --include-workspace-root=false
+
+FROM node:22.17.0-bookworm-slim@sha256:b04ce4ae4e95b522112c2e5c52f781471a5cbc3b594527bcddedee9bc48c03a0
+
+ENV HOME=/home/worker \
+    NODE_ENV=production \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+WORKDIR /app
+
+RUN groupadd --gid 1001 worker \
+    && useradd --create-home --gid 1001 --uid 1001 worker \
+    && apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build --chown=worker:worker /app/node_modules ./node_modules
+COPY --from=build --chown=worker:worker /app/apps/worker/node_modules ./apps/worker/node_modules
+COPY --from=build --chown=worker:worker /app/apps/worker/package.json ./apps/worker/package.json
+COPY --from=build --chown=worker:worker /app/apps/worker/dist ./apps/worker/dist
+COPY --from=build --chown=worker:worker /app/packages/domain/package.json ./packages/domain/package.json
+COPY --from=build --chown=worker:worker /app/packages/domain/dist ./packages/domain/dist
+COPY --chown=worker:worker channels.yaml.example ./channels.yaml
+COPY --chown=worker:worker templates/article.md.eta ./templates/article.md.eta
+COPY --chown=worker:worker scripts/github-askpass.sh /usr/local/bin/inbox-github-askpass
+
+RUN chmod 755 /usr/local/bin/inbox-github-askpass \
+    && mkdir -p /data \
+    && chown worker:worker /data
+
+USER worker
+EXPOSE 8080
+ENTRYPOINT ["node", "--env-file=/secrets/env/worker.env", "apps/worker/dist/main.js"]

@@ -63,6 +63,31 @@ describe("parseQueueJob", () => {
       }),
     ).toThrow();
   });
+
+  it("接受 GCS object key 附件并继续接受旧 localPath 附件", () => {
+    const job = (file: Record<string, unknown>) => parseQueueJob({
+      ...baseJob,
+      dedupeKey: "dispatch:file:legacy",
+      jobId: "03c8a366-3b4a-4c6d-a384-22d34e7eac78",
+      kind: "dispatch-item",
+      payload: { itemKind: "file", remoteName: "a.pdf", ...file },
+    });
+
+    expect(job({ objectKey: "telegram/2fd785d7-47aa-4357-a59f-5039c0434c25" }).payload)
+      .toEqual({
+        itemKind: "file",
+        objectKey: "telegram/2fd785d7-47aa-4357-a59f-5039c0434c25",
+        remoteName: "a.pdf",
+      });
+    expect(job({ localPath: "/data/staging/a.pdf" }).payload).toEqual({
+      itemKind: "file",
+      localPath: "/data/staging/a.pdf",
+      remoteName: "a.pdf",
+    });
+    expect(() => job({})).toThrow();
+    expect(() => job({ localPath: "/data/staging/a.pdf", objectKey: "telegram/file" }))
+      .toThrow();
+  });
 });
 
 describe("createItemDedupeKey", () => {

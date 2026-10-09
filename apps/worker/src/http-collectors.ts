@@ -55,10 +55,16 @@ async function collectTelegram(dependencies: CollectorDependencies): Promise<Col
       if (!filePath) throw new Error("Telegram getFile response is invalid");
       const response = await fetcher(`${TELEGRAM_API}/file/bot${token}/${filePath}`);
       if (!response.ok) throw new Error(`Telegram file request failed: ${response.status}`);
-      await mkdir(dependencies.stagingDir, { recursive: true });
       const remoteName = sanitizeFilename(file.remoteName);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (dependencies.attachmentStore) {
+        const objectKey = `telegram/${crypto.randomUUID()}`;
+        await dependencies.attachmentStore.upload(objectKey, bytes);
+        return { itemKind: "file", objectKey, remoteName };
+      }
+      await mkdir(dependencies.stagingDir, { recursive: true });
       const localPath = join(dependencies.stagingDir, remoteName);
-      await writeFile(localPath, new Uint8Array(await response.arrayBuffer()));
+      await writeFile(localPath, bytes);
       return { itemKind: "file", localPath, remoteName };
     }),
   );

@@ -66,6 +66,22 @@ const replayExecuteSchema = replayPlanSchema.extend({
   confirm: z.literal(true),
   planHash: z.string().regex(/^[a-f0-9]{64}$/),
 });
+const inoreaderCookieSchema = z.object({
+  domain: z.string().refine(isInoreaderDomain),
+  name: z.string(),
+  path: z.string(),
+  value: z.string(),
+}).passthrough();
+const inoreaderStorageOriginSchema = z.object({
+  localStorage: z.array(
+    z.object({ name: z.string(), value: z.string() }).passthrough(),
+  ),
+  origin: z.string().refine(isInoreaderOrigin),
+}).passthrough();
+const inoreaderStorageStateSchema = z.object({
+  cookies: z.array(inoreaderCookieSchema),
+  origins: z.array(inoreaderStorageOriginSchema),
+}).strict();
 
 interface AppOptions {
   readonly createControlPlaneService?: (bindings: ApiBindings) => ControlPlaneService;
@@ -77,6 +93,14 @@ interface AppOptions {
   readonly createQueueInboxService?: (bindings: ApiBindings) => QueueInboxService;
 }
 
+const migrationFrozenWriteMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+export function isMigrationFrozen(bindings: ApiBindings | undefined): boolean {
+  return (
+    bindings as (ApiBindings & { readonly MIGRATION_FROZEN?: string }) | undefined
+  )?.MIGRATION_FROZEN === "true";
+}
+
 export function createApp({
   createControlPlaneService = createControlPlaneServiceFromBindings,
   createLegacyMigrationService = createLegacyMigrationServiceFromBindings,
@@ -85,6 +109,23 @@ export function createApp({
   createQueueInboxService = createQueueInboxServiceFromBindings,
 }: AppOptions = {}): Hono<{ Bindings: ApiBindings }> {
   const app = new Hono<{ Bindings: ApiBindings }>();
+
+  app.use("*", async (context, next) => {
+    const isWorkerStateRead =
+      context.req.method === "POST" && context.req.path === "/internal/state/read";
+    const isInoreaderCredentialImport =
+      context.req.method === "PUT" &&
+      context.req.path === "/internal/credentials/inoreader_creds";
+    if (
+      isMigrationFrozen(context.env) &&
+      migrationFrozenWriteMethods.has(context.req.method) &&
+      !isWorkerStateRead &&
+      !isInoreaderCredentialImport
+    ) {
+      return context.json({ detail: "service writes are frozen for migration" }, 503);
+    }
+    await next();
+  });
 
   app.use(
     "*",
@@ -360,6 +401,23 @@ export function createApp({
       ? context.json({ detail: "credential not found" }, 404)
       : context.json({ value });
   });
+  app.put("/internal/credentials/inoreader_creds", async (context) => {
+    if (context.env.DATA_BACKEND !== "postgres") {
+      return context.json({ detail: "Inoreader session import requires PostgreSQL" }, 503);
+    }
+    let payload: unknown;
+    try {
+      payload = await context.req.json();
+    } catch {
+      return context.json({ detail: "invalid Inoreader storage state" }, 400);
+    }
+    const parsed = inoreaderStorageStateSchema.safeParse(payload);
+    if (!parsed.success) {
+      return context.json({ detail: "invalid Inoreader storage state" }, 400);
+    }
+    await createControlPlaneService(context.env).saveInoreaderSessionCredential(parsed.data);
+    return context.body(null, 204);
+  });
   app.put("/internal/login/:platform/status", async (context) => {
     await createControlPlaneService(context.env).putLoginSession(
       context.req.param("platform"),
@@ -381,13 +439,16 @@ export function createApp({
     );
     return context.body(null, 204);
   });
-  app.post("/internal/migration/import", async (context) =>
-    context.json(
+  app.post("/internal/migration/import", async (context) => {
+    if (context.env.DATA_BACKEND === "postgres") {
+      return context.json({ detail: "legacy import is unavailable with PostgreSQL" }, 410);
+    }
+    return context.json(
       await createLegacyMigrationService(context.env).importSnapshot(
         await context.req.json(),
       ),
-    ),
-  );
+    );
+  });
 
   return app;
 }
@@ -408,4 +469,33 @@ function readWindowHours(value: string | undefined): number | null {
   if (value === undefined) return 24;
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 24 * 30 ? parsed : null;
+}
+
+function isInoreaderDomain(domain: string): boolean {
+  const normalized = domain.toLowerCase().startsWith(".")
+    ? domain.slice(1).toLowerCase()
+    : domain.toLowerCase();
+  if (normalized === "inoreader.com") return true;
+  if (!normalized.endsWith(".inoreader.com")) return false;
+  const subdomain = normalized.slice(0, -".inoreader.com".length);
+  return subdomain.split(".").every(
+    (label) =>
+      label.length <= 63 &&
+      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label),
+  );
+}
+
+function isInoreaderOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return (
+      url.protocol === "https:" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.origin === origin &&
+      isInoreaderDomain(url.hostname)
+    );
+  } catch {
+    return false;
+  }
 }

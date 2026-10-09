@@ -52,6 +52,7 @@ function createService(): ControlPlaneService {
       replayable: true,
       status: "validated",
     }),
+    saveInoreaderSessionCredential: vi.fn().mockResolvedValue(undefined),
     writeCookie: vi.fn().mockResolvedValue({
       note: "凭据已存，登录态将在下次同步时由 worker 建立",
       platform: "zhihu",

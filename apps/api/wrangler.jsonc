@@ -3,6 +3,7 @@
   "name": "inbox-server-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-31",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "routes": [
@@ -17,6 +18,12 @@
       "database_name": "inbox-server",
       "database_id": "8654ef2f-4f7b-4f9e-837a-7aeb4388fd64",
       "migrations_dir": "migrations"
+    }
+  ],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "3d5cd4030a8c4b52ac378216d87daff2"
     }
   ],
   "queues": {
@@ -36,11 +43,14 @@
     ]
   },
   "triggers": {
-    "crons": ["*/10 * * * *"]
+    "crons": ["0 * * * *"]
   },
   "vars": {
+    "DATA_BACKEND": "postgres",
+    "MIGRATION_FROZEN": "false",
     "SCHEDULE_ENABLED": "true",
-    "SYNC_PUBLISH_ENABLED": "true"
+    "SYNC_PUBLISH_ENABLED": "true",
+    "WORKER_WEBHOOK_URL": "https://inbox-server-worker-444540301634.asia-east1.run.app/webhooks/worker"
   },
   "observability": {
     "enabled": true

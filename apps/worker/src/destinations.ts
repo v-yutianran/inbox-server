@@ -2,10 +2,17 @@ import { readFile } from "node:fs/promises";
 
 import { formatFlomoContent, type DispatchItem } from "@inbox/domain";
 
+import type { AttachmentObjectStore } from "./collector-types.js";
+
 export type DeliveryResult =
   | { readonly outcome: "ok" }
   | { readonly outcome: "quota" }
-  | { readonly outcome: "fail"; readonly status?: number };
+  | {
+      readonly failurePhase?: "before_write";
+      readonly outcome: "fail";
+      readonly reasonCode?: string;
+      readonly status?: number;
+    };
 
 export async function deliverCubox(
   apiUrl: string,
@@ -67,11 +74,17 @@ export async function deliverJianguoyun(
   },
   item: Extract<DispatchItem, { itemKind: "file" }>,
   fetcher: typeof fetch = fetch,
+  attachmentStore?: AttachmentObjectStore,
 ): Promise<DeliveryResult> {
   const baseUrl = (config.baseUrl ?? "https://dav.jianguoyun.com/dav").replace(/\/$/, "");
   const remotePath = joinRemotePath(config.basePath ?? "/我的坚果云", item.remoteName);
+  const body = item.objectKey
+    ? await requiredAttachmentStore(attachmentStore).download(item.objectKey)
+    : item.localPath
+      ? await readFile(item.localPath)
+      : missingFileLocator();
   const response = await fetcher(`${baseUrl}${encodeRemotePath(remotePath)}`, {
-    body: await readFile(item.localPath),
+    body: toArrayBuffer(body),
     headers: {
       Authorization: `Basic ${Buffer.from(`${config.user}:${config.password}`).toString("base64")}`,
       "Content-Type": "application/octet-stream",
@@ -81,6 +94,23 @@ export async function deliverJianguoyun(
   return response.ok
     ? { outcome: "ok" }
     : { outcome: "fail", status: response.status };
+}
+
+function requiredAttachmentStore(
+  attachmentStore: AttachmentObjectStore | undefined,
+): AttachmentObjectStore {
+  if (!attachmentStore) throw new Error("attachment object store is required");
+  return attachmentStore;
+}
+
+function missingFileLocator(): never {
+  throw new Error("file item has no storage locator");
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 function joinRemotePath(basePath: string, remoteName: string): string {

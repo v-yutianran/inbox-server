@@ -78,6 +78,12 @@ interface ZhihuArticleRequest {
   readonly titleField: "excerpt_title" | "question" | "title";
 }
 
+class ZhihuApiRejectedError extends Error {
+  constructor(readonly status: number) {
+    super("zhihu_api_rejected");
+  }
+}
+
 export async function extractArticle(url: string, html: string): Promise<ExtractedArticle> {
   const result = await Defuddle(html, url, { markdown: true });
   return {
@@ -162,6 +168,7 @@ export function createArticleArchiver(options: {
     const correlated = correlation ?? {};
     const fingerprint = await urlFingerprint(item.url);
     let usedBrowser = false;
+    let writeStarted = false;
     let article: ExtractedArticle;
     try {
       const zhihuRequest = resolveZhihuArticleRequest(item.url);
@@ -279,6 +286,7 @@ export function createArticleArchiver(options: {
       if (Buffer.byteLength(markdown) > options.channels.article_archive.max_output_bytes) {
         throw new Error("article_output_too_large");
       }
+      writeStarted = true;
       const saved = await options.repository.save({
         content: markdown,
         filename: buildArchiveFilename(normalized.title, archivedAt),
@@ -300,21 +308,38 @@ export function createArticleArchiver(options: {
       });
       return { outcome: "ok" };
     } catch (error: unknown) {
+      const upstreamStatus = error instanceof ZhihuApiRejectedError ? error.status : undefined;
+      const reasonCode = safeFailureReasonCode(error);
       options.log?.("article.archive.failed", {
         ...correlated,
         description: "文章归档失败",
         errorCode: safeErrorCode(error),
+        ...(upstreamStatus === undefined ? {} : { upstreamStatus }),
         urlFingerprint: fingerprint,
       });
-      await options.recordEvent?.({
-        filename: null,
-        reason: safeErrorCode(error),
-        sourceUrl: item.url,
-        status: "failed",
-        title: item.title ?? "",
-        urlFingerprint: fingerprint,
-      });
-      return { outcome: "fail" };
+      try {
+        await options.recordEvent?.({
+          filename: null,
+          reason: safeErrorCode(error),
+          sourceUrl: item.url,
+          status: writeStarted ? "uncertain" : "failed",
+          title: item.title ?? "",
+          urlFingerprint: fingerprint,
+        });
+      } catch {
+        options.log?.("article.archive.event_record_failed", {
+          ...correlated,
+          description: "文章归档失败事件记录失败",
+          status: writeStarted ? "uncertain" : "failed",
+          urlFingerprint: fingerprint,
+        });
+      }
+      return {
+        ...(writeStarted ? {} : { failurePhase: "before_write" as const }),
+        outcome: "fail",
+        reasonCode,
+        ...(upstreamStatus === undefined ? {} : { status: upstreamStatus }),
+      };
     }
   };
 }
@@ -619,7 +644,7 @@ export async function fetchZhihuArticle(
       timeoutSeconds * 1_000,
       "zhihu_api_timeout",
     );
-    if (result.status !== 200) throw new Error("zhihu_api_rejected");
+    if (result.status !== 200) throw new ZhihuApiRejectedError(result.status);
     if (Buffer.byteLength(result.body) > maxBytes) throw new Error("article_html_too_large");
     const payload: unknown = JSON.parse(result.body);
     return extractArticle(url, buildZhihuDocument(payload, request));
@@ -795,6 +820,15 @@ function yamlScalar(value: unknown): string {
 function safeErrorCode(error: unknown): string {
   const value = error instanceof Error ? error.message : "article_archive_failed";
   return /^[a-z0-9_]+$/i.test(value) ? value : "article_archive_failed";
+}
+
+function safeFailureReasonCode(error: unknown): string {
+  const value = error instanceof Error ? error.message : "";
+  if (/timeout|timed out|time out/i.test(value)) return "article_timeout";
+  if (/network|fetch|connection|socket|econn|enotfound|unavailable/i.test(value)) {
+    return "article_network_error";
+  }
+  return safeErrorCode(error);
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

@@ -2,7 +2,11 @@ import type { Server } from "node:http";
 
 import type { Browser } from "playwright";
 
-import { launchHeadedBrowser } from "./browser.js";
+import {
+  connectCloudflareBrowser,
+  launchHeadedBrowser,
+  runBrowserBatch,
+} from "./browser.js";
 import {
   createArticleArchiver,
   GitArticleRepository,
@@ -18,9 +22,14 @@ import {
   type WorkerHealthState,
 } from "./health.js";
 import { abortableDelay, runHeartbeatLoop } from "./heartbeat.js";
-import { closeHealthServer, startHealthServer } from "./health-server.js";
-import { createJobHandler } from "./job-handler.js";
+import {
+  closeHealthServer,
+  createWorkerWebhookHandler,
+  startHealthServer,
+} from "./health-server.js";
+import { createJobHandler, queueBatchRequiresBrowser } from "./job-handler.js";
 import { createImaArticleMirror } from "./ima-article-mirror.js";
+import { createGcsObjectStore } from "./gcs-object-store.js";
 import { createNotifier } from "./notifications.js";
 import {
   createRuntimeMetrics,
@@ -61,12 +70,40 @@ async function run(): Promise<void> {
   let heartbeatTask: Promise<void> | undefined;
   let healthServer: Server | undefined;
   let outboundProxy: WarpOutboundProxy | undefined;
+  let runNextBatch: (() => Promise<number>) | undefined;
+  let activeWebhookBatch: Promise<number> | undefined;
 
   try {
+    const attachmentStore = config.telegramAttachmentBucket
+      ? createGcsObjectStore({ bucket: config.telegramAttachmentBucket })
+      : undefined;
+    const webhook = config.runMode === "webhook"
+      ? createWorkerWebhookHandler({
+          getAvailability: () => {
+            if (abortController.signal.aborted) return "stopping";
+            if (state.phase !== "ready" || !runNextBatch) return "not_ready";
+            return "ready";
+          },
+          log: workerLog,
+          processBatch: async () => {
+            const processBatch = runNextBatch;
+            if (!processBatch) throw new Error("worker batch processor is not ready");
+            const activeBatch = Promise.resolve().then(processBatch);
+            activeWebhookBatch = activeBatch;
+            try {
+              return await activeBatch;
+            } finally {
+              if (activeWebhookBatch === activeBatch) activeWebhookBatch = undefined;
+            }
+          },
+          token: required(config.workerWebhookToken, "WORKER_WEBHOOK_TOKEN"),
+        })
+      : undefined;
     healthServer = await startHealthServer({
       getState: () => state,
       port: config.healthPort,
       staleAfterMs: config.healthStaleAfterMs,
+      ...(webhook === undefined ? {} : { webhook }),
     });
     outboundProxy = config.warpSocksProxyUrl
       ? await startWarpOutboundProxy({
@@ -85,16 +122,26 @@ async function run(): Promise<void> {
       });
     }
     const externalFetch = outboundProxy?.fetcher ?? fetch;
-    browser = await launchHeadedBrowser(
-      config.display,
-      config.browserProxyUrl ?? outboundProxy?.url,
-      config.browserLaunchTimeoutMs,
-    );
-    state = reduceWorkerHealthState(state, {
-      at: Date.now(),
-      type: "browser-ready",
-    });
-    if (config.browserProxyUrl) {
+    if (config.browserProvider === "local") {
+      browser = await launchHeadedBrowser(
+        required(config.display, "DISPLAY"),
+        config.browserProxyUrl ?? outboundProxy?.url,
+        config.browserLaunchTimeoutMs,
+      );
+      state = reduceWorkerHealthState(state, {
+        at: Date.now(),
+        type: "browser-ready",
+      });
+    } else {
+      state = reduceWorkerHealthState(state, {
+        at: Date.now(),
+        component: "browser",
+        reasonCode: "browser_provider_configured",
+        state: "ready",
+        type: "component-state",
+      });
+    }
+    if (config.browserProvider === "local" && config.browserProxyUrl) {
       state = reduceWorkerHealthState(state, {
         at: Date.now(),
         component: "mihomo",
@@ -105,8 +152,10 @@ async function run(): Promise<void> {
     }
     workerLog("worker.lifecycle.ready", {
       description: "Worker 运行依赖已就绪",
-      display: config.display,
-      browserProxyEnabled: Boolean(config.browserProxyUrl ?? outboundProxy),
+      ...(config.display ? { display: config.display } : {}),
+      browserProvider: config.browserProvider,
+      browserProxyEnabled: config.browserProvider === "local"
+        && Boolean(config.browserProxyUrl ?? outboundProxy),
       healthPort: config.healthPort,
       outboundProxyEnabled: Boolean(outboundProxy),
       processingEnabled: config.processingEnabled,
@@ -122,22 +171,24 @@ async function run(): Promise<void> {
         externalFetch,
       );
       let latestBacklogCount = 0;
-      heartbeatTask = runHeartbeatLoop({
-        controlPlane,
-        details: () => ({
-          backlogCount: latestBacklogCount,
-          deploymentVersion: process.env.DEPLOYMENT_VERSION ?? "unknown",
-          ...healthSnapshot(state),
-          metrics: runtimeMetricsSnapshot(runtimeMetrics),
-          processingEnabled: true,
-        }),
-        intervalMs: config.heartbeatIntervalMs,
-        onError: (error) => {
-          workerLog("worker.heartbeat.failed", { error: safeErrorMessage(error) });
-        },
-        signal: abortController.signal,
-        workerId: config.workerId,
-      });
+      if (config.runMode === "loop") {
+        heartbeatTask = runHeartbeatLoop({
+          controlPlane,
+          details: () => ({
+            backlogCount: latestBacklogCount,
+            deploymentVersion: process.env.DEPLOYMENT_VERSION ?? "unknown",
+            ...healthSnapshot(state),
+            metrics: runtimeMetricsSnapshot(runtimeMetrics),
+            processingEnabled: true,
+          }),
+          intervalMs: config.heartbeatIntervalMs,
+          onError: (error) => {
+            workerLog("worker.heartbeat.failed", { error: safeErrorMessage(error) });
+          },
+          signal: abortController.signal,
+          workerId: config.workerId,
+        });
+      }
       const queue = createControlPlaneQueueClient(
         {
           batchSize: config.queueBatchSize,
@@ -159,84 +210,116 @@ async function run(): Promise<void> {
         stateDirectory: config.imaStateDirectory,
         timeoutMs: config.imaTimeoutMs,
       });
-      const archive = channels.article_archive.enabled
-        ? createArticleArchiver({
-            browser,
-            channels,
-            fetcher: externalFetch,
-            getCredential: (name) => controlPlane.getCredential(name),
-            log: workerLog,
-            mirror,
-            recordEvent: (event) => controlPlane.recordArticleEvent(event),
-            repository: new GitArticleRepository({
-              articlesDir: channels.article_archive.articles_dir,
-              askpassPath: config.githubAskpassPath,
-              githubToken: required(config.githubToken, "GITHUB_TOKEN"),
-              repositoryDir: channels.article_archive.repository_dir,
-              repositoryUrl: required(
-                config.articleRepositoryUrl,
-                "ARTICLE_REPOSITORY_URL",
-              ),
-            }),
-            templatePath: config.articleTemplatePath,
+      const articleRepository = channels.article_archive.enabled
+        ? new GitArticleRepository({
+            articlesDir: channels.article_archive.articles_dir,
+            askpassPath: config.githubAskpassPath,
+            githubToken: required(config.githubToken, "GITHUB_TOKEN"),
+            repositoryDir: channels.article_archive.repository_dir,
+            repositoryUrl: required(
+              config.articleRepositoryUrl,
+              "ARTICLE_REPOSITORY_URL",
+            ),
           })
         : undefined;
-      const handle = createJobHandler({
-        ...(archive ? { archive } : {}),
-        browser,
+      const notify = createNotifier({
         channels,
-        controlPlane,
+        emailNotificationsEnabled: config.emailNotificationsEnabled,
         fetcher: externalFetch,
-        notify: createNotifier({
-          channels,
-          emailNotificationsEnabled: config.emailNotificationsEnabled,
-          fetcher: externalFetch,
-        }),
-        stagingDir: config.stagingDir,
       });
-      while (!abortController.signal.aborted) {
-        try {
-          const batch = await queue.pull();
-          latestBacklogCount = batch.backlogCount;
-          await processQueueBatch({
-            accept: (job) => decideJobAcceptance(state, job),
-            batch,
-            controlPlane,
-            handle,
-            log: workerLog,
-            onProgress: () => {
-              state = reduceWorkerHealthState(state, {
-                at: Date.now(),
-                type: "loop-progress",
-              });
-            },
-            queue,
-          });
-          state = reduceWorkerHealthState(state, {
-            at: Date.now(),
-            type: "loop-progress",
-          });
-          if (batch.messages.length === 0) {
+      const createHandle = (jobBrowser: Browser | undefined) => {
+        const archive = jobBrowser && articleRepository
+          ? createArticleArchiver({
+              browser: jobBrowser,
+              channels,
+              fetcher: externalFetch,
+              getCredential: (name) => controlPlane.getCredential(name),
+              log: workerLog,
+              mirror,
+              recordEvent: (event) => controlPlane.recordArticleEvent(event),
+              repository: articleRepository,
+              templatePath: config.articleTemplatePath,
+            })
+          : undefined;
+        return createJobHandler({
+          ...(attachmentStore ? { attachmentStore } : {}),
+          ...(archive ? { archive } : {}),
+          ...(jobBrowser ? { browser: jobBrowser } : {}),
+          channels,
+          controlPlane,
+          fetcher: externalFetch,
+          notify,
+          stagingDir: config.stagingDir,
+        });
+      };
+      const handle = config.browserProvider === "local" ? createHandle(browser) : undefined;
+      const processNextBatch = async () => {
+        const batch = await queue.pull();
+        latestBacklogCount = batch.backlogCount;
+        const processBatch = (jobBrowser: Browser | undefined) => processQueueBatch({
+          accept: (job) => decideJobAcceptance(state, job),
+          batch,
+          controlPlane,
+          handle: handle ?? createHandle(jobBrowser),
+          log: workerLog,
+          onProgress: () => {
+            state = reduceWorkerHealthState(state, {
+              at: Date.now(),
+              type: "loop-progress",
+            });
+          },
+          queue,
+        });
+        if (config.browserProvider === "cloudflare") {
+          await runBrowserBatch(
+            queueBatchRequiresBrowser(batch, channels),
+            () => connectCloudflareBrowser(
+              required(config.cloudflareAccountId, "CLOUDFLARE_ACCOUNT_ID"),
+              required(config.cloudflareBrowserToken, "CLOUDFLARE_BROWSER_TOKEN"),
+              config.browserConnectTimeoutMs,
+            ),
+            processBatch,
+          );
+        } else {
+          await processBatch(browser);
+        }
+        state = reduceWorkerHealthState(state, {
+          at: Date.now(),
+          type: "loop-progress",
+        });
+        return batch.messages.length;
+      };
+      runNextBatch = processNextBatch;
+
+      if (config.runMode === "webhook") {
+        await waitForAbort(abortController.signal);
+      } else {
+        while (!abortController.signal.aborted) {
+          try {
+            const messageCount = await processNextBatch();
+            if (messageCount === 0) {
+              await abortableDelay(config.queuePollIntervalMs, abortController.signal);
+            }
+          } catch (error: unknown) {
+            state = reduceWorkerHealthState(state, {
+              at: Date.now(),
+              type: "loop-error",
+            });
+            workerLog("worker.loop.failed", {
+              error: safeErrorMessage(error),
+            });
             await abortableDelay(config.queuePollIntervalMs, abortController.signal);
           }
-        } catch (error: unknown) {
-          state = reduceWorkerHealthState(state, {
-            at: Date.now(),
-            type: "loop-error",
-          });
-          workerLog("worker.loop.failed", {
-            error: safeErrorMessage(error),
-          });
-          await abortableDelay(config.queuePollIntervalMs, abortController.signal);
         }
       }
     }
   } finally {
     stop();
     await heartbeatTask;
+    if (healthServer) await closeHealthServer(healthServer);
+    await activeWebhookBatch?.catch(() => undefined);
     await browser?.close();
     await outboundProxy?.close();
-    if (healthServer) await closeHealthServer(healthServer);
     process.off("SIGINT", stop);
     process.off("SIGTERM", stop);
     workerLog("worker.lifecycle.stopped", { description: "Worker 已完成优雅退出" });

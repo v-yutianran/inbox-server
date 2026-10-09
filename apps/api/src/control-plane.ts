@@ -1,6 +1,6 @@
 import { parseQueueJob, type QueueJob } from "@inbox/domain";
 
-import type { ApiBindings } from "./auth.js";
+import { getPostgresConnectionString, type ApiBindings } from "./auth.js";
 import type { JobErrorClass } from "./control-plane-contract.js";
 import { decryptJson, encryptJson } from "./credential-crypto.js";
 import {
@@ -12,6 +12,12 @@ import {
 } from "./job-retry-policy.js";
 import { advanceSyncJob } from "./operations.js";
 import { createQueueProducer, type QueueProducer } from "./queue-producer.js";
+import { createPostgresControlPlaneCommandService } from "./control-plane-postgres.js";
+import { createPostgresControlPlaneEffectsService } from "./control-plane-postgres-effects.js";
+import { createPostgresControlPlaneDataService } from "./control-plane-postgres-data.js";
+import { createPostgresControlPlaneReplayService } from "./control-plane-postgres-replay.js";
+import { createHyperdrivePostgresPool } from "./postgres-connection.js";
+import { createWorkerHeartbeatCache } from "./heartbeat-cache.js";
 
 const ITEM_KINDS = ["link", "text", "file", "article"] as const;
 type ItemKind = (typeof ITEM_KINDS)[number];
@@ -115,6 +121,7 @@ export interface ControlPlaneService {
     jobId: string,
     input: { readonly dryRun: boolean; readonly idempotencyKey: string },
   ): Promise<ReplayResult>;
+  saveInoreaderSessionCredential(state: JsonRecord): Promise<void>;
   writeCookie(platform: string, payload: JsonRecord): Promise<JsonRecord>;
 }
 
@@ -156,10 +163,30 @@ interface WorkerEnvelopeRow {
 export function createControlPlaneServiceFromBindings(
   bindings: ApiBindings,
 ): ControlPlaneService {
+  const producer = createQueueProducer(bindings.JOBS);
+  const connectionString = getPostgresConnectionString(bindings);
+  if (connectionString !== null) {
+    const pool = createHyperdrivePostgresPool({ connectionString });
+    const encryptionKey = bindings.STATE_ENCRYPTION_KEY ?? "";
+    return {
+      ...createPostgresControlPlaneCommandService({ encryptionKey, pool }),
+      ...createPostgresControlPlaneEffectsService({ pool }),
+      ...createPostgresControlPlaneDataService({
+        encryptionKey,
+        heartbeatCache: createWorkerHeartbeatCache(
+          bindings.UPSTASH_REST_URL,
+          bindings.UPSTASH_REST_TOKEN,
+        ),
+        pool,
+        producer,
+      }),
+      ...createPostgresControlPlaneReplayService({ encryptionKey, pool }),
+    };
+  }
   return createD1ControlPlaneService({
     database: bindings.DB,
     encryptionKey: bindings.STATE_ENCRYPTION_KEY ?? "",
-    producer: createQueueProducer(bindings.JOBS),
+    producer,
   });
 }
 
@@ -1014,6 +1041,10 @@ export function createD1ControlPlaneService({
         status: "ok",
         vault_id: name,
       };
+    },
+
+    async saveInoreaderSessionCredential() {
+      throw new Error("Inoreader session credential import requires PostgreSQL");
     },
   };
 }

@@ -61,14 +61,18 @@ describe("normalizeOverviewStatus", () => {
     expect(normalized.scheduler.enabled).toBe(true);
   });
 
-  it("按调度间隔生成未来的下一次执行时间", () => {
+  it("忽略旧快照的 10 分钟间隔并按整点调度", () => {
     const normalized = normalizeOverviewStatus(
       overview,
       new Date("2026-08-01T18:29:29.386Z"),
       true,
     );
 
-    expect(normalized.scheduler.next_run_at).toBe("2026-08-01T18:30:00.000Z");
+    expect(normalized.scheduler).toEqual({
+      enabled: true,
+      interval_seconds: 3_600,
+      next_run_at: "2026-08-01T19:00:00.000Z",
+    });
   });
 });
 

@@ -1,4 +1,5 @@
 import {
+  classifyJobFailure,
   createItemDedupeKey,
   parseQueueJob,
   type DispatchItem,
@@ -8,7 +9,9 @@ import type { Browser } from "playwright";
 
 import type { ArticleCorrelation } from "./article-archive.js";
 import type { Channels } from "./channels.js";
+import type { AttachmentObjectStore } from "./collector-types.js";
 import { readOptionalString } from "./channels.js";
+import type { QueueBatch } from "./cloudflare-queue-client.js";
 import { collectSource, type CollectionResult, type CollectorDependencies } from "./collectors.js";
 import {
   deliverCubox,
@@ -40,11 +43,12 @@ export type JobHandlerResult =
   | { readonly outcome: "uncertain"; readonly reason: string };
 
 interface JobHandlerOptions {
+  readonly attachmentStore?: AttachmentObjectStore;
   readonly archive?: (
     item: Extract<DispatchItem, { itemKind: "article" }>,
     correlation: ArticleCorrelation,
   ) => Promise<DeliveryResult>;
-  readonly browser: Browser;
+  readonly browser?: Browser;
   readonly channels: Channels;
   readonly collect?: CollectFunction;
   readonly controlPlane: WorkerControlPlane;
@@ -67,8 +71,12 @@ export function createJobHandler(
   return async (input) => {
     const job = parseQueueJob(input);
     if (job.kind === "collect-source") {
+      if (sourceRequiresBrowser(job.payload.source) && !options.browser) {
+        throw new Error("Browser is required for this source");
+      }
       const result = await collect(job.payload.source, {
-        browser: options.browser,
+        ...(options.attachmentStore ? { attachmentStore: options.attachmentStore } : {}),
+        browser: options.browser as Browser,
         channels: options.channels,
         controlPlane: options.controlPlane,
         ...(options.fetcher ? { fetcher: options.fetcher } : {}),
@@ -166,20 +174,26 @@ export function createJobHandler(
         });
         throw new TypeError("429 destination quota unavailable");
       }
-      const uncertain = result.status === undefined || result.status >= 500;
+      const knownBeforeWrite = result.failurePhase === "before_write";
+      const uncertain = !knownBeforeWrite && (result.status === undefined || result.status >= 500);
+      const failureMessage = knownBeforeWrite
+        ? [
+            (result.reasonCode ?? "destination_failed_before_write").replaceAll("_", " "),
+            ...(result.status === undefined ? [] : [`HTTP ${result.status}`]),
+          ].join(": ")
+        : `destination rejected request: ${result.status ?? "unknown status"}`;
+      const failure = classifyJobFailure(new Error(failureMessage));
       await options.controlPlane.finishEffect(effectKey, {
-        errorClass: uncertain ? "permanent" : "permanent",
+        errorClass: uncertain ? "permanent" : failure.errorClass,
         errorMessage: uncertain
           ? "external delivery outcome uncertain"
-          : `destination rejected request: ${result.status}`,
+          : failure.safeMessage,
         status: uncertain ? "uncertain" : "failed",
       });
       if (uncertain) {
         return { outcome: "uncertain", reason: "external_delivery_uncertain" };
       }
-      throw new Error(
-        `destination rejected request: ${result.status}`,
-      );
+      throw new Error(failure.safeMessage);
     }
 
     if (job.payload.itemKind === "link" && options.channels.article_archive.enabled) {
@@ -194,6 +208,23 @@ export function createJobHandler(
     }
     return { outcome: "completed", summary: { destinations: states } };
   };
+}
+
+export function queueBatchRequiresBrowser(batch: QueueBatch, channels: Channels): boolean {
+  return batch.messages.some(({ body }) => {
+    let job: QueueJob;
+    try {
+      job = parseQueueJob(body);
+    } catch {
+      return false;
+    }
+    if (job.kind === "collect-source") return sourceRequiresBrowser(job.payload.source);
+    return job.payload.itemKind === "article" && channels.article_archive.enabled;
+  });
+}
+
+function sourceRequiresBrowser(source: Parameters<typeof collectSource>[0]): boolean {
+  return source !== "telegram" && source !== "dida" && source !== "github_stars";
 }
 
 async function notifyCollection(
@@ -285,6 +316,7 @@ function createConfiguredDeliverer(options: JobHandlerOptions): DeliverFunction 
         },
         item,
         fetcher,
+        options.attachmentStore,
       );
     }
     throw new Error(`destination does not support item: ${destination}/${item.itemKind}`);

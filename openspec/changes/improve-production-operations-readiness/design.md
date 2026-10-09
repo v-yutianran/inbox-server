@@ -52,6 +52,12 @@ API、Worker、浏览器、Mihomo 与 WARP 分别维护状态机：`starting`、
 
 保留策略采用状态驱动的初始值：心跳 7 天，完成任务及 envelope 30 天，DLQ 和重放审计 90 天，幂等 effect 至少覆盖最长重试窗口并默认 90 天。正式执行前必须先跑 14 天 dry-run 统计，确认不会破坏去重与审计需求。
 
+### 3a. PostgreSQL 运维指标样本独立保留
+
+滚动七天策略仅作用于 `inbox_server.operations_metric_samples`，以本次小时采集时间减七天计算 cutoff；只删除 `window_end < cutoff`，恰好位于 cutoff 的样本保留。它不改变任务/DLQ 的 14 天 dry-run、各任务状态保留期限或其它表的数据。
+
+Cloudflare 小时采集先在主事务中写指标与运维快照；主事务提交后，再用独立查询清理最多 1,000 行，按 `window_end ASC` 先删最旧样本。若仍有超期记录，后续小时运行继续清理。清理失败记录 `operations.metrics.prune_failed` 并吞掉清理错误，确保已提交的采集结果不受影响。时间索引用只读 `PREPARE` + `EXPLAIN` 检查，避免清理每次全表扫描。
+
 ### 4. 发布单元独立，但共享一次发布证据
 
 发布清单固定源码提交、Console deployment、API version、D1 migration、Worker/Mihomo/WARP digest、Sealos revision 和 Secret 版本摘要。顺序为备份与预检、expand migration、API/Console、Worker、隔离 canary、稳定窗口；任一门禁失败即停止。GitHub Actions 资金阻塞期间先提供本地 TypeScript 发布 CLI，必须支持 `--dry-run`，后续只迁移执行环境，不改变契约。

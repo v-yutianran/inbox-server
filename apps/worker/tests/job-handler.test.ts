@@ -4,8 +4,9 @@ import type { QueueJob } from "@inbox/domain";
 import type { Browser } from "playwright";
 
 import type { Channels } from "../src/channels";
+import type { QueueBatch } from "../src/cloudflare-queue-client";
 import type { CollectionResult } from "../src/collectors";
-import { createJobHandler } from "../src/job-handler";
+import { createJobHandler, queueBatchRequiresBrowser } from "../src/job-handler";
 import type { WorkerControlPlane } from "../src/worker-control-plane";
 
 function controlPlane(): WorkerControlPlane {
@@ -64,6 +65,66 @@ const channels = {
 } as unknown as Channels;
 
 describe("job handler", () => {
+  it("仅在批次含浏览器来源或启用归档的文章时要求 browser", () => {
+    const batch = (...bodies: unknown[]): QueueBatch => ({
+      backlogCount: 0,
+      messages: bodies.map((body, index) => ({
+        attempts: 1,
+        body,
+        id: `message-${index}`,
+        leaseId: `lease-${index}`,
+        timestampMs: index,
+      })),
+    });
+
+    expect(queueBatchRequiresBrowser(batch(), channels)).toBe(false);
+    expect(queueBatchRequiresBrowser(batch({ invalid: true }), channels)).toBe(false);
+    expect(queueBatchRequiresBrowser(batch(collectJob(false)), channels)).toBe(false);
+    expect(queueBatchRequiresBrowser(batch({
+      ...collectJob(false),
+      payload: { ...collectJob(false).payload, source: "inoreader" },
+    }), channels)).toBe(true);
+
+    const article = {
+      createdAt: "2030-01-01T00:00:00.000Z",
+      dedupeKey: "dispatch:article:browser-check",
+      jobId: "815aac37-69f9-4af2-838a-8fd22217a462",
+      kind: "dispatch-item",
+      payload: {
+        itemKind: "article",
+        requestedAt: "2030-01-01T00:00:00.000Z",
+        url: "https://example.invalid/article/1",
+      },
+      schemaVersion: 1,
+    } as QueueJob;
+    expect(queueBatchRequiresBrowser(batch(article), channels)).toBe(false);
+    expect(queueBatchRequiresBrowser(batch(article), {
+      ...channels,
+      article_archive: { enabled: true },
+    } as unknown as Channels)).toBe(true);
+  });
+
+  it("无 browser 时允许 HTTP 来源，并拒绝需要 browser 的来源", async () => {
+    const cp = controlPlane();
+    const collect = vi.fn().mockResolvedValue(collection());
+    const handle = createJobHandler({
+      channels,
+      collect,
+      controlPlane: cp,
+      stagingDir: "/tmp/inbox",
+    });
+
+    await expect(handle(collectJob(false))).resolves.toMatchObject({ outcome: "completed" });
+    expect(collect).toHaveBeenCalledWith("github_stars", expect.objectContaining({ browser: undefined }));
+
+    const browserJob = {
+      ...collectJob(false),
+      payload: { ...collectJob(false).payload, source: "inoreader" },
+    } as QueueJob;
+    await expect(handle(browserJob)).rejects.toThrow("Browser is required for this source");
+    expect(collect).toHaveBeenCalledTimes(1);
+  });
+
   it("文章归档收到任务关联字段并沿用同一 effect 结算", async () => {
     const cp = controlPlane();
     const archive = vi.fn().mockResolvedValue({ outcome: "ok" });
@@ -107,6 +168,144 @@ describe("job handler", () => {
     expect(cp.finishEffect).toHaveBeenCalledWith(
       "dispatch:article:correlated:article_archive",
       { status: "done" },
+    );
+  });
+
+  it("归档写入前的确定失败结算 effect failed 并进入 job 失败路径", async () => {
+    const cp = controlPlane();
+    const handle = createJobHandler({
+      archive: vi.fn().mockResolvedValue({
+        failurePhase: "before_write",
+        outcome: "fail",
+        reasonCode: "zhihu_api_rejected",
+        status: 503,
+      }),
+      browser: {} as Browser,
+      channels: {
+        article_archive: {
+          daily_limit: 500,
+          enabled: true,
+          rate_window_count: 120,
+          rate_window_seconds: 21_600,
+        },
+        destinations: {},
+        sources: {},
+      } as unknown as Channels,
+      controlPlane: cp,
+      stagingDir: "/tmp/inbox",
+    });
+    const article = {
+      createdAt: "2030-01-01T00:00:00.000Z",
+      dedupeKey: "dispatch:article:before-write-failure",
+      jobId: "815aac37-69f9-4af2-838a-8fd22217a462",
+      kind: "dispatch-item",
+      payload: {
+        itemKind: "article",
+        requestedAt: "2030-01-01T00:00:00.000Z",
+        url: "https://example.invalid/article/before-write-failure",
+      },
+      schemaVersion: 1,
+    } as QueueJob;
+
+    await expect(handle(article)).rejects.toThrow("503");
+    expect(cp.finishEffect).toHaveBeenCalledWith(
+      "dispatch:article:before-write-failure:article_archive",
+      expect.objectContaining({
+        errorClass: "retryable",
+        errorMessage: expect.stringContaining("503"),
+        status: "failed",
+      }),
+    );
+    expect(cp.finishEffect).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ status: "uncertain" }),
+    );
+  });
+
+  it("归档写入前没有 HTTP 状态时按安全超时原因进入重试策略", async () => {
+    const cp = controlPlane();
+    const handle = createJobHandler({
+      archive: vi.fn().mockResolvedValue({
+        failurePhase: "before_write",
+        outcome: "fail",
+        reasonCode: "article_timeout",
+      }),
+      browser: {} as Browser,
+      channels: {
+        article_archive: {
+          daily_limit: 500,
+          enabled: true,
+          rate_window_count: 120,
+          rate_window_seconds: 21_600,
+        },
+        destinations: {},
+        sources: {},
+      } as unknown as Channels,
+      controlPlane: cp,
+      stagingDir: "/tmp/inbox",
+    });
+    const article = {
+      createdAt: "2030-01-01T00:00:00.000Z",
+      dedupeKey: "dispatch:article:before-write-timeout",
+      jobId: "2a1725d0-b9f4-477e-8e10-60a55815e5d4",
+      kind: "dispatch-item",
+      payload: {
+        itemKind: "article",
+        requestedAt: "2030-01-01T00:00:00.000Z",
+        url: "https://example.invalid/article/before-write-timeout",
+      },
+      schemaVersion: 1,
+    } as QueueJob;
+
+    await expect(handle(article)).rejects.toThrow("article timeout");
+    expect(cp.finishEffect).toHaveBeenCalledWith(
+      "dispatch:article:before-write-timeout:article_archive",
+      expect.objectContaining({
+        errorClass: "retryable",
+        errorMessage: "article timeout",
+        status: "failed",
+      }),
+    );
+  });
+
+  it("归档写入开始后的失败结果继续冻结为 uncertain", async () => {
+    const cp = controlPlane();
+    const handle = createJobHandler({
+      archive: vi.fn().mockResolvedValue({ outcome: "fail" }),
+      browser: {} as Browser,
+      channels: {
+        article_archive: {
+          daily_limit: 500,
+          enabled: true,
+          rate_window_count: 120,
+          rate_window_seconds: 21_600,
+        },
+        destinations: {},
+        sources: {},
+      } as unknown as Channels,
+      controlPlane: cp,
+      stagingDir: "/tmp/inbox",
+    });
+    const article = {
+      createdAt: "2030-01-01T00:00:00.000Z",
+      dedupeKey: "dispatch:article:write-outcome-unknown",
+      jobId: "f38536fd-791f-42ee-b6db-979b51a7b2bb",
+      kind: "dispatch-item",
+      payload: {
+        itemKind: "article",
+        requestedAt: "2030-01-01T00:00:00.000Z",
+        url: "https://example.invalid/article/write-outcome-unknown",
+      },
+      schemaVersion: 1,
+    } as QueueJob;
+
+    await expect(handle(article)).resolves.toEqual({
+      outcome: "uncertain",
+      reason: "external_delivery_uncertain",
+    });
+    expect(cp.finishEffect).toHaveBeenCalledWith(
+      "dispatch:article:write-outcome-unknown:article_archive",
+      expect.objectContaining({ status: "uncertain" }),
     );
   });
 
@@ -240,6 +439,58 @@ describe("job handler", () => {
       "dispatch:article:uncertain:article_archive",
       expect.objectContaining({ status: "uncertain" }),
     );
+  });
+
+  it("对象存储下载失败时不会将文件副作用标记完成", async () => {
+    const cp = controlPlane();
+    const attachmentStore = {
+      download: vi.fn().mockRejectedValue(new Error("gcs_object_download_failed")),
+      upload: vi.fn(),
+    };
+    const fetcher = vi.fn();
+    const handle = createJobHandler({
+      attachmentStore,
+      channels: {
+        article_archive: { enabled: false },
+        destinations: {
+          jianguoyun: {
+            config: { webdav_pass: "secret", webdav_user: "user@example.com" },
+            enabled: true,
+            item_kind: "file",
+          },
+        },
+        sources: {},
+      } as unknown as Channels,
+      controlPlane: cp,
+      fetcher,
+      stagingDir: "/tmp/inbox",
+    });
+    const fileJob = {
+      createdAt: "2030-01-01T00:00:00.000Z",
+      dedupeKey: "dispatch:file:object-key",
+      jobId: "8c16b123-b4a8-47c3-a61f-d5d76275af40",
+      kind: "dispatch-item",
+      payload: {
+        itemKind: "file",
+        objectKey: "telegram/2fd785d7-47aa-4357-a59f-5039c0434c25",
+        remoteName: "a.pdf",
+      },
+      schemaVersion: 1,
+    } as QueueJob;
+
+    await expect(handle(fileJob)).resolves.toEqual({
+      outcome: "uncertain",
+      reason: "external_delivery_uncertain",
+    });
+    expect(cp.finishEffect).toHaveBeenCalledWith(
+      "dispatch:file:object-key:jianguoyun",
+      expect.objectContaining({ status: "uncertain" }),
+    );
+    expect(cp.finishEffect).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ status: "done" }),
+    );
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("shadow 只写对比摘要，不发布、不推进 baseline、不执行来源外部副作用", async () => {

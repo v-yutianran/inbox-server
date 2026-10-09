@@ -59,6 +59,14 @@
 - [x] 6.4 REFACTOR：基于 D1 查询计划补必要索引，删除重复扫描并验证 migration 前后数据契约
 - [ ] 6.5 验证备份、清理、恢复和记录数对账，不使用真实数据做试验性恢复，除非另获明确授权
 
+### 6.6 PostgreSQL 运维指标样本七日保留（独立专项）
+
+- [x] 6.6.1 RED：在 `apps/api/tests/operations-readiness-postgres-capture.test.ts` 添加 1,001 条超期样本、cutoff 边界、最旧优先和清理失败不影响采集的测试；`npm run test --workspace @inbox/api -- tests/operations-readiness-postgres-capture.test.ts` 在实现前 exit 1（1 failed / 4 passed），目标断言因仍剩 1,001 条超期样本而失败。
+- [x] 6.6.2 GREEN：实现仅针对 `operations_metric_samples` 的七天 cutoff、采集事务提交后的最多 1,000 行最旧优先清理及失败事件；同一聚焦命令 exit 0（6/6 passed），`npm run typecheck --workspace @inbox/api` exit 0。任务/DLQ 的 14 天 dry-run 保持原状，且与本项相互独立。
+- [x] 6.6.3 先全表 `COPY ... TO STDOUT CSV HEADER` 备份并核对 SHA-256，再以相同七天 cutoff 用只读 `SELECT count(*)` 和 `EXPLAIN` 预检 `window_end` 索引；确认 128,911 行、18,494,953 字节备份完整后，dry-run 显示 108,421 行可清。线上以 `WITH doomed ... LIMIT 5000 DELETE` 分 22 批清理，读回剩余 20,490 行；该一次性清理批次上限与定时逻辑的 1,000 行上限分别记录。
+- [x] 6.6.4 执行 `VACUUM (FULL, ANALYZE) inbox_server.operations_metric_samples`，关系大小由 58,089,472 降至 7,036,928 字节；核对本机 PostgreSQL/Redis tar 大小、SHA-256 manifest 与隔离恢复证据后删除 Neon 归档的两行，再对已空归档表执行 `TRUNCATE`，关系大小由 43,081,728 降至 16,384 字节。全库 `pg_database_size` 由 217,145,344 降至 123,174,912 字节。
+- [ ] 6.6.5 将已验证的 Cloudflare API 指标清理实现部署后，核对每小时触发、稳定成功/失败事件、采集已提交时清理故障不影响采集；本地验证已通过，生产部署尚未执行。
+
 ## 7. P2 容量、成本与高可用决策
 
 - [x] 7.1 RED：定义不写真实外部目标的负载模型，覆盖到达率、消化率、长浏览器任务、重复投递和代理重连

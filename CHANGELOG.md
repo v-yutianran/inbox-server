@@ -11,7 +11,43 @@
 - TypeScript Worker、Python 兼容运行时、示例和本机配置改为 `.wiki-vault/raw/article`；文件名含碰撞指纹最多 180 个 UTF-8 字节。验证细节见 [当日记录](docs/changelog/2026-09-29.md)。
 - 本地实现与验证完成；尚未 push、部署或执行 Android 实机 pull。
 
+## 2026-09-24
+
+### ops(db)：收紧运维指标保留并回收 Neon 存储
+
+- 指标表独立保留最近七天；导出完整备份、预检后分 22 批删除超期样本，VACUUM 后回收空间。核对本地旧卷备份与隔离恢复证据后清除 Neon 中两条原始卷归档；数据库大小由 217,145,344 降至 123,174,912 字节。清理实现已通过聚焦及全量检查，尚未部署 Cloudflare API；任务/DLQ 14 天 dry-run 仍保持独立。
+
+### fix(worker)：修复 Cloud Run webhook 遗留积压与文章归档误判
+
+- Webhook 在请求内串行排空到期批次，空批次才返回 200；预算耗尽或停机返回 503 供 Queue 重试。文章归档按仓储写入是否开始区分失败与 uncertain，写入前的 503/超时可走既有重试路径。合成测试及全仓门禁通过；修复镜像已推送并部署到 Cloud Run，新修订版承接 100% 流量。Neon inbox 积压归零，发布后 03:00 与 04:00 UTC 两轮自然调度及其任务全部结算。既有 uncertain 保留人工核对；证据与残余风险见当日详细记录。
+
+### feat(api)：准备 D1 全量迁移至 Neon PostgreSQL
+
+- Neon 已建空业务结构，API 已接入可选的 PostgreSQL 控制面；新增默认只读的 D1 快照迁移工具，Worker 预检镜像已推至 Artifact Registry。旧 PG/Redis 卷对账发现 97 个旧侧独有主键和 35 个覆盖未知的队列元素；两份原始卷已校验并导入 Neon 独立归档，不会自动重放。D1 历史业务行尚未导入，线上 D1 仍是权威库，Cloud Run 尚未部署；验证与限制见当日详细记录。
+
+### feat(infra)：完成 Neon 切流与 Inoreader 受控 shadow
+
+- D1 冻结快照 263,933 行与旧 PostgreSQL 独有 38 条已完成任务均已核对导入 Neon，共 263,971 行；旧 Redis 35 条原始队列仍保留归档，2 条已有完成记录，其余 33 条已交接到 IMA 笔记供人工处理，未激活或重放。Cloudflare API PostgreSQL mode、Cloud Run worker 与 Queue→Neon→Cloud Run→Browser Run 的 Inoreader shadow 已验证（collected 7、published 0）；定时触发、回退演练及真实外部分发仍待验收。
+
+### feat(ops)：将生产定时触发调整为每小时并统一运维概览
+
+- Cloudflare API 最新部署 `536c87f8-ba9e-4ef4-9e88-b3d934db11f2` 保留 Cron `0 * * * *`、PostgreSQL backend 与调度开关，并将运维概览统一为 3600 秒、对齐下一 UTC 整点。23:10 UTC 的 scheduler 流程及 24 项真实分发副作用已结算；23:20、23:30:08 UTC 两次旧十分钟周期观察未见新 scheduler job。新每小时频率的首个自然触发待 00:00 UTC 复核；Neon Free 额度已核验、已用 89.8%、余量偏紧，回退演练仍待完成。
+
+- [详细记录](./docs/changelog/2026-09-24.md)
+
 ## 2026-09-23
+
+### feat(worker)：接入按批使用的 Cloudflare Browser Run 与 Cloud Run 镜像
+
+- 新增远程 CDP 模式，请求批次需要浏览器时连接并在结算后释放；本地 headed 模式保留。独立 Cloud Run 镜像不安装 Chromium/Xvfb，本地 linux/amd64 构建通过。真实来源和云端部署尚未验收，证据见当日详细记录。
+
+### feat(api)：由 Queue 和 Cron 唤醒 Cloud Run worker
+
+- API 在持久化 Queue 消息后用独立凭据调用 HTTPS webhook，成功才确认原消息；Cron 补偿延期积压。合成测试与全工作区门禁通过，尚未配置或调用真实云端服务，证据见当日详细记录。
+
+### feat(worker)：新增 Cloud Run webhook 本地入口
+
+- 新增独立鉴权的请求内单批处理模式；云端平台、数据库和浏览器迁移尚未执行，完整验证受沙箱限制，保留 active OpenSpec。证据与操作说明见当日详细记录。
 
 ### feat(worker)：按配置关闭 Sealos SMTP 通知
 

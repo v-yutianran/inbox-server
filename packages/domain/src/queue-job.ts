@@ -37,10 +37,15 @@ const textItemSchema = z
 const fileItemSchema = z
   .object({
     itemKind: z.literal("file"),
-    localPath: z.string().min(1),
+    localPath: z.string().min(1).optional(),
+    objectKey: z.string().min(1).optional(),
     remoteName: z.string().min(1),
   })
-  .strict();
+  .strict()
+  .refine(
+    ({ localPath, objectKey }) => Boolean(localPath) !== Boolean(objectKey),
+    "file item requires exactly one storage locator",
+  );
 
 const articleItemSchema = z
   .object({

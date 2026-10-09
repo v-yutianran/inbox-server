@@ -111,6 +111,255 @@ describe("health routes", () => {
   });
 });
 
+describe("migration freeze", () => {
+  it("只允许通过 worker token 导入 Inoreader StorageState，即使迁移冻结", async () => {
+    const storageState = {
+      cookies: [
+        {
+          domain: ".inoreader.com",
+          name: "synthetic-session",
+          path: "/",
+          value: "synthetic-value",
+        },
+      ],
+      origins: [
+        {
+          localStorage: [{ name: "synthetic-key", value: "synthetic-value" }],
+          origin: "https://www.inoreader.com",
+        },
+      ],
+    };
+    const saveInoreaderSessionCredential = vi.fn().mockResolvedValue(undefined);
+    const createControlPlaneService = vi.fn(
+      () => ({ saveInoreaderSessionCredential }) as never,
+    );
+    const app = createApp({ createControlPlaneService });
+    const bindings = {
+      DATA_BACKEND: "postgres",
+      MIGRATION_FROZEN: "true",
+      WORKER_SERVICE_TOKEN: "worker-secret",
+    } as never;
+
+    const wrongMethod = await app.request(
+      "/internal/credentials/inoreader_creds",
+      { method: "POST", body: JSON.stringify(storageState) },
+      bindings,
+    );
+    const wrongPath = await app.request(
+      "/internal/credentials/inoreader_creds/other",
+      {
+        method: "PUT",
+        body: JSON.stringify(storageState),
+        headers: { Authorization: "Bearer worker-secret" },
+      },
+      bindings,
+    );
+    const denied = await app.request(
+      "/internal/credentials/inoreader_creds",
+      {
+        method: "PUT",
+        body: JSON.stringify(storageState),
+        headers: { "Content-Type": "application/json" },
+      },
+      bindings,
+    );
+    const allowed = await app.request(
+      "/internal/credentials/inoreader_creds",
+      {
+        method: "PUT",
+        body: JSON.stringify(storageState),
+        headers: {
+          Authorization: "Bearer worker-secret",
+          "Content-Type": "application/json",
+        },
+      },
+      bindings,
+    );
+
+    expect(wrongMethod.status).toBe(503);
+    expect(wrongPath.status).toBe(503);
+    expect(denied.status).toBe(401);
+    expect(allowed.status).toBe(204);
+    expect(saveInoreaderSessionCredential).toHaveBeenCalledOnce();
+    expect(saveInoreaderSessionCredential).toHaveBeenCalledWith(storageState);
+  });
+
+  it.each([
+    ["non-object", []],
+    ["missing arrays", { cookies: [], origins: "invalid" }],
+    ["top-level extra key", { cookies: [], origins: [], unexpected: "synthetic" }],
+    ["foreign cookie", {
+      cookies: [{ domain: "example.com", name: "sid", path: "/", value: "synthetic" }],
+      origins: [],
+    }],
+    ["malformed cookie", {
+      cookies: [{ domain: "inoreader.com", name: "sid", path: "/" }],
+      origins: [],
+    }],
+    ["foreign origin", {
+      cookies: [],
+      origins: [{ localStorage: [], origin: "https://example.com" }],
+    }],
+    ["insecure origin", {
+      cookies: [],
+      origins: [{ localStorage: [], origin: "http://www.inoreader.com" }],
+    }],
+    ["invalid local storage", {
+      cookies: [],
+      origins: [{ localStorage: [{ name: "sid", value: 1 }], origin: "https://www.inoreader.com" }],
+    }],
+  ])("迁移冻结时拒绝 %s 的 Inoreader StorageState", async (_name, storageState) => {
+    const saveInoreaderSessionCredential = vi.fn().mockResolvedValue(undefined);
+    const app = createApp({
+      createControlPlaneService: () => ({ saveInoreaderSessionCredential }) as never,
+    });
+
+    const response = await app.request(
+      "/internal/credentials/inoreader_creds",
+      {
+        method: "PUT",
+        body: JSON.stringify(storageState),
+        headers: {
+          Authorization: "Bearer worker-secret",
+          "Content-Type": "application/json",
+        },
+      },
+      {
+        DATA_BACKEND: "postgres",
+        MIGRATION_FROZEN: "true",
+        WORKER_SERVICE_TOKEN: "worker-secret",
+      } as never,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ detail: "invalid Inoreader storage state" });
+    expect(saveInoreaderSessionCredential).not.toHaveBeenCalled();
+  });
+
+  it("非 PostgreSQL 后端不接受 Inoreader 凭据导入", async () => {
+    const saveInoreaderSessionCredential = vi.fn().mockResolvedValue(undefined);
+    const app = createApp({
+      createControlPlaneService: () => ({ saveInoreaderSessionCredential }) as never,
+    });
+
+    const response = await app.request(
+      "/internal/credentials/inoreader_creds",
+      {
+        method: "PUT",
+        body: JSON.stringify({ cookies: [], origins: [] }),
+        headers: {
+          Authorization: "Bearer worker-secret",
+          "Content-Type": "application/json",
+        },
+      },
+      { DATA_BACKEND: "d1", WORKER_SERVICE_TOKEN: "worker-secret" } as never,
+    );
+
+    expect(response.status).toBe(503);
+    expect(saveInoreaderSessionCredential).not.toHaveBeenCalled();
+  });
+
+  it("冻结时允许 worker token 读取内部状态，但仍要求 worker 鉴权", async () => {
+    const service = { getState: vi.fn().mockResolvedValue({ source: "test" }) };
+    const createControlPlaneService = vi.fn(() => service as never);
+    const app = createApp({ createControlPlaneService });
+    const bindings = {
+      MIGRATION_FROZEN: "true",
+      WORKER_SERVICE_TOKEN: "worker-secret",
+    };
+    const body = JSON.stringify({ key: "worker_runtime" });
+
+    const denied = await app.request(
+      "/internal/state/read",
+      { method: "POST", body, headers: { "Content-Type": "application/json" } },
+      bindings as never,
+    );
+    const allowed = await app.request(
+      "/internal/state/read",
+      {
+        method: "POST",
+        body,
+        headers: {
+          Authorization: "Bearer worker-secret",
+          "Content-Type": "application/json",
+        },
+      },
+      bindings as never,
+    );
+
+    expect(denied.status).toBe(401);
+    expect(allowed.status).toBe(200);
+    expect(await allowed.json()).toEqual({ value: { source: "test" } });
+    expect(createControlPlaneService).toHaveBeenCalledOnce();
+    expect(service.getState).toHaveBeenCalledWith("worker_runtime");
+  });
+
+  it.each(["POST", "PUT", "PATCH", "DELETE"])(
+    "冻结时在路由与鉴权业务逻辑前拒绝 %s",
+    async (method) => {
+      const createOperationsFactory = vi.fn(() => createOperationsService());
+      const app = createApp({ createOperationsService: createOperationsFactory });
+
+      const response = await app.request(
+        "/internal/queue/pull",
+        { method, body: "not-json" },
+        { MIGRATION_FROZEN: "true" } as never,
+      );
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        detail: "service writes are frozen for migration",
+      });
+      expect(createOperationsFactory).not.toHaveBeenCalled();
+    },
+  );
+
+  it("冻结时仍允许 GET、HEAD 和 OPTIONS", async () => {
+    const app = createApp();
+    const bindings = { MIGRATION_FROZEN: "true" } as never;
+
+    const get = await app.request("/healthz", undefined, bindings);
+    const head = await app.request("/healthz", { method: "HEAD" }, bindings);
+    const options = await app.request(
+      "/healthz",
+      {
+        method: "OPTIONS",
+        headers: {
+          Origin: "https://abc123.inbox-server-console.pages.dev",
+          "Access-Control-Request-Method": "GET",
+        },
+      },
+      bindings,
+    );
+
+    expect(get.status).toBe(200);
+    expect(head.status).toBe(200);
+    expect(options.status).toBe(204);
+  });
+
+  it.each([undefined, "false"])(
+    "MIGRATION_FROZEN=%s 时保留现有手动同步行为",
+    async (migrationFrozen) => {
+      const service = createOperationsService();
+      const app = createApp({ createOperationsService: () => service });
+      const bindings = {
+        ADMIN_API_KEY: "admin-secret",
+        MIGRATION_FROZEN: migrationFrozen,
+        SYNC_PUBLISH_ENABLED: "true",
+      };
+
+      const response = await app.request(
+        "/sync",
+        { method: "POST", headers: { "X-API-Key": "admin-secret" } },
+        bindings as never,
+      );
+
+      expect(response.status).toBe(200);
+      expect(service.requestManualSync).toHaveBeenCalledOnce();
+    },
+  );
+});
+
 describe("authentication middleware", () => {
   it("未配置管理 key 时失败关闭且不回显配置细节", async () => {
     const app = new Hono<{ Bindings: ApiBindings }>();

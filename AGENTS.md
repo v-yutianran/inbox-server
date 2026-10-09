@@ -18,8 +18,8 @@
 ## Git 交付
 
 - 分支定位：`main` 是开发分支，`release` 是手动维护的稳定分支。
-- 所有 Git/GitHub 状态检查、分支或 worktree、提交、推送、PR、CI、tag 和 Release 操作统一遵循全局 `git-manager` skill。
-- 本项目不额外强制 feature 分支、PR、分支命名或 merge 策略；由 `git-manager` 根据当前分支和用户意图选择交付路径。
+- Git/GitHub 操作直接使用原生 `git`、`gh`；全局 `git-manager` Skill 提供操作路由与安全指南，其专用 CLI 仅用于生成受管 CI/CD workflow。
+- 本项目不额外强制 feature 分支、PR、分支命名或 merge 策略；按当前任务意图和全局权限规则使用原生命令。
 
 ---
 

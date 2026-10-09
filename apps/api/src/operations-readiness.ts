@@ -1,5 +1,9 @@
-import type { ApiBindings } from "./auth.js";
+import { getPostgresConnectionString, type ApiBindings } from "./auth.js";
 import type { ReplayResult } from "./control-plane.js";
+import { createHyperdrivePostgresPool } from "./postgres-connection.js";
+import { createPostgresOperationsReadinessCapture } from "./operations-readiness-postgres-capture.js";
+import { createPostgresOperationsReadinessService } from "./operations-readiness-postgres.js";
+import { createWorkerHeartbeatCache } from "./heartbeat-cache.js";
 
 const CONSISTENCY_CATEGORIES = [
   "matched",
@@ -126,14 +130,27 @@ interface ServiceOptions {
 export function createOperationsReadinessServiceFromBindings(
   bindings: ApiBindings,
 ): OperationsReadinessService {
+  const connectionString = getPostgresConnectionString(bindings);
+  const deploymentVersion =
+    bindings.CF_VERSION_METADATA?.id ?? bindings.DEPLOYMENT_VERSION ?? "unknown";
+  if (connectionString !== null) {
+    const pool = createHyperdrivePostgresPool({ connectionString });
+    const readiness = createPostgresOperationsReadinessService({
+      pool,
+      deploymentVersion,
+      heartbeatCache: createWorkerHeartbeatCache(
+        bindings.UPSTASH_REST_URL,
+        bindings.UPSTASH_REST_TOKEN,
+      ),
+    });
+    return {
+      ...readiness,
+      ...createPostgresOperationsReadinessCapture({ pool, readiness, deploymentVersion }),
+    };
+  }
   return createD1OperationsReadinessService({
     database: bindings.DB,
-    ...(bindings.CF_VERSION_METADATA?.id || bindings.DEPLOYMENT_VERSION
-      ? {
-          deploymentVersion:
-            bindings.CF_VERSION_METADATA?.id ?? bindings.DEPLOYMENT_VERSION!,
-        }
-      : {}),
+    deploymentVersion,
   });
 }
 

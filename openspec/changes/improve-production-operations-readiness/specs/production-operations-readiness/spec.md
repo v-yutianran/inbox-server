@@ -94,3 +94,18 @@ Worker、浏览器和 WARP 持久状态 SHALL 具备可验证的备份恢复流�
 #### Scenario: 快照完整性校验失败
 - **WHEN** 任一快照存在路径越界、符号链接、重复路径、未允许文件或摘要不一致
 - **THEN** 恢复在写入临时目录前失败，并产生不含敏感信息的失败证据
+
+### Requirement: PostgreSQL 运维指标样本七日保留
+Cloudflare API SHALL 仅对 `inbox_server.operations_metric_samples` 应用滚动七天保留策略，删除 `window_end` 早于本次小时采集时间减七天的样本；恰好位于 cutoff 的样本仍保留。采集事务提交后，系统 MUST 按 `window_end` 从旧到新清理，每次最多删除 1,000 行。清理失败 MUST 记录稳定事件 `operations.metrics.prune_failed`，且不得回滚或使已提交的指标采集失败。此策略 MUST 独立于任务与 DLQ 的 14 天 dry-run，不改变其期限、执行门禁或其它表的保留范围。
+
+#### Scenario: 小时采集清理超期指标
+- **WHEN** 小时指标采集事务提交后存在超过七天的 `operations_metric_samples`
+- **THEN** 清理只选取 `window_end < cutoff` 的记录，按最早 `window_end` 优先且本次最多删除 1,000 行；恰好等于 cutoff 的记录保留，剩余超期记录由后续小时采集继续清理
+
+#### Scenario: 指标清理失败
+- **WHEN** 指标采集事务已提交但随后的分批清理失败
+- **THEN** 采集结果保持已提交，系统记录 `operations.metrics.prune_failed`，并让本次采集成功返回
+
+#### Scenario: 不影响任务与 DLQ 保留演练
+- **WHEN** 运维指标样本按七天策略清理
+- **THEN** 任务与 DLQ 仍按原有 14 天 dry-run 流程单独评估；指标清理不得删除或缩短它们及其它业务表的保留数据

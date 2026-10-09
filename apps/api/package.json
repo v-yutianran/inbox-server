@@ -22,11 +22,13 @@
     "@inbox/domain": "0.1.0",
     "drizzle-orm": "0.45.2",
     "hono": "4.12.33",
+    "pg": "^8.23.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.20.1",
     "@cloudflare/workers-types": "5.20260731.1",
+    "@types/pg": "^8.23.1",
     "drizzle-kit": "0.31.10",
     "typescript": "7.0.2",
     "vitest": "4.1.10",

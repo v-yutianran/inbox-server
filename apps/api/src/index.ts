@@ -1,4 +1,4 @@
-import { createApp } from "./app.js";
+import { createApp, isMigrationFrozen } from "./app.js";
 import type { ApiBindings } from "./auth.js";
 import {
   createOperationsServiceFromBindings,
@@ -15,6 +15,34 @@ import {
 
 const app = createApp();
 
+async function wakeWorker(bindings: ApiBindings, workerFetch: typeof fetch): Promise<void> {
+  const url = bindings.WORKER_WEBHOOK_URL?.trim();
+  const token = bindings.WORKER_WEBHOOK_TOKEN?.trim();
+  if (!url && !token) return;
+  if (!url || !token) throw new Error("Worker webhook configuration incomplete");
+
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    throw new Error("Worker webhook URL must use HTTPS without credentials");
+  }
+  if (target.protocol !== "https:" || target.username || target.password) {
+    throw new Error("Worker webhook URL must use HTTPS without credentials");
+  }
+
+  try {
+    const response = await workerFetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.ok) return;
+  } catch {
+    // Keep transport details and credentials out of Queue and Cron errors.
+  }
+  throw new Error("Worker webhook request failed");
+}
+
 export async function publishScheduledCollection(
   bindings: ApiBindings,
   createOperationsService: (bindings: ApiBindings) => OperationsService =
@@ -22,7 +50,17 @@ export async function publishScheduledCollection(
   createOperationsReadinessService: (
     bindings: ApiBindings,
   ) => OperationsReadinessService = createOperationsReadinessServiceFromBindings,
+  workerFetch: typeof fetch = fetch,
 ): Promise<void> {
+  if (isMigrationFrozen(bindings)) return;
+
+  const wake = wakeWorker(bindings, workerFetch).catch(() => {
+    console.error(JSON.stringify({
+      event: "worker.webhook.wake_failed",
+      service: "api",
+      trigger: "cron",
+    }));
+  });
   try {
     await createOperationsReadinessService(bindings).captureMetrics();
   } catch (error) {
@@ -33,8 +71,12 @@ export async function publishScheduledCollection(
       service: "api",
     }));
   }
-  if (bindings.SCHEDULE_ENABLED !== "true") return;
+  if (bindings.SCHEDULE_ENABLED !== "true") {
+    await wake;
+    return;
+  }
   await createOperationsService(bindings).requestScheduledSync();
+  await wake;
 }
 
 export async function stageQueueBatch(
@@ -42,7 +84,12 @@ export async function stageQueueBatch(
   batch: Pick<MessageBatch<unknown>, "ackAll" | "messages">,
   createQueueInboxService: (bindings: ApiBindings) => QueueInboxService =
     createQueueInboxServiceFromBindings,
+  workerFetch: typeof fetch = fetch,
 ): Promise<void> {
+  if (isMigrationFrozen(bindings)) {
+    throw new Error("queue processing is paused for migration");
+  }
+
   await createQueueInboxService(bindings).stage(
     batch.messages.map((message) => ({
       body: message.body,
@@ -50,6 +97,7 @@ export async function stageQueueBatch(
       timestampMs: message.timestamp.getTime(),
     })),
   );
+  await wakeWorker(bindings, workerFetch);
   batch.ackAll();
 }
 
@@ -63,6 +111,7 @@ export default {
     bindings: ApiBindings,
     context: ExecutionContext,
   ): void {
+    if (isMigrationFrozen(bindings)) return;
     context.waitUntil(publishScheduledCollection(bindings));
   },
 };

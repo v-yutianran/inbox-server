@@ -4,7 +4,13 @@ import type { Browser } from "playwright";
 import type { Channels } from "./channels.js";
 import type { WorkerControlPlane } from "./worker-control-plane.js";
 
+export interface AttachmentObjectStore {
+  download(objectKey: string): Promise<Uint8Array>;
+  upload(objectKey: string, bytes: Uint8Array): Promise<void>;
+}
+
 export interface CollectorDependencies {
+  readonly attachmentStore?: AttachmentObjectStore;
   readonly browser: Browser;
   readonly channels: Channels;
   readonly controlPlane: WorkerControlPlane;
