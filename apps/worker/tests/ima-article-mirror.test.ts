@@ -380,6 +380,21 @@ tags: ["inoreader", "技术"]
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
+  it("API 拒绝只记录数值错误码，不记录提供商正文", async () => {
+    const log = vi.fn();
+    const mirror = createImaArticleMirror({
+      apiKey: "api-secret", clientId: "client-secret", enabled: true,
+      fetcher: vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 12345, msg: "private upstream body" }))),
+      knowledgeBaseName: "天然的知识库", log, stateDirectory: await stateDirectory(),
+    });
+    await expect(mirror.mirror(input)).rejects.toThrow("ima_knowledge_base_failed");
+    expect(log).toHaveBeenCalledWith("article.ima_mirror.failed", expect.objectContaining({
+      providerCode: 12345, reason: "api_rejected", stage: "knowledge_base",
+    }));
+    expect(JSON.stringify(log.mock.calls)).not.toContain("private upstream body");
+    expect(JSON.stringify(log.mock.calls)).not.toContain("api-secret");
+  });
+
   it("COS 上传失败时不调用 add_knowledge 且日志不泄露输入", async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(response({

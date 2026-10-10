@@ -94,17 +94,15 @@ async function collectDida(dependencies: CollectorDependencies): Promise<Collect
   const parsed = parseDidaTasks(tasks, saved);
   return {
     afterCommit: async () => {
-      await Promise.all(
-        parsed.deleteTasks.map(async ({ id, projectId }) => {
-          const response = await fetcher(
-            `${DIDA_API}/project/${encodeURIComponent(projectId)}/task/${encodeURIComponent(id)}`,
-            { headers, method: "DELETE" },
-          );
-          if (!response.ok && response.status !== 404) {
-            throw new Error(`Dida delete request failed: ${response.status}`);
-          }
-        }),
-      );
+      for (const { id, projectId } of parsed.deleteTasks) {
+        const response = await fetcher(
+          `${DIDA_API}/project/${encodeURIComponent(projectId)}/task/${encodeURIComponent(id)}`,
+          { headers, method: "DELETE" },
+        );
+        if (!response.ok && response.status !== 404) {
+          throw new Error(`Dida delete request failed: ${response.status}`);
+        }
+      }
     },
     items: parsed.items,
     meta: { collected: parsed.items.length, linkTasks: parsed.deleteTasks.length },

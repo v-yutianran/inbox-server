@@ -42,6 +42,7 @@ class ImaMirrorError extends Error {
     message: string,
     readonly stage: string,
     readonly reason: string,
+    readonly providerCode?: number,
   ) {
     super(message);
   }
@@ -195,6 +196,7 @@ export function createImaArticleMirror(options: ImaOptions): ArticleMirror {
         options.log?.("article.ima_mirror.failed", {
           durationBucket: durationBucket(Date.now() - startedAt),
           provider: "ima",
+          ...(failure.providerCode === undefined ? {} : { providerCode: failure.providerCode }),
           reason: failure.reason,
           result: "failed",
           stage: failure.stage,
@@ -353,7 +355,7 @@ async function imaRequest<T = unknown>(options: {
   try {
     const payload = await response.json() as { code?: number; data?: T } & T;
     if (typeof payload.code === "number" && payload.code !== 0) {
-      throw new ImaMirrorError(`ima_${options.stage}_failed`, options.stage, "api_rejected");
+      throw new ImaMirrorError(`ima_${options.stage}_failed`, options.stage, "api_rejected", payload.code);
     }
     return (payload.data ?? payload) as T;
   } catch (error: unknown) {

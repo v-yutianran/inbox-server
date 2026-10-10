@@ -30,6 +30,47 @@ function controlPlane(state: unknown): WorkerControlPlane {
 }
 
 describe("collectors", () => {
+  it.each([204, 500])("滴答已保存链接顺序清理，404 继续而 %i 决定是否停止", async (deleteStatus) => {
+    const tasks = [1, 2, 3].map((id) => ({
+      id: String(id), projectId: "inbox", title: `https://example.com/${id}`,
+    }));
+    const cp = controlPlane({ savedTitles: tasks.map(({ title }) => title) });
+    const deleted: string[] = [];
+    let active = 0;
+    let maxActive = 0;
+    const fetcher = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      if (init?.method !== "DELETE") {
+        return new Response(JSON.stringify({ tasks: [...tasks, { title: "普通待办" }] }));
+      }
+      const id = String(input).split("/").at(-1)!;
+      deleted.push(id);
+      maxActive = Math.max(maxActive, ++active);
+      await Promise.resolve();
+      active -= 1;
+      return new Response(null, { status: id === "1" ? 404 : deleteStatus });
+    }) as unknown as typeof fetch;
+    const result = await collectSource("dida", {
+      browser: {} as Browser,
+      channels: {
+        sources: { dida: { config: { access_token: "token" }, enabled: true, kind: "api" } },
+      } as unknown as Channels,
+      controlPlane: cp, fetcher, stagingDir: "/tmp/inbox-test",
+    });
+
+    expect(result.items).toEqual([]);
+    expect(deleted).toEqual([]);
+    expect(cp.publishJobs).not.toHaveBeenCalled();
+    expect(cp.putState).not.toHaveBeenCalled();
+    if (deleteStatus === 500) {
+      await expect(result.afterCommit!()).rejects.toThrow("Dida delete request failed: 500");
+      expect(deleted).toEqual(["1", "2"]);
+    } else {
+      await result.afterCommit!();
+      expect(deleted).toEqual(["1", "2", "3"]);
+    }
+    expect(maxActive).toBe(1);
+  });
+
   it("GitHub Stars 用 D1 baseline 过滤，collector 本身不发布或修改状态", async () => {
     const cp = controlPlane({ knownKeys: ["https://github.com/known/repo"] });
     const fetcher = vi.fn().mockResolvedValue(
