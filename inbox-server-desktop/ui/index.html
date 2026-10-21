@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>本地收件匣</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="top">
+        <div>
+          <p class="eyebrow">INBOX DESKTOP · 只在这台电脑</p>
+          <h1>本地收件匣</h1>
+        </div>
+        <div class="top-actions">
+          <button id="sync" type="button">立即同步</button>
+          <button id="refresh" type="button" class="ghost">刷新</button>
+        </div>
+      </header>
+      <p id="notice" class="notice" hidden></p>
+      <section class="stats" id="stats"></section>
+      <div class="layout">
+        <section class="panel composer">
+          <h2>收录</h2>
+          <form id="capture">
+            <label>类型
+              <select name="itemKind">
+                <option value="link">链接</option>
+                <option value="text">文本</option>
+                <option value="article">文章归档</option>
+                <option value="file">本机文件</option>
+              </select>
+            </label>
+            <label>标题
+              <input name="title" type="text" placeholder="可留空" />
+            </label>
+            <label id="url-field">链接
+              <input name="url" type="url" placeholder="https://" />
+            </label>
+            <label id="content-field" hidden>正文
+              <textarea name="content" rows="4"></textarea>
+            </label>
+            <label id="file-field" hidden>本机路径
+              <input name="localPath" type="text" placeholder="/Users/…/文件.pdf" />
+            </label>
+            <button type="submit">放入收件匣</button>
+          </form>
+        </section>
+        <section class="panel">
+          <h2>收件</h2>
+          <div id="items" class="items"></div>
+        </section>
+      </div>
+      <div class="layout lower">
+        <section class="panel">
+          <h2>来源与转发</h2>
+          <form id="settings">
+            <label class="check"><input name="archiveEnabled" type="checkbox" /> 链接写入本地文章归档</label>
+            <label class="check"><input name="schedulerEnabled" type="checkbox" /> 定时同步</label>
+            <label>间隔（秒，30–86400）
+              <input name="intervalSeconds" type="number" min="30" max="86400" />
+            </label>
+            <fieldset>
+              <legend>滴答清单</legend>
+              <label class="check"><input name="didaEnabled" type="checkbox" /> 启用</label>
+              <input name="didaToken" type="password" placeholder="留空表示不修改 access token" autocomplete="off" />
+            </fieldset>
+            <fieldset>
+              <legend>GitHub Stars</legend>
+              <label class="check"><input name="githubEnabled" type="checkbox" /> 启用</label>
+              <input name="githubToken" type="password" placeholder="留空表示不修改 token" autocomplete="off" />
+            </fieldset>
+            <fieldset>
+              <legend>Telegram</legend>
+              <label class="check"><input name="telegramEnabled" type="checkbox" /> 启用</label>
+              <input name="telegramToken" type="password" placeholder="留空表示不修改 bot token" autocomplete="off" />
+            </fieldset>
+            <fieldset>
+              <legend>可选转发（仍走对方的 API，不经过自建云）</legend>
+              <input name="cuboxUrl" type="url" placeholder="Cubox API，留空表示不修改" />
+              <input name="flomoWebhook" type="url" placeholder="flomo webhook，留空表示不修改" />
+            </fieldset>
+            <button type="submit">保存设置</button>
+          </form>
+          <p id="settings-meta" class="meta"></p>
+        </section>
+        <section class="panel">
+          <h2>从云端导入</h2>
+          <p class="meta">粘贴 <code>inbox-cloud-export-v1</code> JSON。密文任务信封不会被解密。</p>
+          <form id="import">
+            <textarea name="payload" rows="8" placeholder="{ &quot;format&quot;: &quot;inbox-cloud-export-v1&quot; }"></textarea>
+            <button type="submit">导入</button>
+          </form>
+          <h2>同步记录</h2>
+          <div id="sync-jobs"></div>
+          <h2>云端历史</h2>
+          <div id="history"></div>
+        </section>
+      </div>
+      <footer>
+        <span id="data-dir"></span>
+        <span id="next-run"></span>
+      </footer>
+    </div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+node_modules/
+*.tsbuildinfo
+data/
+dist/
+release/
+*.sqlite
+*.sqlite-*
+cloud-export.json

@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2026-10-21
+
+### feat(desktop)：新增纯本地收件匣 inbox-server-desktop
+
+- 在 `inbox-server-desktop/` 增加可单独拷出的 Electron 本机应用：主进程内置 SQLite 队列和调度，HTTP 抽不出正文时用 Playwright，`npm run build:mac` 打 macOS arm64 zip。
+
 ## 2026-10-10
 
 - 修复队列批量发布上限与滴答积压任务清理并发；回归、生产发布及真实验证见 [当日记录](docs/changelog/2026-10-10.md)。

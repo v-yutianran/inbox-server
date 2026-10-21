@@ -1,0 +1,64 @@
+{
+  "name": "inbox-server-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "inbox-server 的纯本地 Electron 收件匣。数据只留在本机，不依赖 Cloudflare、Neon、Cloud Run 或 GCS。",
+  "author": "inbox-server-desktop",
+  "type": "module",
+  "main": "dist/main.js",
+  "engines": {
+    "node": ">=22.18 <27"
+  },
+  "scripts": {
+    "bundle": "esbuild src/electron-main.ts --bundle --platform=node --format=esm --outfile=dist/main.js --external:electron --external:playwright --external:playwright-core",
+    "start": "npm run bundle && electron .",
+    "dev": "npm run bundle && electron .",
+    "server": "node --disable-warning=ExperimentalWarning src/cli.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && npm run bundle",
+    "build:mac": "npm run build && electron-builder --mac zip --arm64 -c.mac.identity=null",
+    "import": "node scripts/import-file.ts"
+  },
+  "dependencies": {
+    "playwright": "1.64.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.1",
+    "electron": "45.0.0",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  },
+  "build": {
+    "appId": "app.inbox.desktop",
+    "productName": "Inbox Desktop",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "ui/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/playwright/**",
+      "**/node_modules/playwright-core/**"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "target": [
+        {
+          "arch": ["arm64"],
+          "target": "zip"
+        }
+      ]
+    },
+    "linux": {
+      "target": ["dir"],
+      "executableName": "inbox-desktop"
+    }
+  }
+}
