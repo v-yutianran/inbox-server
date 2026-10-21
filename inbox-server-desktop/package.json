@@ -17,10 +17,11 @@
     "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && npm run bundle",
-    "build:mac": "npm run build && electron-builder --mac zip --arm64 -c.mac.identity=null",
+    "build:mac": "npm run build && electron-builder --mac dmg zip --arm64 -c.mac.identity=null",
     "import": "node scripts/import-file.ts"
   },
   "dependencies": {
+    "defuddle": "0.19.1",
     "playwright": "1.64.1"
   },
   "devDependencies": {
@@ -46,10 +47,18 @@
       "**/node_modules/playwright/**",
       "**/node_modules/playwright-core/**"
     ],
+    "dmg": {
+      "backgroundColor": "#f3efe4",
+      "sign": false
+    },
     "mac": {
       "category": "public.app-category.productivity",
       "identity": null,
       "target": [
+        {
+          "arch": ["arm64"],
+          "target": "dmg"
+        },
         {
           "arch": ["arm64"],
           "target": "zip"

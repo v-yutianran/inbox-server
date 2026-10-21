@@ -57,6 +57,7 @@
           <h2>来源与转发</h2>
           <form id="settings">
             <label class="check"><input name="archiveEnabled" type="checkbox" /> 链接写入本地文章归档</label>
+            <label class="check"><input name="archiveGit" type="checkbox" /> 文章提交到本机 Git 仓库（不推远程）</label>
             <label class="check"><input name="schedulerEnabled" type="checkbox" /> 定时同步</label>
             <label>间隔（秒，30–86400）
               <input name="intervalSeconds" type="number" min="30" max="86400" />
@@ -77,9 +78,74 @@
               <input name="telegramToken" type="password" placeholder="留空表示不修改 bot token" autocomplete="off" />
             </fieldset>
             <fieldset>
+              <legend>知乎收藏夹</legend>
+              <label class="check"><input name="zhihuEnabled" type="checkbox" /> 启用</label>
+              <input name="zhihuCollectionId" type="text" placeholder="收藏夹 collection id" />
+              <div class="login-row" data-platform="zhihu"></div>
+            </fieldset>
+            <fieldset>
+              <legend>哔哩哔哩</legend>
+              <label class="check"><input name="bilibiliEnabled" type="checkbox" /> 收藏</label>
+              <input name="bilibiliMediaId" type="text" placeholder="收藏夹 media_id" />
+              <label class="check"><input name="bilibiliToviewEnabled" type="checkbox" /> 稍后再看</label>
+              <div class="login-row" data-platform="bilibili"></div>
+            </fieldset>
+            <fieldset>
+              <legend>Inoreader 星标</legend>
+              <label class="check"><input name="inoreaderEnabled" type="checkbox" /> 启用</label>
+              <div class="login-row" data-platform="inoreader"></div>
+            </fieldset>
+            <fieldset>
+              <legend>YouTube 稍后观看</legend>
+              <label class="check"><input name="youtubeEnabled" type="checkbox" /> 启用</label>
+              <div class="login-row" data-platform="youtube"></div>
+            </fieldset>
+            <fieldset>
+              <legend>X</legend>
+              <label class="check"><input name="xBookmarksEnabled" type="checkbox" /> 书签</label>
+              <label class="check"><input name="xLikesEnabled" type="checkbox" /> 喜欢</label>
+              <input name="xUsername" type="text" placeholder="喜欢列表需要的用户名" />
+              <div class="login-row" data-platform="x"></div>
+            </fieldset>
+            <fieldset>
               <legend>可选转发（仍走对方的 API，不经过自建云）</legend>
               <input name="cuboxUrl" type="url" placeholder="Cubox API，留空表示不修改" />
               <input name="flomoWebhook" type="url" placeholder="flomo webhook，留空表示不修改" />
+            </fieldset>
+            <fieldset>
+              <legend>坚果云 WebDAV</legend>
+              <label class="check"><input name="jianguoyunEnabled" type="checkbox" /> 文件同步到坚果云</label>
+              <input name="jianguoyunBaseUrl" type="url" placeholder="https://dav.jianguoyun.com/dav" />
+              <input name="jianguoyunUser" type="text" placeholder="账号，留空表示不修改" autocomplete="off" />
+              <input name="jianguoyunPassword" type="password" placeholder="应用密码，留空表示不修改" autocomplete="off" />
+            </fieldset>
+            <fieldset>
+              <legend>通知</legend>
+              <input name="telegramChatId" type="text" placeholder="Telegram chat id" />
+              <input name="notifyToken" type="password" placeholder="通知 bot token，留空表示不修改" autocomplete="off" />
+              <label class="check"><input name="emailEnabled" type="checkbox" /> 邮件通知</label>
+              <input name="smtpHost" type="text" placeholder="smtp.163.com" />
+              <input name="smtpPort" type="number" min="1" placeholder="465" />
+              <input name="smtpUser" type="text" placeholder="SMTP 用户，留空表示不修改" autocomplete="off" />
+              <input name="smtpPass" type="password" placeholder="SMTP 授权码，留空表示不修改" autocomplete="off" />
+              <input name="emailFrom" type="email" placeholder="发件邮箱" />
+              <input name="emailTo" type="email" placeholder="收件邮箱" />
+            </fieldset>
+            <fieldset>
+              <legend>ima 知识库</legend>
+              <label class="check"><input name="imaEnabled" type="checkbox" /> 文章写入 ima</label>
+              <input name="imaKnowledgeBaseName" type="text" placeholder="知识库名称" />
+              <input name="imaApiKey" type="password" placeholder="API key，留空表示不修改" autocomplete="off" />
+              <input name="imaClientId" type="password" placeholder="client id，留空表示不修改" autocomplete="off" />
+              <input name="imaWebKnowledgeBaseId" type="text" placeholder="网页端知识库 id（可选，用来建月份目录）" />
+              <input name="imaWebCookie" type="password" placeholder="网页 cookie，留空表示不修改" autocomplete="off" />
+              <input name="imaWebImaCookie" type="password" placeholder="x-ima-cookie，留空表示不修改" autocomplete="off" />
+              <input name="imaWebBkn" type="password" placeholder="x-ima-bkn，留空表示不修改" autocomplete="off" />
+            </fieldset>
+            <fieldset>
+              <legend>智能标签</legend>
+              <input name="llmModel" type="text" placeholder="glm-4-flash" />
+              <input name="llmApiKey" type="password" placeholder="智谱 API key，留空表示不修改" autocomplete="off" />
             </fieldset>
             <button type="submit">保存设置</button>
           </form>

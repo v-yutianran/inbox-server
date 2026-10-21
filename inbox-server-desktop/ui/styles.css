@@ -70,6 +70,9 @@ label { display: grid; gap: 6px; font-size: 0.92rem; }
 .check { display: flex; gap: 8px; align-items: center; }
 input, textarea, select { padding: 0.65rem 0.7rem; }
 fieldset { border: 1px solid var(--line); border-radius: 12px; display: grid; gap: 8px; }
+.login-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.login-row button { padding: 0.45rem 0.7rem; }
+.login-row input { flex: 1; min-width: 140px; }
 .items article, .record {
   border-top: 1px solid var(--line);
   padding: 10px 0;

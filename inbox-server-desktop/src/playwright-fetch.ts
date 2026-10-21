@@ -8,6 +8,9 @@ export async function fetchHtmlWithPlaywright(url: string): Promise<string> {
       userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
     });
     await page.goto(url, { timeout: 30_000, waitUntil: "domcontentloaded" });
+    if (new URL(url).hostname.toLowerCase() === "mp.weixin.qq.com") {
+      await page.waitForSelector("#js_content", { timeout: 15_000 }).catch(() => undefined);
+    }
     return await page.content();
   } finally {
     await browser.close();

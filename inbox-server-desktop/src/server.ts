@@ -50,6 +50,16 @@ async function handle(engine: InboxEngine, request: IncomingMessage, response: S
       sendJson(response, 200, engine.importCloud(await readBody(request)));
       return;
     }
+    const loginMatch = /^\/api\/login\/([a-z_]+)$/.exec(url.pathname);
+    if (request.method === "POST" && loginMatch?.[1]) {
+      sendJson(response, 200, await engine.beginLogin(loginMatch[1]));
+      return;
+    }
+    const profileMatch = /^\/api\/profiles\/([a-z_]+)$/.exec(url.pathname);
+    if (request.method === "POST" && profileMatch?.[1]) {
+      sendJson(response, 200, engine.saveCredential(profileMatch[1], await readBody(request)));
+      return;
+    }
     if (request.method === "GET" && staticFiles[url.pathname]) {
       const name = staticFiles[url.pathname];
       if (!name) return;

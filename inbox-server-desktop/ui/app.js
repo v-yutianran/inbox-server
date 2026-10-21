@@ -16,7 +16,8 @@ updateComposer();
 
 document.querySelector("#refresh").addEventListener("click", () => void load());
 document.querySelector("#sync").addEventListener("click", async (event) => {
-  event.currentTarget.disabled = true;
+  const button = event.currentTarget;
+  button.disabled = true;
   try {
     const result = await post("/api/sync", {});
     show(result.error ? `同步结束，但有错误：${result.error}` : "同步完成");
@@ -24,7 +25,7 @@ document.querySelector("#sync").addEventListener("click", async (event) => {
   } catch (error) {
     show(error.message);
   } finally {
-    event.currentTarget.disabled = false;
+    button.disabled = false;
   }
 });
 
@@ -47,6 +48,60 @@ captureForm.addEventListener("submit", async (event) => {
   }
 });
 
+for (const row of document.querySelectorAll(".login-row")) {
+  const platform = row.dataset.platform;
+  const input = document.createElement("input");
+  input.type = "password";
+  input.placeholder = platform === "zhihu" ? "粘贴 z_c0" : platform === "bilibili" ? "粘贴 SESSDATA" : "粘贴 storageState JSON";
+  input.autocomplete = "off";
+  const save = document.createElement("button");
+  save.type = "button";
+  save.textContent = "保存登录";
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "ghost";
+  open.textContent = "窗口登录";
+  save.addEventListener("click", async () => {
+    const value = input.value.trim();
+    if (!value) {
+      show("先粘贴 cookie 或 storageState");
+      return;
+    }
+    let payload = { storageState: value };
+    if (platform === "zhihu") payload = { z_c0: value };
+    else if (platform === "bilibili") payload = { sessdata: value };
+    else {
+      try {
+        payload = { storageState: JSON.parse(value) };
+      } catch {
+        show("storageState 需要是 JSON");
+        return;
+      }
+    }
+    try {
+      const result = await post(`/api/profiles/${platform}`, payload);
+      input.value = "";
+      show(`${platform} 已保存 ${result.cookies} 个 cookie`);
+      await load();
+    } catch (error) {
+      show(error.message);
+    }
+  });
+  open.addEventListener("click", async () => {
+    open.disabled = true;
+    try {
+      const result = await post(`/api/login/${platform}`, {});
+      show(`${platform} 登录窗口已关闭，保存了 ${result.cookies} 个 cookie`);
+      await load();
+    } catch (error) {
+      show(error.message);
+    } finally {
+      open.disabled = false;
+    }
+  });
+  row.append(input, save, open);
+}
+
 settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(settingsForm);
@@ -54,18 +109,61 @@ settingsForm.addEventListener("submit", async (event) => {
     const value = String(form.get(name) || "").trim();
     return value.length > 0 ? value : undefined;
   };
+  const visible = (name) => {
+    const value = String(form.get(name) || "").trim();
+    return value.length > 0 ? value : null;
+  };
   const body = {
     archiveEnabled: form.get("archiveEnabled") === "on",
+    archiveGit: form.get("archiveGit") === "on",
     schedulerEnabled: form.get("schedulerEnabled") === "on",
     intervalSeconds: Number(form.get("intervalSeconds")),
     sources: {
       dida: { enabled: form.get("didaEnabled") === "on", accessToken: optional("didaToken") },
       github_stars: { enabled: form.get("githubEnabled") === "on", token: optional("githubToken") },
       telegram: { enabled: form.get("telegramEnabled") === "on", botToken: optional("telegramToken") },
+      zhihu: { enabled: form.get("zhihuEnabled") === "on", collectionId: visible("zhihuCollectionId") },
+      bilibili: { enabled: form.get("bilibiliEnabled") === "on", mediaId: visible("bilibiliMediaId") },
+      bilibili_toview: { enabled: form.get("bilibiliToviewEnabled") === "on" },
+      inoreader: { enabled: form.get("inoreaderEnabled") === "on" },
+      youtube: { enabled: form.get("youtubeEnabled") === "on" },
+      x_bookmarks: { enabled: form.get("xBookmarksEnabled") === "on" },
+      x_likes: { enabled: form.get("xLikesEnabled") === "on", username: visible("xUsername") },
     },
     forward: {
       cuboxUrl: optional("cuboxUrl"),
       flomoWebhook: optional("flomoWebhook"),
+    },
+    jianguoyun: {
+      enabled: form.get("jianguoyunEnabled") === "on",
+      baseUrl: visible("jianguoyunBaseUrl"),
+      user: optional("jianguoyunUser"),
+      password: optional("jianguoyunPassword"),
+    },
+    notification: {
+      telegramChatId: visible("telegramChatId"),
+      notifyToken: optional("notifyToken"),
+      emailEnabled: form.get("emailEnabled") === "on",
+      smtpHost: visible("smtpHost"),
+      smtpPort: Number(form.get("smtpPort")) || undefined,
+      smtpUser: optional("smtpUser"),
+      smtpPass: optional("smtpPass"),
+      emailFrom: visible("emailFrom"),
+      emailTo: visible("emailTo"),
+    },
+    ima: {
+      enabled: form.get("imaEnabled") === "on",
+      knowledgeBaseName: visible("imaKnowledgeBaseName"),
+      apiKey: optional("imaApiKey"),
+      clientId: optional("imaClientId"),
+      webKnowledgeBaseId: visible("imaWebKnowledgeBaseId"),
+      webCookie: optional("imaWebCookie"),
+      webImaCookie: optional("imaWebImaCookie"),
+      webBkn: optional("imaWebBkn"),
+    },
+    llm: {
+      model: visible("llmModel"),
+      apiKey: optional("llmApiKey"),
     },
   };
   try {
@@ -109,18 +207,48 @@ async function load() {
   renderRecords(history, overview.cloudHistory, (row) => `${row.createdAt} · ${row.itemKind || row.kind} · ${row.status}`);
   dataDir.textContent = overview.dataDir;
   nextRun.textContent = overview.scheduler.nextRunAt ? `下次同步 ${overview.scheduler.nextRunAt}` : "定时同步已关闭";
-  settingsForm.archiveEnabled.checked = overview.settings.archiveEnabled;
-  settingsForm.schedulerEnabled.checked = overview.settings.schedulerEnabled;
-  settingsForm.intervalSeconds.value = String(overview.settings.intervalSeconds);
-  settingsForm.didaEnabled.checked = overview.settings.sources.dida.enabled;
-  settingsForm.githubEnabled.checked = overview.settings.sources.github_stars.enabled;
-  settingsForm.telegramEnabled.checked = overview.settings.sources.telegram.enabled;
+  const settings = overview.settings;
+  settingsForm.archiveEnabled.checked = settings.archiveEnabled;
+  settingsForm.archiveGit.checked = settings.archiveGit;
+  settingsForm.schedulerEnabled.checked = settings.schedulerEnabled;
+  settingsForm.intervalSeconds.value = String(settings.intervalSeconds);
+  settingsForm.didaEnabled.checked = settings.sources.dida.enabled;
+  settingsForm.githubEnabled.checked = settings.sources.github_stars.enabled;
+  settingsForm.telegramEnabled.checked = settings.sources.telegram.enabled;
+  settingsForm.zhihuEnabled.checked = settings.sources.zhihu.enabled;
+  settingsForm.zhihuCollectionId.value = settings.sources.zhihu.collectionId;
+  settingsForm.bilibiliEnabled.checked = settings.sources.bilibili.enabled;
+  settingsForm.bilibiliMediaId.value = settings.sources.bilibili.mediaId;
+  settingsForm.bilibiliToviewEnabled.checked = settings.sources.bilibili_toview.enabled;
+  settingsForm.inoreaderEnabled.checked = settings.sources.inoreader.enabled;
+  settingsForm.youtubeEnabled.checked = settings.sources.youtube.enabled;
+  settingsForm.xBookmarksEnabled.checked = settings.sources.x_bookmarks.enabled;
+  settingsForm.xLikesEnabled.checked = settings.sources.x_likes.enabled;
+  settingsForm.xUsername.value = settings.sources.x_likes.username;
+  settingsForm.jianguoyunEnabled.checked = settings.jianguoyun.enabled;
+  settingsForm.jianguoyunBaseUrl.value = settings.jianguoyun.baseUrl;
+  settingsForm.emailEnabled.checked = settings.notification.emailEnabled;
+  settingsForm.telegramChatId.value = settings.notification.telegramChatId;
+  settingsForm.smtpHost.value = settings.notification.smtpHost;
+  settingsForm.smtpPort.value = String(settings.notification.smtpPort);
+  settingsForm.emailFrom.value = settings.notification.emailFrom;
+  settingsForm.emailTo.value = settings.notification.emailTo;
+  settingsForm.imaEnabled.checked = settings.ima.enabled;
+  settingsForm.imaKnowledgeBaseName.value = settings.ima.knowledgeBaseName;
+  settingsForm.imaWebKnowledgeBaseId.value = settings.ima.webKnowledgeBaseId;
+  settingsForm.llmModel.value = settings.llm.model;
   const configured = [
-    overview.settings.sources.dida.accessTokenSet ? "滴答 token 已保存" : "",
-    overview.settings.sources.github_stars.tokenSet ? "GitHub token 已保存" : "",
-    overview.settings.sources.telegram.botTokenSet ? "Telegram token 已保存" : "",
-    overview.settings.forward.cuboxUrlSet ? "Cubox 已配置" : "",
-    overview.settings.forward.flomoWebhookSet ? "flomo 已配置" : "",
+    settings.sources.dida.accessTokenSet ? "滴答 token 已保存" : "",
+    settings.sources.github_stars.tokenSet ? "GitHub token 已保存" : "",
+    settings.sources.telegram.botTokenSet ? "Telegram token 已保存" : "",
+    settings.forward.cuboxUrlSet ? "Cubox 已配置" : "",
+    settings.forward.flomoWebhookSet ? "flomo 已配置" : "",
+    settings.jianguoyun.userSet ? "坚果云账号已保存" : "",
+    settings.notification.notifyTokenSet ? "通知 token 已保存" : "",
+    settings.notification.smtpPassSet ? "SMTP 授权码已保存" : "",
+    settings.ima.apiKeySet ? "ima key 已保存" : "",
+    settings.llm.apiKeySet ? "智谱 key 已保存" : "",
+    ...(overview.profiles || []).filter((profile) => profile.saved).map((profile) => `${profile.platform} 登录 ${profile.cookieCount} 个 cookie`),
   ].filter(Boolean);
   settingsMeta.textContent = configured.join(" · ") || "还没有保存第三方凭据";
 }

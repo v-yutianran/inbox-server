@@ -1,6 +1,17 @@
 import { createHash } from "node:crypto";
 
-export const sourceNames = ["dida", "github_stars", "telegram"] as const;
+export const sourceNames = [
+  "dida",
+  "github_stars",
+  "telegram",
+  "zhihu",
+  "bilibili",
+  "bilibili_toview",
+  "inoreader",
+  "youtube",
+  "x_bookmarks",
+  "x_likes",
+] as const;
 export type SourceName = (typeof sourceNames)[number];
 export type ItemKind = "link" | "text" | "file" | "article";
 

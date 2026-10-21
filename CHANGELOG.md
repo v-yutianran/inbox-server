@@ -2,6 +2,11 @@
 
 ## 2026-10-21
 
+### feat(desktop)：补齐本地收件匣的渠道、登录、归档和通知
+
+- `inbox-server-desktop` 接上知乎、哔哩哔哩、稍后再看、Inoreader、YouTube、X 的登录态采集，Defuddle 与知乎 API 正文，本机 Git 与 ima 镜像，坚果云 WebDAV，智谱标签，以及 Telegram / SMTP 通知。密钥只在本机设置和 `settings.json`。
+- 验证：`npm test` 19 项通过，含假页面采集、ima/WebDAV/SMTP/GLM 模拟、`https://example.com/` 与 Playwright Chromium 真请求。`tsc --noEmit` 通过。界面在 Chromium 里点过「立即同步」。`electron-builder` 打出 arm64 zip；dmg 因 dmgbuild 是 Mach-O、本机无法执行而停在 Linux。
+
 ### feat(desktop)：新增纯本地收件匣 inbox-server-desktop
 
 - 在 `inbox-server-desktop/` 增加可单独拷出的 Electron 本机应用：主进程内置 SQLite 队列和调度，HTTP 抽不出正文时用 Playwright，`npm run build:mac` 打 macOS arm64 zip。

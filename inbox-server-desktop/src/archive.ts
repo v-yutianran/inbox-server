@@ -8,6 +8,24 @@ export interface ExtractedArticle {
   markdown: string;
 }
 
+export async function extractArticle(html: string, url: string): Promise<ExtractedArticle> {
+  try {
+    const { Defuddle } = await import("defuddle/node");
+    const result = await Defuddle(html, url, { markdown: true });
+    const title = String(result.title ?? "").trim();
+    let markdown = String(result.contentMarkdown ?? result.content ?? "").trim();
+    if (title && markdown && !markdown.includes(title)) markdown = `${title}\n\n${markdown}`;
+    if (title && markdown) return { title, markdown };
+  } catch {
+    // Defuddle 解析失败时退回标签剥离，避免一篇文章因为提取器异常整篇失败。
+  }
+  const fallback = extractHtml(html);
+  if (fallback.title && fallback.markdown && !fallback.markdown.includes(fallback.title)) {
+    fallback.markdown = `${fallback.title}\n\n${fallback.markdown}`;
+  }
+  return fallback;
+}
+
 export function extractHtml(html: string): ExtractedArticle {
   const title = decodeHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").trim();
   const markdown = decodeHtml(

@@ -1,9 +1,20 @@
-import { mkdirSync } from "node:fs";
-import { chmodSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { dirname } from "node:path";
 
 import type { DispatchItem, ItemKind, RateLimitInput } from "./domain.ts";
+import {
+  DEFAULT_SETTINGS,
+  mergeSettings,
+  readSettingsFile,
+  toPublicSettings,
+  writeSettingsFile,
+  type PublicSettings,
+  type Settings,
+} from "./settings.ts";
+
+export type { PublicSettings, Settings };
+export { mergeSettings };
 
 export interface ItemRow {
   id: string;
@@ -31,30 +42,6 @@ export interface JobRow {
   availableAt: string;
   lastError: string | null;
   createdAt: string;
-}
-
-export interface Settings {
-  archiveEnabled: boolean;
-  schedulerEnabled: boolean;
-  intervalSeconds: number;
-  sources: {
-    dida: { enabled: boolean; accessToken: string };
-    github_stars: { enabled: boolean; token: string };
-    telegram: { enabled: boolean; botToken: string };
-  };
-  forward: { cuboxUrl: string; flomoWebhook: string };
-}
-
-export interface PublicSettings {
-  archiveEnabled: boolean;
-  schedulerEnabled: boolean;
-  intervalSeconds: number;
-  sources: {
-    dida: { enabled: boolean; accessTokenSet: boolean };
-    github_stars: { enabled: boolean; tokenSet: boolean };
-    telegram: { enabled: boolean; botTokenSet: boolean };
-  };
-  forward: { cuboxUrlSet: boolean; flomoWebhookSet: boolean };
 }
 
 export interface SyncJobRow {
@@ -96,18 +83,6 @@ export interface QueueCounts {
   dead: number;
 }
 
-const DEFAULT_SETTINGS: Settings = {
-  archiveEnabled: true,
-  schedulerEnabled: true,
-  intervalSeconds: 300,
-  sources: {
-    dida: { enabled: false, accessToken: "" },
-    github_stars: { enabled: false, token: "" },
-    telegram: { enabled: false, botToken: "" },
-  },
-  forward: { cuboxUrl: "", flomoWebhook: "" },
-};
-
 export class RateLimitedError extends Error {
   readonly retryAt: string;
 
@@ -122,14 +97,19 @@ type SqlRow = Record<string, unknown>;
 
 export class InboxStore {
   readonly db: DatabaseSync;
+  readonly filename: string;
 
   constructor(filename: string) {
+    this.filename = filename;
     if (filename !== ":memory:") mkdirSync(dirname(filename), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(filename);
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec("PRAGMA foreign_keys = ON");
     this.db.exec("PRAGMA busy_timeout = 5000");
     this.migrate();
+    const fromFile = readSettingsFile(filename);
+    if (fromFile) this.saveSettings(fromFile);
+    else writeSettingsFile(filename, this.settings());
     if (filename !== ":memory:") chmodSync(filename, 0o600);
   }
 
@@ -144,21 +124,7 @@ export class InboxStore {
   }
 
   publicSettings(): PublicSettings {
-    const settings = this.settings();
-    return {
-      archiveEnabled: settings.archiveEnabled,
-      schedulerEnabled: settings.schedulerEnabled,
-      intervalSeconds: settings.intervalSeconds,
-      sources: {
-        dida: { enabled: settings.sources.dida.enabled, accessTokenSet: settings.sources.dida.accessToken.length > 0 },
-        github_stars: { enabled: settings.sources.github_stars.enabled, tokenSet: settings.sources.github_stars.token.length > 0 },
-        telegram: { enabled: settings.sources.telegram.enabled, botTokenSet: settings.sources.telegram.botToken.length > 0 },
-      },
-      forward: {
-        cuboxUrlSet: settings.forward.cuboxUrl.length > 0,
-        flomoWebhookSet: settings.forward.flomoWebhook.length > 0,
-      },
-    };
+    return toPublicSettings(this.settings());
   }
 
   saveSettings(next: Settings): void {
@@ -166,6 +132,7 @@ export class InboxStore {
       `INSERT INTO settings (key, value) VALUES ('app', ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     ).run(JSON.stringify(next));
+    writeSettingsFile(this.filename, next);
   }
 
   getState(key: string): unknown {
@@ -568,7 +535,9 @@ export class InboxStore {
       );
     `);
     const existing = this.db.prepare("SELECT 1 AS ok FROM settings WHERE key = 'app'").get();
-    if (!existing) this.saveSettings(DEFAULT_SETTINGS);
+    if (!existing) {
+      this.db.prepare("INSERT INTO settings (key, value) VALUES ('app', ?)").run(JSON.stringify(DEFAULT_SETTINGS));
+    }
   }
 
   private transaction(fn: () => void): void {
@@ -581,34 +550,6 @@ export class InboxStore {
       throw error;
     }
   }
-}
-
-export function mergeSettings(input: Partial<Settings> | null | undefined): Settings {
-  const base = structuredClone(DEFAULT_SETTINGS);
-  if (!input) return base;
-  if (typeof input.archiveEnabled === "boolean") base.archiveEnabled = input.archiveEnabled;
-  if (typeof input.schedulerEnabled === "boolean") base.schedulerEnabled = input.schedulerEnabled;
-  if (typeof input.intervalSeconds === "number" && input.intervalSeconds >= 30 && input.intervalSeconds <= 86_400) {
-    base.intervalSeconds = Math.floor(input.intervalSeconds);
-  }
-  const sources = input.sources;
-  if (sources?.dida) {
-    if (typeof sources.dida.enabled === "boolean") base.sources.dida.enabled = sources.dida.enabled;
-    if (typeof sources.dida.accessToken === "string") base.sources.dida.accessToken = sources.dida.accessToken;
-  }
-  if (sources?.github_stars) {
-    if (typeof sources.github_stars.enabled === "boolean") base.sources.github_stars.enabled = sources.github_stars.enabled;
-    if (typeof sources.github_stars.token === "string") base.sources.github_stars.token = sources.github_stars.token;
-  }
-  if (sources?.telegram) {
-    if (typeof sources.telegram.enabled === "boolean") base.sources.telegram.enabled = sources.telegram.enabled;
-    if (typeof sources.telegram.botToken === "string") base.sources.telegram.botToken = sources.telegram.botToken;
-  }
-  if (input.forward) {
-    if (typeof input.forward.cuboxUrl === "string") base.forward.cuboxUrl = input.forward.cuboxUrl;
-    if (typeof input.forward.flomoWebhook === "string") base.forward.flomoWebhook = input.forward.flomoWebhook;
-  }
-  return base;
 }
 
 function itemFields(payload: DispatchItem): { title: string | null; url: string | null; content: string | null } {

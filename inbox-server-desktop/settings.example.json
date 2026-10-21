@@ -1,0 +1,42 @@
+{
+  "archiveEnabled": true,
+  "archiveGit": true,
+  "schedulerEnabled": true,
+  "intervalSeconds": 300,
+  "sources": {
+    "dida": { "enabled": false, "accessToken": "" },
+    "github_stars": { "enabled": false, "token": "" },
+    "telegram": { "enabled": false, "botToken": "" },
+    "zhihu": { "enabled": false, "collectionId": "" },
+    "bilibili": { "enabled": false, "mediaId": "" },
+    "bilibili_toview": { "enabled": false },
+    "inoreader": { "enabled": false },
+    "youtube": { "enabled": false },
+    "x_bookmarks": { "enabled": false },
+    "x_likes": { "enabled": false, "username": "" }
+  },
+  "forward": { "cuboxUrl": "", "flomoWebhook": "" },
+  "jianguoyun": { "enabled": false, "user": "", "password": "", "baseUrl": "https://dav.jianguoyun.com/dav" },
+  "notification": {
+    "telegramChatId": "",
+    "notifyToken": "",
+    "emailEnabled": false,
+    "smtpHost": "smtp.163.com",
+    "smtpPort": 465,
+    "smtpUser": "",
+    "smtpPass": "",
+    "emailFrom": "",
+    "emailTo": ""
+  },
+  "ima": {
+    "enabled": false,
+    "apiKey": "",
+    "clientId": "",
+    "knowledgeBaseName": "",
+    "webCookie": "",
+    "webImaCookie": "",
+    "webBkn": "",
+    "webKnowledgeBaseId": ""
+  },
+  "llm": { "apiKey": "", "model": "glm-4-flash" }
+}

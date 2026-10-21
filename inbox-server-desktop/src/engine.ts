@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, join, relative } from "node:path";
 
-import { articleLooksUseful, copyLocalFile, extractHtml, renderArticleMarkdown, writeArticleFile, writeTextRecord } from "./archive.ts";
+import { articleLooksUseful, copyLocalFile, extractArticle, extractHtml, renderArticleMarkdown, writeArticleFile, writeTextRecord } from "./archive.ts";
+import { commitArchiveFile } from "./archive-git.ts";
+import { collectBrowserSource, type BrowserContextLike, type BrowserSource } from "./browser-collect.ts";
 import { fetchHtmlWithPlaywright } from "./playwright-fetch.ts";
+import { openPersistentContext } from "./playwright-context.ts";
 import { collectDida, collectGithubStars, collectTelegram, type CollectionResult } from "./collectors.ts";
 import {
   RATE_POLICIES,
@@ -17,8 +20,23 @@ import {
   type ItemKind,
   type RatePolicy,
 } from "./domain.ts";
+import { mirrorToIma } from "./ima.ts";
 import { importCloudExport, type ImportSummary } from "./import-cloud.ts";
-import { mergeSettings, type InboxStore, type JobRow, type PublicSettings, type Settings } from "./store.ts";
+import { formatCollectionNotification, notifyTelegram, sendSmtpMail } from "./notify.ts";
+import {
+  cookieHeader,
+  credentialToStorageState,
+  isBrowserPlatform,
+  profileFile,
+  readProfile,
+  writeProfile,
+  type StorageState,
+} from "./profiles.ts";
+import { browserPlatforms, overlaySettings, type BrowserPlatform } from "./settings.ts";
+import { generateSmartTags } from "./smart-tags.ts";
+import { type InboxStore, type JobRow, type PublicSettings, type Settings } from "./store.ts";
+import { deliverJianguoyun } from "./webdav.ts";
+import { buildZhihuDocument, resolveZhihuArticleRequest } from "./zhihu-article.ts";
 
 export class CaptureError extends Error {
   constructor(message: string) {
@@ -36,6 +54,7 @@ export interface Overview {
   articleEvents: ReturnType<InboxStore["listArticleEvents"]>;
   cloudHistory: ReturnType<InboxStore["listCloudHistory"]>;
   settings: PublicSettings;
+  profiles: Array<{ platform: BrowserPlatform; saved: boolean; cookieCount: number }>;
   scheduler: { enabled: boolean; intervalSeconds: number; nextRunAt: string | null };
 }
 
@@ -46,6 +65,10 @@ export interface EngineOptions {
   minArticleCharacters?: number;
   /** 未设置时，HTTP 正文不够才调用 Playwright。传 null 表示不要启动浏览器。 */
   playwrightFetch?: ((url: string) => Promise<string>) | null;
+  /** 测试注入。默认用本机 Playwright 和已保存的 storageState。 */
+  openContext?: (profilePath: string) => Promise<BrowserContextLike>;
+  /** Electron 登录窗口。没有窗口时请改走粘贴 cookie。 */
+  loginHandler?: (platform: BrowserPlatform) => Promise<StorageState>;
 }
 
 export class InboxEngine {
@@ -81,6 +104,7 @@ export class InboxEngine {
       articleEvents: this.store.listArticleEvents(),
       cloudHistory: this.store.listCloudHistory(),
       settings: this.store.publicSettings(),
+      profiles: this.listProfiles(),
       scheduler: {
         enabled: settings.schedulerEnabled,
         intervalSeconds: settings.intervalSeconds,
@@ -94,6 +118,31 @@ export class InboxEngine {
     this.store.saveSettings(next);
     this.startScheduler();
     return this.store.publicSettings();
+  }
+
+  listProfiles(): Array<{ platform: BrowserPlatform; saved: boolean; cookieCount: number }> {
+    return browserPlatforms.map((platform) => {
+      const profile = readProfile(profileFile(this.dataDir, platform));
+      return { platform, saved: profile !== null, cookieCount: profile?.cookies.length ?? 0 };
+    });
+  }
+
+  async beginLogin(platform: string): Promise<{ platform: BrowserPlatform; cookies: number }> {
+    if (!isBrowserPlatform(platform)) throw new CaptureError("不支持的登录平台");
+    if (!this.options.loginHandler) {
+      throw new CaptureError("当前进程没有登录窗口。请用 Electron 打开应用，或在设置里粘贴 cookie / storageState。");
+    }
+    const state = await this.options.loginHandler(platform);
+    return this.storeProfile(platform, state);
+  }
+
+  saveCredential(platform: string, input: unknown): { platform: BrowserPlatform; cookies: number } {
+    if (!isBrowserPlatform(platform)) throw new CaptureError("不支持的登录平台");
+    try {
+      return this.storeProfile(platform, credentialToStorageState(platform, input));
+    } catch (error) {
+      throw new CaptureError(error instanceof Error ? error.message : "登录凭据无效");
+    }
   }
 
   importCloud(input: unknown): ImportSummary {
@@ -154,6 +203,7 @@ export class InboxEngine {
           stagingDir: join(this.dataDir, "staging"),
         }));
       }
+      await this.syncBrowsers(settings, stats, errors);
       stats.drained = await this.drain(500);
     } catch (error) {
       errors.push(error instanceof Error ? error.message : "sync failed");
@@ -215,6 +265,10 @@ export class InboxEngine {
       for (const update of result.stateUpdates) this.store.putState(update.key, update.value, this.now().toISOString());
       if (result.cleanup) await result.cleanup();
       stats[source] = { ...result.meta, published: published.published, skipped: published.skipped };
+      if (published.published > 0) {
+        const collected = typeof result.meta.collected === "number" ? result.meta.collected : result.items.length;
+        await this.notifyCollection(source, collected, published.published, stats);
+      }
     } catch (error) {
       errors.push(`${source}: ${error instanceof Error ? error.message : "collect failed"}`);
       stats[source] = { error: true };
@@ -236,12 +290,12 @@ export class InboxEngine {
       this.store.killJob(job.id, job.dedupeKey, "cloud_object_not_local", nowIso);
       return;
     }
+    await this.attachSmartTags(item);
     const localKey = `${job.dedupeKey}:local`;
-    const remote = remoteDestination(item, this.store.settings());
-    const remoteKey = remote ? `${job.dedupeKey}:${remote.name}` : null;
+    const remotes = remoteEffects(item, this.store.settings(), this.fetchImpl());
+    const pending = remotes.filter((remote) => !this.store.effectDone(`${job.dedupeKey}:${remote.name}`));
     const localDone = this.store.effectDone(localKey);
-    const remoteDone = remoteKey ? this.store.effectDone(remoteKey) : true;
-    if (localDone && remoteDone) {
+    if (localDone && pending.length === 0) {
       this.store.completeJob(job.id, job.dedupeKey, null, nowIso);
       return;
     }
@@ -258,8 +312,10 @@ export class InboxEngine {
     try {
       const destinationPath = localDone ? null : await this.writeLocal(job);
       if (!localDone) this.store.markEffect(localKey, job.id, "local", "done", nowIso);
-      if (remote && remoteKey && !remoteDone) await this.forward(remote, item);
-      if (remote && remoteKey) this.store.markEffect(remoteKey, job.id, remote.name, "done", nowIso);
+      for (const remote of pending) {
+        await remote.run();
+        this.store.markEffect(`${job.dedupeKey}:${remote.name}`, job.id, remote.name, "done", nowIso);
+      }
       if (item.itemKind === "link" && this.store.settings().archiveEnabled) this.enqueueArticle(item);
       this.store.completeJob(job.id, job.dedupeKey, destinationPath, nowIso);
     } catch (error) {
@@ -323,7 +379,7 @@ export class InboxEngine {
 
   private async archiveArticle(item: Extract<DispatchItem, { itemKind: "article" }>): Promise<string> {
     const html = await this.loadArticleHtml(item.url, item.title);
-    const extracted = extractHtml(html);
+    const extracted = await extractArticle(html, item.url);
     const title = item.title?.trim() || extracted.title || "untitled";
     const article = { title, markdown: extracted.markdown };
     const assessment = articleLooksUseful(article, this.options.minArticleCharacters ?? 200);
@@ -348,7 +404,8 @@ export class InboxEngine {
       tags: item.tags ?? [],
       title,
     });
-    const path = writeArticleFile(join(this.dataDir, "archive", "sources", "article"), title, this.now(), content, item.url);
+    const directory = join(this.dataDir, "archive", "sources", "article");
+    const path = writeArticleFile(directory, title, this.now(), content, item.url);
     this.store.recordArticleEvent({
       filename: path,
       occurredAt: this.now().toISOString(),
@@ -358,46 +415,17 @@ export class InboxEngine {
       title,
       urlFingerprint: fingerprint,
     });
+    if (path && this.store.settings().archiveGit) {
+      const root = join(this.dataDir, "archive");
+      await commitArchiveFile(root, relative(root, path));
+    }
+    if (path) await this.mirrorArticle(path, content, item.url);
     return path;
   }
 
-  private async forward(
-    remote: { name: "cubox" | "flomo"; url: string },
-    item: DispatchItem,
-  ): Promise<void> {
-    if (remote.name === "cubox" && item.itemKind === "link") {
-      const response = await this.fetchImpl()(remote.url, {
-        body: JSON.stringify({
-          content: item.url,
-          tags: item.tags ?? [],
-          title: item.title || item.url,
-          type: "url",
-        }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      });
-      const body = await readJson(response);
-      if (isRecord(body) && body.code === -3030) throw new Error("quota");
-      if (isRecord(body) && body.code === 200) return;
-      if (response.ok && body === null) return;
-      throw new Error(`cubox failed: ${response.status}`);
-    }
-    if (remote.name === "flomo" && item.itemKind === "text") {
-      const response = await this.fetchImpl()(remote.url, {
-        body: JSON.stringify({
-          content: formatFlomoContent(item.content, item.tags ?? []),
-          content_type: "markdown",
-        }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      });
-      const body = await readJson(response);
-      if (isRecord(body) && body.code === 0) return;
-      throw new Error(`flomo failed: ${response.status}`);
-    }
-  }
-
   private async loadArticleHtml(url: string, preferredTitle: string | undefined): Promise<string> {
+    const zhihuHtml = await this.loadZhihuHtml(url);
+    if (zhihuHtml && this.htmlIsUseful(zhihuHtml, preferredTitle)) return zhihuHtml;
     let httpHtml = "";
     try {
       const response = await this.fetchImpl()(url, {
@@ -436,55 +464,132 @@ export class InboxEngine {
   private fetchImpl(): typeof fetch {
     return this.options.fetchImpl ?? fetch;
   }
+
+  private async syncBrowsers(settings: Settings, stats: Record<string, unknown>, errors: string[]): Promise<void> {
+    const sources: Array<{ name: BrowserSource; enabled: boolean; config: Record<string, unknown>; platform: BrowserPlatform }> = [
+      { name: "zhihu", enabled: settings.sources.zhihu.enabled, config: { collection_id: settings.sources.zhihu.collectionId }, platform: "zhihu" },
+      { name: "bilibili", enabled: settings.sources.bilibili.enabled, config: { media_id: settings.sources.bilibili.mediaId }, platform: "bilibili" },
+      { name: "bilibili_toview", enabled: settings.sources.bilibili_toview.enabled, config: {}, platform: "bilibili" },
+      { name: "inoreader", enabled: settings.sources.inoreader.enabled, config: {}, platform: "inoreader" },
+      { name: "youtube", enabled: settings.sources.youtube.enabled, config: {}, platform: "youtube" },
+      { name: "x_bookmarks", enabled: settings.sources.x_bookmarks.enabled, config: {}, platform: "x" },
+      { name: "x_likes", enabled: settings.sources.x_likes.enabled, config: { username: settings.sources.x_likes.username }, platform: "x" },
+    ];
+    for (const source of sources) {
+      if (!source.enabled) continue;
+      await this.runCollector(source.name, stats, errors, async () => {
+        const file = profileFile(this.dataDir, source.platform);
+        if (!existsSync(file)) throw new Error(`${source.platform} 还没有登录，请先在应用里登录`);
+        const open = this.options.openContext ?? openPersistentContext;
+        const context = await open(file);
+        try {
+          return await collectBrowserSource(source.name, source.config, context, (key) => this.knownKeys(key));
+        } finally {
+          await context.close();
+        }
+      });
+    }
+  }
+
+  private knownKeys(source: string): ReadonlySet<string> {
+    const value = this.store.getState(`baseline:${source}`);
+    if (!isRecord(value) || !Array.isArray(value.knownKeys)) return new Set();
+    return new Set(value.knownKeys.filter((item): item is string => typeof item === "string"));
+  }
+
+  private async notifyCollection(source: string, collected: number, published: number, stats: Record<string, unknown>): Promise<void> {
+    const settings = this.store.settings().notification;
+    const message = formatCollectionNotification({ collected, published, source });
+    try {
+      if (settings.notifyToken && settings.telegramChatId) {
+        await notifyTelegram(this.fetchImpl(), settings.notifyToken, settings.telegramChatId, message);
+      }
+      if (settings.emailEnabled && settings.smtpHost && settings.smtpUser && settings.smtpPass && settings.emailFrom && settings.emailTo) {
+        await sendSmtpMail({
+          body: message,
+          from: settings.emailFrom,
+          host: settings.smtpHost,
+          password: settings.smtpPass,
+          port: settings.smtpPort,
+          recipient: settings.emailTo,
+          subject: message,
+          user: settings.smtpUser,
+        });
+      }
+    } catch (error) {
+      stats[`${source}:notify`] = error instanceof Error ? error.message : "notify failed";
+    }
+  }
+
+  private async attachSmartTags(item: DispatchItem): Promise<void> {
+    if (item.itemKind !== "text" || (item.tags && item.tags.length > 0)) return;
+    const llm = this.store.settings().llm;
+    if (!llm.apiKey) return;
+    const tags = await generateSmartTags({
+      apiKey: llm.apiKey,
+      content: item.content,
+      fetcher: this.fetchImpl(),
+      model: llm.model,
+    });
+    if (tags.length > 0) item.tags = tags;
+  }
+
+  private async mirrorArticle(path: string, content: string, sourceUrl: string): Promise<void> {
+    const ima = this.store.settings().ima;
+    if (!ima.enabled || !ima.apiKey || !ima.clientId || !ima.knowledgeBaseName) return;
+    const webHeaders = ima.webCookie || ima.webImaCookie || ima.webBkn
+      ? { cookie: ima.webCookie, "x-ima-bkn": ima.webBkn, "x-ima-cookie": ima.webImaCookie }
+      : undefined;
+    await mirrorToIma({
+      apiKey: ima.apiKey,
+      clientId: ima.clientId,
+      content,
+      fetcher: this.fetchImpl(),
+      filename: basename(path),
+      knowledgeBaseName: ima.knowledgeBaseName,
+      now: () => this.now(),
+      sourceUrl,
+      stateGet: (key) => this.store.getState(key),
+      statePut: (key, value) => this.store.putState(key, value, this.now().toISOString()),
+      webHeaders,
+      webKnowledgeBaseId: ima.webKnowledgeBaseId || undefined,
+    });
+  }
+
+  private async loadZhihuHtml(url: string): Promise<string | null> {
+    let request: ReturnType<typeof resolveZhihuArticleRequest>;
+    try {
+      request = resolveZhihuArticleRequest(url);
+    } catch {
+      return null;
+    }
+    if (!request) return null;
+    const profile = readProfile(profileFile(this.dataDir, "zhihu"));
+    if (!profile) return null;
+    const cookie = cookieHeader(profile, "zhihu.com");
+    if (!cookie) return null;
+    try {
+      const response = await this.fetchImpl()(`${request.origin}${request.apiPath}`, {
+        headers: { accept: "application/json", cookie, referer: url },
+      });
+      if (!response.ok) return null;
+      return buildZhihuDocument(await response.json(), request);
+    } catch {
+      return null;
+    }
+  }
+
+  private storeProfile(platform: BrowserPlatform, state: StorageState): { platform: BrowserPlatform; cookies: number } {
+    writeProfile(profileFile(this.dataDir, platform), state);
+    return { platform, cookies: state.cookies.length };
+  }
 }
 
 export function applySettingsPatch(current: Settings, patch: unknown): Settings {
-  if (!isRecord(patch)) throw new CaptureError("设置格式无效");
-  const next = mergeSettings(current);
-  next.sources = structuredClone(current.sources);
-  next.forward = { ...current.forward };
-  if (typeof patch.archiveEnabled === "boolean") next.archiveEnabled = patch.archiveEnabled;
-  if (typeof patch.schedulerEnabled === "boolean") next.schedulerEnabled = patch.schedulerEnabled;
-  if (typeof patch.intervalSeconds === "number" && patch.intervalSeconds >= 30 && patch.intervalSeconds <= 86_400) {
-    next.intervalSeconds = Math.floor(patch.intervalSeconds);
-  }
-  const sources = isRecord(patch.sources) ? patch.sources : {};
-  assignSource(next, sources, "dida", "accessToken");
-  assignSource(next, sources, "github_stars", "token");
-  assignSource(next, sources, "telegram", "botToken");
-  if (isRecord(patch.forward)) {
-    if (patch.forward.cuboxUrl === null) next.forward.cuboxUrl = "";
-    else if (typeof patch.forward.cuboxUrl === "string" && patch.forward.cuboxUrl.length > 0) {
-      if (!isHttpUrl(patch.forward.cuboxUrl)) throw new CaptureError("Cubox 地址必须是 http(s) URL");
-      next.forward.cuboxUrl = patch.forward.cuboxUrl;
-    }
-    if (patch.forward.flomoWebhook === null) next.forward.flomoWebhook = "";
-    else if (typeof patch.forward.flomoWebhook === "string" && patch.forward.flomoWebhook.length > 0) {
-      if (!isHttpUrl(patch.forward.flomoWebhook)) throw new CaptureError("flomo 地址必须是 http(s) URL");
-      next.forward.flomoWebhook = patch.forward.flomoWebhook;
-    }
-  }
-  return next;
-}
-
-function assignSource(
-  next: Settings,
-  sources: Record<string, unknown>,
-  name: "dida" | "github_stars" | "telegram",
-  secretKey: "accessToken" | "token" | "botToken",
-): void {
-  const incoming = sources[name];
-  if (!isRecord(incoming)) return;
-  if (typeof incoming.enabled === "boolean") next.sources[name].enabled = incoming.enabled;
-  const secret = incoming[secretKey];
-  if (secret === null) {
-    if (secretKey === "accessToken") next.sources.dida.accessToken = "";
-    if (secretKey === "token") next.sources.github_stars.token = "";
-    if (secretKey === "botToken") next.sources.telegram.botToken = "";
-  } else if (typeof secret === "string" && secret.length > 0) {
-    if (secretKey === "accessToken") next.sources.dida.accessToken = secret;
-    if (secretKey === "token") next.sources.github_stars.token = secret;
-    if (secretKey === "botToken") next.sources.telegram.botToken = secret;
+  try {
+    return overlaySettings(current, patch);
+  } catch (error) {
+    throw new CaptureError(error instanceof Error ? error.message : "设置格式无效");
   }
 }
 
@@ -514,10 +619,57 @@ function parseCapture(input: unknown, now: Date): DispatchItem {
   throw new CaptureError("不支持的内容类型");
 }
 
-function remoteDestination(item: DispatchItem, settings: Settings): { name: "cubox" | "flomo"; url: string } | null {
-  if (item.itemKind === "link" && settings.forward.cuboxUrl) return { name: "cubox", url: settings.forward.cuboxUrl };
-  if (item.itemKind === "text" && settings.forward.flomoWebhook) return { name: "flomo", url: settings.forward.flomoWebhook };
-  return null;
+function remoteEffects(
+  item: DispatchItem,
+  settings: Settings,
+  fetchImpl: typeof fetch,
+): Array<{ name: string; run: () => Promise<void> }> {
+  const effects: Array<{ name: string; run: () => Promise<void> }> = [];
+  if (item.itemKind === "link" && settings.forward.cuboxUrl) {
+    effects.push({ name: "cubox", run: () => postCubox(fetchImpl, settings.forward.cuboxUrl, item) });
+  }
+  if (item.itemKind === "text" && settings.forward.flomoWebhook) {
+    effects.push({ name: "flomo", run: () => postFlomo(fetchImpl, settings.forward.flomoWebhook, item) });
+  }
+  if (item.itemKind === "file" && item.localPath && settings.jianguoyun.enabled && settings.jianguoyun.user && settings.jianguoyun.password) {
+    const localPath = item.localPath;
+    effects.push({
+      name: "jianguoyun",
+      run: () => deliverJianguoyun({
+        baseUrl: settings.jianguoyun.baseUrl,
+        content: new Uint8Array(readFileSync(localPath)),
+        fetcher: fetchImpl,
+        password: settings.jianguoyun.password,
+        remoteName: item.remoteName,
+        user: settings.jianguoyun.user,
+      }),
+    });
+  }
+  return effects;
+}
+
+async function postCubox(fetchImpl: typeof fetch, url: string, item: Extract<DispatchItem, { itemKind: "link" }>): Promise<void> {
+  const response = await fetchImpl(url, {
+    body: JSON.stringify({ content: item.url, tags: item.tags ?? [], title: item.title || item.url, type: "url" }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const body = await readJson(response);
+  if (isRecord(body) && body.code === -3030) throw new Error("quota");
+  if (isRecord(body) && body.code === 200) return;
+  if (response.ok && body === null) return;
+  throw new Error(`cubox failed: ${response.status}`);
+}
+
+async function postFlomo(fetchImpl: typeof fetch, url: string, item: Extract<DispatchItem, { itemKind: "text" }>): Promise<void> {
+  const response = await fetchImpl(url, {
+    body: JSON.stringify({ content: formatFlomoContent(item.content, item.tags ?? []), content_type: "markdown" }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const body = await readJson(response);
+  if (isRecord(body) && body.code === 0) return;
+  throw new Error(`flomo failed: ${response.status}`);
 }
 
 async function readJson(response: Response): Promise<unknown> {
